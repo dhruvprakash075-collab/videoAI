@@ -1,0 +1,49 @@
+==========================================================
+ HOW TO OPEN THE VIDEO.AI CONSOLE (TUI)
+==========================================================
+
+THE EASY WAY
+------------
+1. Open the C:\Video.AI folder in File Explorer.
+2. Double-click the file named:  TUI.bat
+3. The console opens right in the window. Use your keyboard.
+4. To quit: press  Q  (or Ctrl+C).
+
+That's all. TUI.bat does everything for you:
+  - starts Ollama in the background if it isn't running
+  - uses the correct Python (venv)
+  - opens the console in the same window
+  - if it crashes, the window stays open so you can read the error
+
+
+IF YOU PREFER TYPING A COMMAND
+------------------------------
+Open a terminal in C:\Video.AI and run:
+
+   TUI.bat
+
+or, the long form:
+
+   venv\Scripts\python.exe studio_tui.py
+
+
+WHAT THE OLD SCRIPTS WERE
+-------------------------
+There are several older .ps1 / .bat launchers in this folder
+(launch_tui.ps1, run.bat, start_pipeline.ps1, etc.).
+You do NOT need them. Just use TUI.bat.
+
+  - run.bat        = a menu with TUI / Web UI / CLI / Tests options
+  - TUI.bat        = goes straight to the console (the simple one)
+
+
+TROUBLESHOOTING
+---------------
+- "Python environment not found": the venv folder is missing.
+  The project needs venv\Scripts\python.exe to exist.
+
+- The console looks broken or garbled: make your terminal window
+  bigger, then double-click TUI.bat again.
+
+- It crashed instantly: open studio_tui_crash.log in this folder;
+  it contains the error details.

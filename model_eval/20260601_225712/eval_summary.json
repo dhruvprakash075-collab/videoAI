@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-06-01T22:57:12",
+  "image_model": "Lykon/AnyLoRA",
+  "tts_engine": "omnivoice",
+  "acceleration": "none",
+  "upscaler": "4x-UltraSharp",
+  "images": [
+    "model_eval\\20260601_225712\\images\\scene_01_a6a3f671.png",
+    "model_eval\\20260601_225712\\images\\scene_02_44802912.png",
+    "model_eval\\20260601_225712\\images\\scene_03_ebfdc907.png"
+  ],
+  "tts_sample": "",
+  "output_dir": "model_eval\\20260601_225712"
+}

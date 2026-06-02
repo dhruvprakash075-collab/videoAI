@@ -1,0 +1,34 @@
+project_name: "Series 1 Template"
+theme: "Dark Fantasy, Steampunk, Mystery"
+narrator_persona: "a gritty, world-weary Victorian detective investigating paranormal mysteries"
+
+subtitles:
+  format: "tiktok"
+  font: "Impact"
+  size: 38
+  color: "&H00FFFF&"
+visual:
+  style: "Gothic Horror, Dark Victorian, Volumetric Lighting"
+  # You can override the default negative prompt here to specifically tailor it to your series
+  negative_prompt: "bright sunlight, cheerful, colorful, futuristic, sci-fi, modern, photorealistic, bad anatomy"
+
+world_lore:
+  description: "A Victorian-era world where forbidden knowledge and corrupted entities hide in the shadows."
+  rules:
+    - "Magic always comes with a terrifying price or corruption."
+    - "The sun is perpetually hidden behind thick, grey fog."
+
+active_plot_threads:
+  - "The protagonist just discovered a strange thorn symbol on their chest."
+  - "A mysterious figure has been following the protagonist in their dreams."
+
+characters:
+  protagonist:
+    name: "Placeholder Protagonist"
+    description: "Young adult, jet-black hair, wearing a worn-out trench coat."
+    keywords: ["fog", "mystery", "trench coat"]
+
+sub_characters:
+  companion:
+    name: "Placeholder Companion"
+    description: "A strange floating entity made of pure shadow."

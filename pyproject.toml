@@ -1,0 +1,280 @@
+# ── Ruff configuration for Video.AI ─────────────────────────────────────
+# Linter + formatter. Replaces the need for flake8, isort, pyupgrade, and
+# bugbear individually. Single `ruff check .` and `ruff format .` commands.
+#
+# See LINTING.md for rationale and usage; see AGENTS.md for the dev loop.
+
+[project]
+name = "video-ai"
+version = "0.0.0"
+description = "Local video-generation pipeline (see AGENTS.md)"
+requires-python = ">=3.10,<3.14"
+
+[tool.ruff]
+# Match the de-facto line length in this codebase (existing modules use ~100-110).
+line-length = 100
+indent-width = 4
+target-version = "py310"
+# Show every violation with full context, not just the first per file.
+output-format = "concise"
+# Cache speeds re-runs from seconds to milliseconds.
+cache-dir = ".ruff_cache"
+
+# ── Exclusions ─────────────────────────────────────────────────────────────
+# Directories that are not part of the importable codebase.
+extend-exclude = [
+    "venv",
+    ".venv",
+    "node_modules",
+    "dashboard",          # has its own ESLint setup (npm run lint)
+    "dashboard/**",
+    "_archive",           # moved-out code; not part of active surface
+    "ffmpeg-8.1.1-essentials_build",
+    "hf_cache",
+    "studio_outputs",     # runtime artifacts
+    "studio_checkpoints", # runtime artifacts
+    "studio_projects",    # runtime artifacts
+    "cache",
+    "logs",
+    "temp_srt_files",
+    "static",
+    "tts_audiobook",      # under _archive but explicit
+    "build",
+    "dist",
+    ".ruff_cache",
+    ".pytest_cache",
+    "__pycache__",
+    "*.egg-info",
+]
+
+# ── Rule selection ─────────────────────────────────────────────────────────
+[tool.ruff.lint]
+# Start with the rules that catch real bugs and obvious style wins.
+# Re-enable more (D, ANN, S, etc.) incrementally — see LINTING.md.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes — unused imports/vars, undefined names (real bugs)
+    "I",    # isort — import order
+    "B",    # bugbear — likely bugs and design issues
+    "C4",   # comprehensions
+    "UP",   # pyupgrade — modernize syntax
+    "SIM",  # simplify — common simplifications
+    "RET",  # return — return-statement hygiene
+    "N",    # pep8-naming
+    "TID",  # tidy imports
+    "PIE",  # flake8-pie — misc lints
+    "RUF",  # ruff-specific rules
+    "PTH",  # use-pathlib
+    "ARG",  # unused arguments
+    "PL",   # pylint subset (basic)
+    "TRY",  # tryceratops — better exception handling
+]
+# Rules we explicitly skip. Add a comment explaining each so future-you
+# knows the call was intentional, not an oversight.
+ignore = [
+    "E501",   # line-too-long — handled by formatter; some long strings are intentional
+    "E701",   # multiple-statements-on-one-line-colon — common in log/debug lines
+    "E702",   # multiple-statements-on-one-line-semicolon — common in log/debug lines
+    "B008",   # function-call-in-default-arg — common in Pydantic / FastAPI patterns
+    "PLC0415",# import-outside-top-level — the codebase uses 100+ `try: import X except ImportError` blocks for optional deps (crewai, edge_tts, diffusers, etc.). Ruff can't tell which are intentional lazy-imports vs real smells.
+    "PLR0913",# too-many-arguments — common in pipeline code
+    "PLR2004",# magic-value-comparison — too noisy for a numeric-tunable-heavy codebase
+    "TRY003", # too-long-exception-message — exceptions are user-facing
+    "TRY301", # raise-within-try — codebase uses the explicit `raise ... from e` form
+    "TRY400", # error-instead-of-exception — `log.error("...", exc_info=True)` is the established pattern
+    "TRY401", # verbose-log-message — log strings include structured context
+    "TRY300", # try-consider-else — the codebase prefers the explicit form
+    "N818",   # exception-name-suffix — too pedantic
+    "RET504", # unnecessary-assign-before-return — stylistic
+    "RET505", # superfluous-else-return — stylistic
+    "RET506", # superfluous-else-raise — stylistic
+    "SIM108", # if-else-block-instead-of-if-exp — readability over brevity
+    "SIM117", # nested-with-statements — readability over brevity
+    "PIE790", # unnecessary-pass — often the `pass` is a documentation marker
+    "PLW0603",# global-statement-update — codebase uses it deliberately (UIState, etc.)
+    "PLW0108",# unnecessary-lambda — the Pydantic default_factory lambdas in config_schemas.py resolve forward references (AlignmentConfig used before its definition) and the lambda IS required.
+    "PLW2901",# redefined-loop-name — sometimes intentional in nested loops
+    "PLW1510",# subprocess-run-without-check — most subprocess calls are launch-and-forget
+    "RUF012", # mutable-class-default-annotated — Pydantic patterns
+    "RUF001", # ambiguous-unicode-character-string — EN DASH / MULTIPLICATION SIGN are intentional in user-facing log strings
+    "RUF002", # ambiguous-unicode-character-docstring — same as above
+    "RUF003", # ambiguous-unicode-character-comment — same as above
+    "ARG001", # unused-function-arg — interface-driven methods
+    "ARG002", # unused-method-arg
+    "ARG005", # unused-lambda-argument — many test lambdas
+    "TRY002", # disable=try-except-raise — handled per-site
+    "N803",   # invalid-argument-name — domain terms use uppercase
+    "N806",   # variable-in-capital — domain terms
+    "N814",   # camelcase-imported-as-constant — domain terms (Ollama, etc.)
+    "E731",   # lambda-assignment — sometimes clearer than a named function
+    "E741",   # ambiguous-variable-name — `l` is a common alias for `length` etc.
+    "B017",   # assert-raises-exception — pytest patterns
+    "PLR0912",# too-many-branches
+    "PLR0915",# too-many-statements
+    "PLR0911",# too-many-return-statements
+    "PTH123", # builtin-open — will convert to Path.open in a follow-up sweep
+    "PTH103", # os-makedirs — will convert to Path.mkdir in a follow-up sweep
+    "PTH110", # os-path-exists — same
+    "PTH118", # os-path-join — same
+    "PTH105", # os-replace — same
+    "PTH100", # os-path-abspath — same
+    "PTH117", # os-path-isabs — same
+    "PTH120", # os-path-dirname — same
+    "UP031",  # printf-string-formatting — codebase has many `log.info("foo %s", x)` that ruff wants to convert; leaving as-is to avoid noisy diffs
+]
+
+# ── Per-file overrides ─────────────────────────────────────────────────────
+# Things that are intentional in specific files.
+[tool.ruff.lint.per-file-ignores]
+"bootstrap_pipeline.py" = [
+    "E402",   # sys.path + patches BEFORE imports — intentional
+    "T201",   # `print` is part of the bootstrap banner UX
+    "PTH",    # bootstrap adds bundled FFmpeg to PATH via os.environ
+]
+"core/pipeline_long.py" = [
+    "E402",   # sys.path + compat patches BEFORE pipeline imports
+    "T201",   # `print` for "Added bundled FFmpeg to PATH" banner
+]
+"core/main.py" = [
+    "E402",   # sys.path + compat patches BEFORE pipeline imports
+]
+"core/pre_production.py" = [
+    "E402",
+    "F401",   # optional `edge_tts` availability check
+]
+"core/segment_runner.py" = ["E402"]
+"core/post_production.py" = ["E402"]
+"agents/director_agent.py" = [
+    "E402",   # sys.path + patches
+    "PLR0915",# 2618-line god module — splitting is its own refactor
+    "PLR0912",# same
+    "PLR0913",# same
+    "PLR0911",# same
+    "C901",   # function complexity
+    "PLR0904",# too-many-public-methods
+]
+"agents/decision_engine.py" = ["E402"]
+"agents/executive_agent.py" = [
+    "E402",
+    "F401",   # re-exports for backward compat
+]
+"config/__init__.py" = [
+    "F401",   # re-exports for the public config API (`from config import ...`)
+]
+"memory/__init__.py" = [
+    "F401",   # re-exports for the public memory API (`from memory import ...`)
+]
+"utils/__init__.py" = [
+    "F401",   # re-exports for the public utils API (`from utils import ...`)
+]
+"utils/compatibility.py" = [
+    "F401",   # `try: import X except ImportError` is the explicit pattern here
+]
+"utils/tui_theme_tester.py" = [
+    "F401",   # same — optional-dep availability checks
+]
+"studio_tui.py" = [
+    "E402",
+    "T201",   # operator-facing terminal UI prints
+    "PLR0915",
+    "F401",   # optional textual API checks
+]
+"train_lora.py" = [
+    "E402",
+    "T201",
+    "N812",   # `from torchvision import transforms as T` is the torch convention
+]
+"utils/*.py" = ["E402"]
+"audio/*.py" = ["E402"]
+"video/**/*.py" = ["E402"]
+"scripts/*.py" = [
+    "T201",   # CLI scripts print results
+    "E402",
+]
+"tests/*.py" = [
+    "S101",   # `assert` is the whole point of pytest
+    "D",      # no docstring requirement for tests
+    "ANN",    # annotations not required for tests
+    "PLR2004",# magic values in assertions are fine
+    "ARG",    # fixtures can be unused-arg in some test classes
+    "SLF001", # tests access private members
+    "E402",   # tests add repo root to sys.path
+]
+"tests/conftest.py" = [
+    "E402",
+    "S101",
+    "PLR0915",
+    "PLR0912",
+    "PLR0913",
+    "C901",
+]
+"tests/manual_integration_test*.py" = [
+    "T201",   # print is the report
+    "E402",
+    "S101",
+    "PLR0915",
+]
+"studio_tui_helpers.py" = ["E402"]
+"run_*.py" = ["E402", "T201"]
+"user_perspective_test.py" = ["E402", "T201", "S101"]
+"deep_test*.py" = ["E402", "T201", "S101", "PLR0915"]
+"isolated_tests*.py" = ["E402", "T201", "S101"]
+"verify_fixes.py" = ["E402", "T201", "S101"]
+"style_resolver.py" = ["E402"]
+"download_f5.py" = ["E402", "T201"]
+
+# ── isort config ───────────────────────────────────────────────────────────
+[tool.ruff.lint.isort]
+known-first-party = [
+    "agents",
+    "audio",
+    "config",
+    "core",
+    "memory",
+    "utils",
+    "video",
+]
+combine-as-imports = true
+
+# ── Formatter config ───────────────────────────────────────────────────────
+[tool.ruff.format]
+# Match the de-facto style: double quotes, space indent.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+# Skip reformatting lines that already have a `# fmt: off` / `# fmt: skip`.
+docstring-code-format = false
+
+# ── Coverage config ───────────────────────────────────────────────────────
+[tool.coverage.run]
+# Track only the first-party code; skip venv, _archive, dashboard, tests.
+source = ["agents", "audio", "config", "core", "memory", "utils", "video"]
+omit = [
+    "venv/*",
+    "dashboard/*",
+    "_archive/*",
+    "tests/*",
+    "**/__pycache__/*",
+    "studio_*/",
+    "*/compat.py",
+]
+branch = true
+# Concurrency-safe: data_file in .coverage_cache so CI / local don't collide.
+data_file = ".coverage_cache/coverage"
+
+[tool.coverage.report]
+# Skip the test files themselves and the archived code in coverage stats.
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "except ImportError:",
+    "def __repr__",
+    "def __str__",
+]
+show_missing = true
+skip_covered = false
+precision = 1
+sort = "Cover"

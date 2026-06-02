@@ -1,0 +1,88 @@
+# ── Python ────────────────────────────────────────────────────────
+venv/
+**/Lib/
+**/Lib64/
+**/Scripts/
+**/Include/
+**/share/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+.ruff_cache/
+.coverage_cache/
+.pytest_tmp/
+.pytest_cache/
+
+# ── Generated / Runtime (large, per-run, not source) ──────────────
+studio_outputs/
+studio_checkpoints/
+studio_projects/
+logs/
+cache/
+hf_cache/
+temp_srt_files/
+tts_audiobook/output/
+sfx/
+
+# ── Archived side projects (kept on disk, not in git) ────────────
+_archive/tts_audiobook/
+
+# ── Voice samples (personal audio — PII) ─────────────────────────
+character_voices/*.wav
+character_voices/*.aac
+character_voices/*.mp3
+character_voices/*.pth
+
+# ── Bundled binaries (too large for git) ──────────────────────────
+ffmpeg-8.1.1-essentials_build/
+
+# ── Environment / secrets ─────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── IDE / editor ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Other AI agent configs (keep AGENTS.md only) ─────────────────
+.claude/
+.kilo/
+.cursorrules
+.clinerules
+.windsurfrules
+CLAUDE.md
+
+# ── OS junk ───────────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ── Scratch / temp files ──────────────────────────────────────────
+_*.png
+_*.ps1
+*.tmp
+*.bak
+
+# ── Node (dashboard) ─────────────────────────────────────────────
+dashboard/node_modules/
+dashboard/dist/
+
+# ── Model files (multi-GB, never commit) ──────────────────────────
+*.gguf
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+Modelfile.*
+
+# ── Crash logs ────────────────────────────────────────────────────
+*.log
+studio_tui_crash.log

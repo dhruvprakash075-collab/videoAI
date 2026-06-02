@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "TUI Compile Check on Save",
+  "description": "Automatically run py_compile on studio_tui.py, director_agent.py, and pipeline_long.py whenever any of them are saved, and notify if there's a syntax error",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "studio_tui.py",
+      "agents/director_agent.py",
+      "core/pipeline_long.py"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "venv\\Scripts\\python.exe -c \"import py_compile, sys; files=['studio_tui.py','agents/director_agent.py','core/pipeline_long.py']; errors=[]; [errors.append(f) or print(f'SYNTAX ERROR: {f}') for f in files if not (lambda: py_compile.compile(f, doraise=True) or True)() if (lambda: (py_compile.compile(f, doraise=True), False)[1] if True else True)()]; print('All OK' if not errors else f'{len(errors)} file(s) have errors')\"",
+    "timeout": 30
+  }
+}

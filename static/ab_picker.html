@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Director's Chair — A/B Image Picker | Video.AI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0a0a12;
+      --surface:    rgba(255,255,255,0.04);
+      --surface2:   rgba(255,255,255,0.08);
+      --border:     rgba(255,255,255,0.10);
+      --accent-a:   #6366f1;
+      --accent-b:   #ec4899;
+      --gold:       #f59e0b;
+      --text:       #e2e8f0;
+      --muted:      #64748b;
+      --success:    #10b981;
+      --radius:     16px;
+      --glow-a:     0 0 40px rgba(99,102,241,0.3);
+      --glow-b:     0 0 40px rgba(236,72,153,0.3);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 20% 0%, rgba(99,102,241,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(236,72,153,0.10) 0%, transparent 60%);
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 2rem 3rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+    .logo span { color: var(--accent-a); }
+    .badge {
+      background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+      color: white; font-size: 0.65rem; font-weight: 600;
+      padding: 0.25rem 0.6rem; border-radius: 20px; text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Main layout ── */
+    main { max-width: 1400px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.4rem; }
+    .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2.5rem; }
+
+    /* ── Config Panel ── */
+    .config-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 2rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+    }
+    .config-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1.25rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .form-grid { display: grid; grid-template-columns: 120px 1fr 1fr; gap: 1rem; align-items: start; }
+    label { font-size: 0.8rem; font-weight: 500; color: var(--muted); display: block; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    input[type="number"], textarea {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text); padding: 0.65rem 1rem;
+      font-family: inherit; font-size: 0.875rem; resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+    input[type="number"]:focus, textarea:focus {
+      border-color: var(--accent-a); box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+    }
+    textarea { min-height: 80px; }
+    .prompt-a-field:focus { border-color: var(--accent-a); box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+    .prompt-b-field:focus { border-color: var(--accent-b); box-shadow: 0 0 0 3px rgba(236,72,153,0.2); }
+
+    /* ── Generate Button ── */
+    .btn-generate {
+      display: block; width: 100%; margin-top: 1.25rem;
+      background: linear-gradient(135deg, var(--accent-a) 0%, var(--accent-b) 100%);
+      color: white; border: none; border-radius: 12px;
+      padding: 0.9rem 2rem; font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+      letter-spacing: -0.01em;
+    }
+    .btn-generate:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+    .btn-generate:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* ── Status Bar ── */
+    #status-bar {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      align-items: center;
+      gap: 1rem;
+    }
+    #status-bar.visible { display: flex; }
+    .spinner {
+      width: 18px; height: 18px; flex-shrink: 0;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-a);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-ok { color: var(--success); }
+    .status-err { color: #f87171; }
+
+    /* ── Comparison Grid ── */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    .variant-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: box-shadow 0.3s;
+      backdrop-filter: blur(12px);
+    }
+    .variant-panel.variant-a:hover { box-shadow: var(--glow-a); }
+    .variant-panel.variant-b:hover { box-shadow: var(--glow-b); }
+
+    .variant-header {
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .variant-dot {
+      width: 12px; height: 12px; border-radius: 50%;
+    }
+    .variant-a .variant-dot { background: var(--accent-a); box-shadow: 0 0 8px var(--accent-a); }
+    .variant-b .variant-dot { background: var(--accent-b); box-shadow: 0 0 8px var(--accent-b); }
+    .variant-label { font-weight: 600; font-size: 0.95rem; }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 1rem;
+      min-height: 240px;
+    }
+    .image-grid.single { grid-template-columns: 1fr; }
+    .img-placeholder {
+      background: var(--surface2);
+      border-radius: 8px;
+      aspect-ratio: 16/9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .image-grid img {
+      width: 100%; aspect-ratio: 16/9;
+      object-fit: cover;
+      border-radius: 8px;
+      transition: transform 0.2s;
+    }
+    .image-grid img:hover { transform: scale(1.02); cursor: zoom-in; }
+
+    /* ── Pick Button ── */
+    .btn-pick {
+      width: calc(100% - 2rem);
+      margin: 0 1rem 1rem;
+      padding: 0.8rem;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .btn-pick:disabled { opacity: 0.35; cursor: not-allowed; }
+    .variant-a .btn-pick {
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: white;
+    }
+    .variant-b .btn-pick {
+      background: linear-gradient(135deg, #be185d, #ec4899);
+      color: white;
+    }
+    .btn-pick:hover:not(:disabled) {
+      opacity: 0.9; transform: translateY(-1px);
+    }
+    .btn-pick.picked {
+      background: linear-gradient(135deg, var(--success), #059669) !important;
+      box-shadow: 0 0 20px rgba(16,185,129,0.4);
+    }
+
+    /* ── Picked overlay ── */
+    .picked-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(16,185,129,0.15);
+      border-radius: var(--radius);
+      pointer-events: none;
+      border: 2px solid var(--success);
+    }
+    .variant-panel { position: relative; }
+    .picked-overlay.visible { display: block; }
+
+    /* ── Lightbox ── */
+    .lightbox {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; }
+
+    @media (max-width: 900px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .comparison-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Video<span>.AI</span></div>
+  <span class="badge">Director's Chair</span>
+</header>
+
+<main>
+  <h1>A/B Image Picker</h1>
+  <p class="subtitle">Generate two variants of a scene, compare side-by-side, pick your favourite.</p>
+
+  <!-- Config Panel -->
+  <div class="config-panel">
+    <h2>Generation Config</h2>
+    <div class="form-grid">
+      <div>
+        <label>Segment #</label>
+        <input type="number" id="seg-num" value="1" min="1" max="99" />
+      </div>
+      <div>
+        <label for="prompt-a" style="color:#818cf8">&#9642; Prompt A</label>
+        <textarea id="prompt-a" class="prompt-a-field" placeholder="e.g. Lumian Lee standing in a misty forest, dramatic lighting, anime style"></textarea>
+      </div>
+      <div>
+        <label for="prompt-b" style="color:#f472b6">&#9642; Prompt B</label>
+        <textarea id="prompt-b" class="prompt-b-field" placeholder="e.g. Lumian Lee in a dark village square, moonlight, horror atmosphere, visual novel CG"></textarea>
+      </div>
+    </div>
+    <button class="btn-generate" id="btn-generate" onclick="generate()">&#9889; Generate Both Variants</button>
+  </div>
+
+  <!-- Status Bar -->
+  <div id="status-bar">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text">Starting generation...</span>
+  </div>
+
+  <!-- Comparison Grid -->
+  <div class="comparison-grid">
+    <!-- Variant A -->
+    <div class="variant-panel variant-a" id="panel-a">
+      <div class="picked-overlay" id="overlay-a"></div>
+      <div class="variant-header">
+        <div class="variant-dot"></div>
+        <span class="variant-label">Variant A</span>
+        <span id="label-a" style="color:var(--muted);font-size:0.8rem;margin-left:auto">Waiting...</span>
+      </div>
+      <div class="image-grid" id="images-a">
+        <div class="img-placeholder">Images will appear here</div>
+      </div>
+      <button class="btn-pick" id="btn-pick-a" disabled onclick="pick('a')">&#10003; Use Variant A</button>
+    </div>
+
+    <!-- Variant B -->
+    <div class="variant-panel variant-b" id="panel-b">
+      <div class="picked-overlay" id="overlay-b"></div>
+      <div class="variant-header">
+        <div class="variant-dot"></div>
+        <span class="variant-label">Variant B</span>
+        <span id="label-b" style="color:var(--muted);font-size:0.8rem;margin-left:auto">Waiting...</span>
+      </div>
+      <div class="image-grid" id="images-b">
+        <div class="img-placeholder">Images will appear here</div>
+      </div>
+      <button class="btn-pick" id="btn-pick-b" disabled onclick="pick('b')">&#10003; Use Variant B</button>
+    </div>
+  </div>
+</main>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="" />
+</div>
+
+<script>
+  let currentJobId = null;
+  let pollInterval = null;
+
+  async function generate() {
+    const seg   = document.getElementById('seg-num').value;
+    const pa    = document.getElementById('prompt-a').value.trim();
+    const pb    = document.getElementById('prompt-b').value.trim();
+
+    if (!pa || !pb) { alert('Please enter both Prompt A and Prompt B.'); return; }
+
+    document.getElementById('btn-generate').disabled = true;
+    document.getElementById('btn-pick-a').disabled  = true;
+    document.getElementById('btn-pick-b').disabled  = true;
+    document.getElementById('images-a').innerHTML   = '<div class="img-placeholder">Generating Variant A...</div>';
+    document.getElementById('images-b').innerHTML   = '<div class="img-placeholder">Waiting for Variant B...</div>';
+    document.getElementById('overlay-a').classList.remove('visible');
+    document.getElementById('overlay-b').classList.remove('visible');
+    document.getElementById('btn-pick-a').classList.remove('picked');
+    document.getElementById('btn-pick-b').classList.remove('picked');
+    showStatus('Starting A/B generation job...', false);
+
+    const form = new FormData();
+    form.append('segment_num', seg);
+    form.append('prompt_a', pa);
+    form.append('prompt_b', pb);
+
+    try {
+      const res  = await fetch('/api/ab/generate', { method: 'POST', body: form });
+      const data = await res.json();
+      currentJobId = data.job_id;
+      showStatus(`Job started (ID: ${currentJobId}). Generating Variant A...`, false);
+      startPolling();
+    } catch(e) {
+      showStatus('Failed to start job: ' + e, true);
+      document.getElementById('btn-generate').disabled = false;
+    }
+  }
+
+  function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(async () => {
+      if (!currentJobId) return;
+      try {
+        const res  = await fetch('/api/ab/status/' + currentJobId);
+        const data = await res.json();
+        updateUI(data);
+        if (data.status === 'ready' || data.status === 'error') {
+          clearInterval(pollInterval);
+          document.getElementById('btn-generate').disabled = false;
+          document.getElementById('spinner').style.display = 'none';
+        }
+      } catch(e) { /* retry on next tick */ }
+    }, 2500);
+  }
+
+  function updateUI(data) {
+    const statusMap = {
+      'running':      'Preparing generation environment...',
+      'generating_a': 'Generating Variant A (Stable Diffusion)...',
+      'generating_b': 'Generating Variant B...',
+      'ready':        'Both variants ready! Pick your favourite.',
+      'error':        'Error: ' + (data.error || 'Unknown error'),
+    };
+    showStatus(statusMap[data.status] || data.status, data.status === 'error');
+
+    if ((data.images_a || []).length > 0) {
+      renderImages('images-a', 'label-a', data.images_a, `${data.images_a.length} image(s)`);
+    } else if (data.status === 'generating_a') {
+      document.getElementById('images-a').innerHTML = '<div class="img-placeholder">&#9881;&#65039; Generating...</div>';
+    }
+
+    if ((data.images_b || []).length > 0) {
+      renderImages('images-b', 'label-b', data.images_b, `${data.images_b.length} image(s)`);
+    } else if (data.status === 'generating_b') {
+      document.getElementById('images-b').innerHTML = '<div class="img-placeholder">&#9881;&#65039; Generating...</div>';
+    }
+
+    if (data.status === 'ready') {
+      document.getElementById('btn-pick-a').disabled = false;
+      document.getElementById('btn-pick-b').disabled = false;
+    }
+  }
+
+  function renderImages(gridId, labelId, urls, labelText) {
+    const grid  = document.getElementById(gridId);
+    const label = document.getElementById(labelId);
+    label.textContent = labelText;
+    grid.innerHTML = urls.map(url =>
+      `<img src="${url}" alt="generated" onclick="openLightbox('${url}')" />`
+    ).join('');
+    grid.className = 'image-grid' + (urls.length === 1 ? ' single' : '');
+  }
+
+  async function pick(choice) {
+    if (!currentJobId) return;
+    const seg = document.getElementById('seg-num').value;
+    showStatus(`Committing Variant ${choice.toUpperCase()} to segment ${seg}...`, false);
+
+    const form = new FormData();
+    form.append('job_id', currentJobId);
+    form.append('choice', choice);
+    form.append('segment_num', seg);
+
+    try {
+      const res  = await fetch('/api/ab/pick', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.status === 'committed') {
+        showStatus(`\u2713 Variant ${choice.toUpperCase()} committed to segment ${seg}!`, false, true);
+        const overlay = document.getElementById('overlay-' + choice);
+        overlay.classList.add('visible');
+        document.getElementById('btn-pick-' + choice).classList.add('picked');
+        document.getElementById('btn-pick-' + choice).textContent = '\u2713 Using This!';
+        document.getElementById('btn-pick-' + (choice === 'a' ? 'b' : 'a')).disabled = true;
+      }
+    } catch(e) {
+      showStatus('Failed to commit: ' + e, true);
+    }
+  }
+
+  function showStatus(msg, isError=false, isSuccess=false) {
+    const bar  = document.getElementById('status-bar');
+    const text = document.getElementById('status-text');
+    bar.classList.add('visible');
+    text.textContent = msg;
+    text.className = isError ? 'status-err' : (isSuccess ? 'status-ok' : '');
+    document.getElementById('spinner').style.display = (isError || isSuccess) ? 'none' : '';
+  }
+
+  function openLightbox(src) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').classList.add('open');
+  }
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('open');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+</script>
+</body>
+</html>

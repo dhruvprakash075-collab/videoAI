@@ -1,0 +1,115 @@
+# styles.yaml -- Visual style resolver dictionary
+# Hot-reloadable. Add new styles without touching Python code.
+# Layer 1: exact keyword/alias match (word-boundary)
+# Layer 2: fuzzy token-overlap (catch typos)
+# Layer 3: LLM expansion (translate unknown styles into SD prompt)
+
+fallback_prompt: >
+  hybrid 2d anime visual novel style, clean digital art,
+  expressive character designs, detailed backgrounds
+
+styles:
+
+  semi_realistic:
+    keywords: ["semi-realistic", "semi realistic", "realistic anime"]
+    aliases: ["arcane style", "castlevania style", "realistic 2d", "detailed anime", "painterly anime", "cinematic anime"]
+    prompt: >
+      semi-realistic 2d animation style, realistic human proportions, detailed facial features,
+      natural anatomy, painterly textures, cinematic lighting, volumetric shadows,
+      detailed backgrounds with realistic depth, muted natural color palette with selective vibrant accents,
+      inspired by Arcane and Castlevania animation, high detail character rendering,
+      dynamic camera angles, atmospheric fog and lighting effects, 8k quality
+
+  dark_fantasy:
+    keywords: ["dark fantasy"]
+    aliases: ["grimdark", "dark medieval", "dark high fantasy"]
+    prompt: >
+      dark fantasy art style, dramatic lighting, deep shadows,
+      gothic atmosphere, painterly, high detail, moody color palette,
+      reminiscent of concept art for dark RPGs
+
+  gothic:
+    keywords: ["gothic"]
+    aliases: ["victorian gothic", "gothic horror"]
+    prompt: >
+      gothic art style, ornate architecture, candlelit atmosphere,
+      desaturated palette with crimson accents, detailed linework
+
+  bright_shonen:
+    keywords: ["bright shonen", "shonen"]
+    aliases: ["jump style", "battle anime"]
+    prompt: >
+      bright shonen anime style, bold clean linework, vivid saturated colors,
+      dynamic action poses, cel-shaded, expressive character designs
+
+  watercolor:
+    keywords: ["watercolor"]
+    aliases: ["watercolour", "aquarelle"]
+    prompt: >
+      watercolor illustration style, soft wet edges, visible paper texture,
+      translucent layered washes, delicate color bleeds, artistic and painterly
+
+  traditional_ink:
+    keywords: ["traditional ink", "ink wash"]
+    aliases: ["sumi-e", "chinese ink", "brush ink"]
+    prompt: >
+      traditional ink illustration, bold brushstrokes, high contrast black
+      and white with selective color, calligraphic line quality
+
+  webtoon:
+    keywords: ["webtoon"]
+    aliases: ["manhwa", "korean webtoon"]
+    prompt: >
+      webtoon art style, clean digital linework, bright flat colors,
+      modern Korean manhwa aesthetic, vertical scroll format composition
+
+  cyberpunk:
+    keywords: ["cyberpunk"]
+    aliases: ["cyber noir", "neo-noir sci-fi", "neon dystopia"]
+    prompt: >
+      cyberpunk art style, neon-lit rain-soaked streets, holographic displays,
+      high contrast chiaroscuro, retrofuturist technology, gritty urban decay
+
+  surreal:
+    keywords: ["surreal"]
+    aliases: ["surrealist", "dreamlike", "dali-esque"]
+    prompt: >
+      surrealist art style, dreamlike impossible geometry, melting distorted
+      reality, deep symbolism, reminiscent of Salvador Dali and Rene Magritte
+
+  noir:
+    keywords: ["noir"]
+    aliases: ["film noir", "neo-noir", "hard boiled"]
+    prompt: >
+      film noir illustration style, stark black and white with deep shadows,
+      venetian blind lighting, rain-slicked streets, cigarette smoke atmosphere
+
+  pastel:
+    keywords: ["pastel"]
+    aliases: ["soft pastel", "pastel anime", "kawaii"]
+    prompt: >
+      soft pastel art style, gentle muted color palette, rounded shapes,
+      cozy warm atmosphere, reminiscent of Studio Ghibli background art
+
+  sci_fi:
+    keywords: ["sci-fi", "scifi", "science fiction"]
+    aliases: ["hard sci-fi", "space opera", "biopunk"]
+    prompt: >
+      science fiction concept art style, sleek clean technology,
+      detailed mechanical designs, cosmic scale environments,
+      cinematic lighting, realistic digital painting
+
+  horror:
+    keywords: ["horror"]
+    aliases: ["cosmic horror", "body horror", "psychological horror"]
+    prompt: >
+      horror illustration style, unsettling atmosphere, distorted anatomy,
+      desaturated palette with sickly greens and deep reds,
+      heavy shadow use, visceral textures
+
+  pixel_art:
+    keywords: ["pixel art", "pixel"]
+    aliases: ["8-bit", "16-bit", "retro game", "chiptune aesthetic"]
+    prompt: >
+      pixel art style, limited color palette, visible pixel grid,
+      retro video game aesthetic, isometric or side-scrolling composition

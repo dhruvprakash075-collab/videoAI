@@ -1,0 +1,245 @@
+# ──────────────────────────────────────────────────────────────
+# Video.AI — LLM Prompt Templates
+# All Director/Writer prompts extracted here for tuning without
+# touching Python code. Supports {variable} substitution.
+# ──────────────────────────────────────────────────────────────
+
+# ── Phase 1: Character name extraction from research ──
+extract_characters: |
+  From the following text about a story, extract the names of
+  fictional character or protagonist names (not actors/directors, just names):
+
+  {research_text}
+
+# ── Phase 2: Vision Document (analyze story + research) ──
+vision_document: |
+  You are the Director, the creative visionary of a Narrative Video-Generation Engine.
+  Analyze the following story and produce a complete production vision.
+  
+  STORY TOPIC: {topic}
+  Target video duration: {target_duration} minutes. Plan segment_count accordingly (~1 min per segment).
+  {research_block}
+  
+  Analyze and output JSON with these keys:
+  
+    "characters": List of objects with {{name, description (50+ words,
+    precise visual details: hair, eyes, clothing, build, key items), voice (deep/mellow/sharp/etc)}}
+  
+    "visual_style": One of: gothic anime, dark fantasy anime, bright shonen anime,
+    watercolor anime, cyberpunk anime, traditional ink anime,
+    hybrid 2d anime visual novel style, webtoon style.
+  
+    "theme": Core theme in 3-5 words.
+  
+    "emotions": Comma-separated emotions to emphasize (include complex/negative ones).
+  
+    "pacing": One of: slow atmospheric, moderate, fast intense, varied.
+  
+    "shot_distribution": Object with ratios that sum to 1.0:
+      {{establishing, environment, character_medium, character_closeup,
+      emotional_detail, action}}.
+  
+    "tts_recommendation": "omnivoice".
+  
+    "subtitle_style": Object with {{format: classic|tiktok, size: small|medium|large,
+    color: white|yellow|cyan, position: bottom|centered}}.
+  
+    "ambiguity_detected": true/false
+    "ambiguity_question": If true, a specific question for the user.
+    "ambiguity_fields": List production fields uncertain about. Use [] if confident.
+    "recommendations": List of 3-5 production suggestions.
+    "segment_count": int 3-8, recommended number of video segments.
+    "words_per_segment": int 100-400, target words per segment.
+    "image_count_per_segment": int 5-12, images per segment.
+    "recommended_duration_min": int, optimal video length in minutes based on content analysis.
+      Consider content length, story complexity, character count, pacing, emotional arcs.
+      Ranges: short stories (<1000 words) = 5-15 min, medium (1000-5000) = 15-45 min,
+      long (5000-15000) = 45-90 min, epic (15000+) = 90-180 min.
+  
+  Output ONLY the JSON, nothing else.
+
+  
+  Example structure (create your own analysis, do NOT copy this content):
+  {
+    "characters": [{"name": "Character Name", "description": "Precise visual description: hair, eyes, clothing, build, key items", "voice": "deep/mellow/sharp"}],
+    "visual_style": "dark fantasy anime",
+    "theme": "Core theme in 3-5 words",
+    "emotions": "emotion1, emotion2, emotion3",
+    "pacing": "slow atmospheric",
+    "shot_distribution": {"establishing": 0.15, "environment": 0.25, "character_medium": 0.30, "character_closeup": 0.15, "emotional_detail": 0.10, "action": 0.05},
+    "tts_recommendation": "omnivoice",
+    "subtitle_style": {"format": "classic", "size": "small", "color": "white", "position": "bottom"},
+    "ambiguity_detected": false,
+    "ambiguity_question": "",
+    "ambiguity_fields": [],
+    "recommendations": ["Suggestion 1", "Suggestion 2", "Suggestion 3"],
+    "segment_count": 5,
+    "words_per_segment": 280,
+    "image_count_per_segment": 8,
+    "recommended_duration_min": 10
+  }
+
+# ── Phase 3: Single questionnaire (all ambiguous fields at once) ──
+consultation_questionnaire: |
+  You are the Director of a video production for this story:
+    Theme: {theme}
+    Visual style: {visual_style}
+    Pacing: {pacing}
+    Emotions: {emotions}
+    Characters:
+  {chars_text}
+  
+  You are uncertain about these production fields: {fields_list}
+  Current values: {current_values}
+  
+  For EACH field, suggest 2-5 context-appropriate options. Output a JSON object:
+  {{
+    "fields": {{
+      "field_name": {{
+        "current": "current value",
+        "options": ["option 1", "option 2", "option 3"]
+      }}
+    }}
+  }}
+  Output ONLY the JSON, nothing else.
+
+# ── Phase 3: Custom instructions suggestions ──
+custom_instructions_options: |
+  You are the Director of a video for this story.
+    Theme: {theme}
+    Style: {visual_style}
+    Pacing: {pacing}
+    Emotions: {emotions}
+  
+  Suggest 3-5 generic production tweaks a user might want for this specific story
+  (e.g. 'add more fog scenes', 'emphasize character X more').
+  Include "No additional instructions — proceed with Director's plan" as the first option.
+  Output one per line, nothing else.
+
+# ── Phase 4: Writer scene breakdown (fallback when vision doc lacks keys) ──
+writer_breakdown: |
+  You are the Creative Screenwriter for a Narrative Video Engine.
+  Based on the Director's vision and user preferences below, suggest
+  the optimal scene-by-scene breakdown.
+  
+  VISUAL STYLE: {visual_style}
+  THEME: {theme}
+  EMOTIONS: {emotions}
+  PACING: {pacing}
+  CHARACTERS:
+  {chars_text}
+  
+  USER PREFERENCES:
+  {user_str}
+  
+  RECOMMENDATIONS FROM DIRECTOR:
+  {recommendations}
+  
+  Output JSON:
+  {{
+    "segment_count": <int 3-8>,
+    "words_per_segment": <int 100-400, average word count>,
+    "image_count_per_segment": <int 5-12>,
+    "opening_hook_style": "...",
+    "pacing_notes": "..."
+  }}
+  Output ONLY the JSON.
+
+# ── Phase 0: Invent original story ──
+invent_story: |
+  You are the Director of a Narrative Video Engine. Create an original,
+  compelling story premise for a short animated video.
+  
+  Topic seed: {topic}
+  User preferences: <user_input>{user_notes}</user_input>
+  
+  Invent a complete story concept with:
+  1. A protagonist (name + visual description)
+  2. The world/setting
+  3. The central conflict or mystery
+  4. The emotional arc
+  
+  Write 3-5 paragraphs. Plain text, no markdown.
+
+# ── Legacy: read_story (local_ui.py) ──
+read_story: |
+  You are the Director, the creative visionary of a Dynamic Narrative
+  Video-Generation Engine.
+  Thoroughly analyze the following story text:
+  
+  <story_text>{full_script}</story_text>
+  
+  Task 1: Extract all key characters with precise visual descriptions
+  (hair color, eye color, clothing style, key items) and voice traits.
+  Task 2: Determine core theme, pacing, visual style, and emotions
+  (especially complex or negative emotions).
+  Task 3: Identify ambiguity or missing information.
+  
+  Output JSON:
+  {{"characters": [...], "visual_style": "...", "theme": "...",
+    "emotions": "...", "pacing": "...",
+    "ambiguity_detected": true/false, "ambiguity_question": "..."}}
+  Output ONLY the JSON.
+
+# ── Legacy: define_pacing_and_length ──
+define_pacing: |
+  Based on this vision: {vision_json}.
+  How many 1-minute segments needed to tell this story beautifully?
+  Output ONLY an integer (e.g. 3 or 4 or 5).
+
+# ── Legacy: generate Hinglish script ──
+generate_hinglish: |
+  Generate a detailed, organic narration script in simple spoken Hindi (Devanagari script).
+  
+  Segment {seg}: {key_event}. Mood: {mood}
+  
+  CRITICAL LANGUAGE RULES:
+  - Write the ENTIRE script in Devanagari script (e.g. है, और, लेकिन)
+  - Use simple, everyday spoken Hindi words that normal people use in conversation
+  - Do NOT use literary, bookish, or overly formal Hindi words
+  - Do NOT use complex Urdu or Sanskrit-origin words when a simpler Hindi word exists
+  - For English words that are commonly used in everyday Hindi speech (like cafe, phone, car, bus, train, school, college, doctor, police, phone, video, camera), write them in Devanagari phonetically (e.g. कैफे, फोन, कार, बस, ट्रेन, स्कूल, कॉलेज, डॉक्टर, पुलिस, वीडियो, कैमरा)
+  - Do NOT use any English/Latin letters at all - everything must be in Devanagari
+  - Spell out all numbers in Hindi words (e.g. 100 becomes सौ, 5 becomes पांच)
+  - Do NOT use any acronyms or abbreviations
+  - Write like a normal person telling a story to a friend, not like a news anchor or poet
+  - Keep sentences short and natural with normal pauses
+  - No scene markers, no speaker labels. Plain narration text only.
+
+# -- Duration Consultation --
+
+# Phase 2.5: Cliffhanger detection
+cliffhanger_detection: |
+  You are analyzing a story to find natural cliffhanger points where a video
+  adaptation could end while leaving viewers wanting more. The full story is
+  approximately {current_minutes} minutes of video when fully adapted.
+  
+  STORY CONTENT:
+  {content}
+  
+  Identify exactly 3 cliffhanger points. For each, specify:
+    - point: approximate percentage through the story (5-90)
+    - reason: one sentence describing what happens at this point and why it works as a cliffhanger
+    - outcome: one sentence describing what the viewer would get from this version
+  
+  Output ONLY valid JSON array:
+  [{"point": 35, "reason": "...", "outcome": "Video ends at ~X min -- ..."}, ...]
+  Choose points that resolve a mini-arc (not mid-scene) so the video feels complete.
+
+# Phase 2.5: Story compaction
+story_compaction: |
+  You are an expert editor. Below is the full story content that would produce
+  approximately {original_minutes} minutes of video narration. The user wants a
+  compacted version of approximately {target_minutes} minutes.
+  
+  Your task: rewrite/condense the story to fit the target duration while:
+    - Preserving ALL major characters and their core arcs
+    - Keeping key emotional beats and pivotal scenes
+    - Cutting or summarizing subplots, descriptions, and transitional passages
+    - Maintaining the original tone, style, and narrative voice
+  
+  FULL STORY ({word_count} words):
+  {content}
+  
+  Output the compacted story as plain text. Target approximately {target_words} words.
+  Do NOT include commentary -- output the story text directly.

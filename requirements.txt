@@ -1,0 +1,119 @@
+# Video.AI - Core dependencies
+# Install with: pip install -r requirements.txt
+# Requires Python 3.10-3.13 (NOT 3.14)
+
+# ── LLM / Agent orchestration ──────────────────────────────────────
+crewai>=1.14.0
+ollama>=0.6.0
+
+# ── TTS Engines ────────────────────────────────────────────────────
+edge-tts>=7.0.0
+nest-asyncio>=1.6.0
+# OmniVoice TTS (install separately: pip install omnivoice)
+# omnivoice>=0.1.0
+
+# ── Automatic Speech Recognition ───────────────────────────────────
+faster-whisper>=1.2.0
+openai-whisper  # fallback if faster-whisper fails
+
+# ── Deep Learning / Adapters ───────────────────────────────────────
+peft>=0.19.0
+
+# ── Translation ────────────────────────────────────────────────────
+transformers>=4.40.0
+
+# ── PyTorch with CUDA 12.8 (matches RTX 4050 driver) ─────────────
+# Install separately: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+# torch>=2.6.0
+# torchaudio>=2.6.0
+
+# ── Image generation (Stable Diffusion) ───────────────────────────
+diffusers>=0.31.0
+# xformers skipped on Windows (requires triton, unavailable)
+# xformers>=0.0.29
+
+# ── Optional image backends ───────────────────────────────────────
+replicate>=0.0.0
+
+# ── Audio processing ──────────────────────────────────────────────
+pydub>=0.25.0
+soundfile>=0.12.0
+
+# ── Config ─────────────────────────────────────────────────────────
+PyYAML>=6.0
+
+# ── Utilities ──────────────────────────────────────────────────────
+tqdm>=4.60.0
+pillow>=10.0.0
+requests>=2.30.0
+python-dotenv>=1.0.0
+
+# ── Web research (Director pre-production) ─────────────────────────
+beautifulsoup4>=4.12.0
+
+# ── Web framework (for API) ────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# ── Testing (dev only) ─────────────────────────────────────────────
+pytest>=8.0.0
+
+# ── TUI control panel ──────────────────────────────────────────────
+textual>=0.60.0
+
+# ── LangGraph pipeline (Phase 0) ───────────────────────────────────
+langgraph>=0.2
+
+# ── Web automation + research (Phase 0, Phase 3) ──────────────────
+playwright>=1.40
+pytest-playwright>=0.5
+feedparser>=6.0
+
+# ── Source ingestion (Phase 1) ────────────────────────────────────
+pypdf>=4.0
+python-docx>=1.1
+trafilatura>=1.6
+requests>=2.31
+
+# ══════════════════════════════════════════════════════════════════
+# OLLAMA MODELS (install separately via ollama CLI)
+# ══════════════════════════════════════════════════════════════════
+# Director:    ollama pull hermes-director
+# Writer:      ollama pull zephyr-writer
+# Writer (scratch): ollama pull cra-guided-7b
+# Image Eng:   ollama pull image-engineer     # graceful-degrade if missing
+# Translator:  ollama create sarvam-translate -f C:\models\Modelfile-sarvam
+#              (uses local GGUF: C:\models\sarvam-translate.i1-Q6_K.gguf)
+
+# ══════════════════════════════════════════════════════════════════
+# CONFIGURATION (config/config.yaml)
+# ══════════════════════════════════════════════════════════════════
+# models:
+#   director: "hermes-director"     # Story planning & outline
+#   writer: "zephyr-writer"         # Default writer (also writer_adapt)
+#   writer_scratch: "cra-guided-7b" # Create-from-scratch mode
+#   reviewer: "script-reviewer"     # Fast script review
+#   image_engineer: "image-engineer"# Image prompt generation
+#   translator: "sarvam-translate"  # Hindi/Devanagari translation (Sarvam Q6_K)
+#
+# ollama:
+#   host: "http://localhost:11434"
+#   keep_alive: "3m"
+
+# ══════════════════════════════════════════════════════════════════
+# LINTING / FORMATTING
+# ══════════════════════════════════════════════════════════════════
+# Single tool: ruff replaces flake8 + isort + pyupgrade + bugbear.
+# See LINTING.md for the full rationale.
+ruff>=0.15.15
+coverage>=7.14.1
+
+# ══════════════════════════════════════════════════════════════════
+# KNOWN ISSUES & FIXES APPLIED
+# ══════════════════════════════════════════════════════════════════
+# 1. xformers/triton: Skipped on Windows (unavailable)
+# 2. torch.compile: Skipped on Windows (requires triton)
+# 3. OmniVoice TTS: May fail (fallback to silent audio)
+# 4. Hyperframes WSL: Path fixed to /mnt/c/Video.AI
+# 5. Silent audio: Voice processing skipped for fallback files
+# 6. Director timeout: Increased to 600s for 9B model on RTX 4050

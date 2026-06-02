@@ -1,0 +1,286 @@
+# Hardware-Optimized Configuration for RTX 4050 (6GB) + 16GB RAM + Ryzen 7 7840HS
+# Supports videos up to 3 hours (180 min)
+
+# ── AI Models ──────────────────────────────────────────────────────
+# 6GB VRAM constraint: only ONE model loads at a time. Ollama evicts the
+# previous model (keep_alive: 0) before the next loads. Director and Writer
+# are NEVER co-resident.
+models:
+  director: "hermes-director"       # Hermes 3 Llama 3.1 8B Q4_K_S — reliable JSON, good planning, fits 6GB. Created from Modelfile.hermes-director (GGUF in C:\models).
+  writer: "zephyr-writer"           # Default writer. Zephyr 7B Beta Q4_K_M — clean prose, fits 6GB. Created from Modelfile.zephyr-writer.
+  # Mode-aware writer selection (6GB: never co-resident with other models):
+  #   - create-from-scratch  → creative model that invents freely
+  #   - adaptation (--file)  → faithful model that follows the given story closely
+  # All three aliases below are now created in Ollama via their Modelfiles
+  #   (run: ollama create <name> -f Modelfile.<name>; GGUFs live in C:\models).
+  writer_scratch: "cra-guided-7b"    # invention mode: CRA's flowery creative prose
+  writer_adapt: "zephyr-writer"       # adaptation mode: Zephyr 7B follows the given story closely
+  image_engineer: "image-engineer" # Image prompt gen. NOT created — degrades gracefully (fallback prompt). Create/pull to enable.
+  director_max_tokens: 2048   # W1: per-role token cap (was 8192 for all agents)
+  translator: "sarvam-translate"   # Hindi/Devanagari translation (Sarvam — created)
+
+ollama:
+  host: "http://localhost:11434"
+  keep_alive: "3m"   # 9B model ≈ 5-6GB RAM; 5m risks OOM with SD+FFmpeg. Code evicts before GPU tasks anyway.
+  request_timeout: 240   # hard per-request cap (seconds). A hung grammar-constrained generation aborts and retries instead of freezing the whole run.
+  breaker_fails: 3        # B1: circuit breaker opens after this many consecutive failures
+  breaker_cooldown_s: 30  # B1: seconds to fail-fast after breaker opens before resetting
+
+# ── TTS Configuration ─────────────────────────────────────────────
+tts:
+  engine: "omnivoice"       # Reverted to OmniVoice: SPRINGLab F5-Hindi clones poorly (gurgly/straw artifact). OmniVoice = correct Hindi + good clone (slower). Set to "f5" to use F5 again.
+  lang: "hi"
+  slow: false
+
+  f5:
+    model_path: "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/488556290bc8e35d3883554662f77eda413a7eb4"   # HF hub cache path (set by setup_f5.ps1)
+    ref_audio: "character_voices/narration_ref_9s_mono24k.wav"   # 9s mono 24kHz clip - better clone than the 18s stereo original
+    ref_text: "एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर उनके बाकी सभी दाँत गिर गए हैं।"   # MUST match ref_audio (skips Whisper ASR which crashes torchcodec on Windows)
+    nfe_step: 16            # denoising steps; lower = faster (16 is a good balance)
+
+  edge:
+    voice: "hi-IN-MadhurNeural"
+    rate: "+5%"
+    volume: "+0%"
+
+  omnivoice:
+    speed: 0.85
+    num_step: 16            # was 24. Diffusion denoising steps — 16 is ~1.5x faster than 24 with minimal quality loss on narration. Lower (12) = faster but noticeably less crisp.
+    guidance_scale: 2.5
+    # ref_text: transcript of character_voices/narration_voice.wav. Fill this in to
+    # skip OmniVoice's Whisper ASR load (avoids the 2nd-model OOM on 6GB — issue #41,
+    # AND avoids the torchcodec DLL crash after f5-tts pulled torchcodec into the venv).
+    ref_text: "एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर उनके बाकी सभी दाँत गिर गए हैं।"
+
+  voice_samples_dir: "character_voices"
+
+  voice_profile:
+    edge_voice: "hi-IN-MadhurNeural"
+    edge_rate: "+5%"
+    edge_volume: "+0%"
+    sentence_gap_ms: 200
+
+  # ── Devanagari translation quality (task 4.6) ─────────────────────────
+  devanagari:
+    max_latin_ratio: 0.10        # >10% Latin letters triggers re-translation
+    max_retranslate_retries: 2   # bounded retries before accepting best result
+
+# ── Visual Style ──────────────────────────────────────────────────
+visual:
+  num_scenes: 6
+  style: "Arcane-inspired semi-realistic 2D painterly animation, cinematic lighting, volumetric shadows, detailed faces, atmospheric fog"
+  environment_frame_ratio: 0.4   # at least 40% of frames are wide world/environment shots (no dominant character)
+
+# ── Video Settings ────────────────────────────────────────────────
+video:
+  total_duration_min: 10           # Override via --duration 180 for 3-hour video
+  segment_duration_min: 2          # 2 min segments; 3h = 90 segs (manageable). Was 1 min = 180 segs
+  fps: 24              # 24fps cinematic; NVENC handles this with zero extra cost
+  resolution: "1920x1080"
+  output_path: "studio_outputs/final_video.mp4"
+  encoder: "h264_nvenc"
+  encoder_preset: "p5"           # Ada NVENC p5 ≈ x264 medium quality (was p1)
+  video_bitrate: "8M"            # higher bitrate for cleaner renders (was 5M)
+  encoder_extra: "-spatial-aq 1 -temporal-aq 1 -b_ref_mode 1 -bf 3"  # Ada NVENC quality flags
+  crossfade_duration: 0.3    # seconds of dissolve between images (0 = hard cut)
+  ken_burns: "light"         # "light" = fast scale+crop (no zoompan, near-instant CPU); "full" = zoompan (slow, CPU-heavy); "off" = static scale
+  audio_crossfade_ms: 200    # D2: per-segment audio fade-out/fade-in duration (ms); 0 = hard cut
+  generate_thumbnail: true   # D3: save a 1280x720 thumbnail.png after final video is produced
+  motion_engine: "none"      # V1: none = Ken Burns (default) | framepack = real image-to-video motion
+  motion_seconds_per_image: 3  # V1: seconds of motion per image when motion_engine = framepack
+
+# ── Image Generation ─────────────────────────────────────────────
+image_gen:
+  backend: "stable_diffusion"
+  sd_model: "anyLoRA"
+  sd_model_path: "Lykon/AnyLoRA"
+  dtype: "float16"
+  enable_xformers: true
+  attention_slicing: true
+  vae_tiling: true               # splits large images into tiles; prevents VAE OOM on 6GB
+  model_cpu_offload: false       # set true if OOM at 768x432; adds ~20% latency
+  group_offload: false           # granular leaf-level offload with stream overlap; less latency than model_cpu_offload
+  channels_last: true            # NHWC memory format; ~10% faster on Ada GPUs
+  height: 432                    # proper 16:9 widescreen
+  width: 768                     # float16+xformers+vae_tiling fits in 4GB on RTX 4050
+  steps: 12                      # DPM++ 2M Karras sweet-spot; 12 steps ≈ 20 steps quality (was 10)
+  guidance_scale: 6.0            # sweet spot for DPM++ 2M at 12 steps; 7.0 oversaturates at low steps
+  negative_prompt: "photorealistic, real life, 3d, 3d render, render, photograph, photography, real-world textures, digital clay, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
+  lock_seed: true                # A2: derive stable base seed from topic hash for visual consistency
+  preview_steps: 8               # A4: use this many steps in dry_run/preview_mode (faster iteration)
+  oom_recovery: true             # D1: enable OOM auto-recovery ladder (full→reduced steps→lower res→cpu→black frame)
+  oom_min_resolution: "640x360"  # D1: minimum resolution to try before CPU fallback
+  token_budget:                  # B4: CLIP 77-token budget allocation
+    identity: 25                 # tokens reserved for character identity
+    style: 20                    # tokens reserved for visual style
+    scene: 32                    # tokens reserved for scene description
+
+  # ── Acceleration adapter (off by default — evaluate before enabling) ──────
+  # type: "none" | "dmd2" | "hyper_sd" | "lcm"
+  # lora_path: path to the distillation LoRA .safetensors file
+  # lora_scale: fusion strength (1.0 = full strength)
+  # steps: inference steps when acceleration is active (4-8 recommended)
+  # guidance_scale: MUST be low for distilled models (LCM/DMD2: 1.0-2.0, NOT 6.0)
+  # To enable: set type, provide lora_path, then test on hardware before production.
+  acceleration:
+    type: "none"
+    lora_path: ""
+    lora_scale: 1.0
+    steps: 6
+    guidance_scale: 1.5
+
+  # ── Upscaler (enabled: sharpen generated frames up to true 1080p) ────────
+  # model: "none" | "4x-UltraSharp" | "realesrgan"
+  #   - "4x-UltraSharp"/"realesrgan": uses Real-ESRGAN IF basicsr+realesrgan and
+  #     the model weights are installed; otherwise auto-falls back to Lanczos.
+  #   - With packages/weights absent (current state) this performs a high-quality
+  #     Lanczos resize to target_width/height — no downloads, no VRAM cost.
+  # To upgrade to true neural upscaling later: pip install realesrgan basicsr,
+  #   download 4x-UltraSharp.pth, and set model_path below.
+  upscaler:
+    model: "4x-UltraSharp"
+    model_path: ""
+    scale: 4
+    target_width: 1920
+    target_height: 1080
+
+# ── Subtitles ────────────────────────────────────────────────────
+subtitles:
+  format: "classic"        # classic = bottom-aligned, readable; tiktok = big centered
+  font: "Nirmala UI"       # Devanagari-capable (ships with Windows 10/11); use "Noto Sans Devanagari" as cross-platform fallback
+  size: 22                 # smaller, cleaner (was 38 — too big)
+  color: "&H00FFFFFF&"     # white (was &H00FFFF& yellow)
+
+# ── Script Settings ──────────────────────────────────────────────
+script:
+  words_per_segment: 100
+  min_words: 20
+  max_words: 600           # raised from 400 so CRA's naturally longer, richer narration passes validation (no slow correction loops)
+  dynamic_image_count: true
+  default_images_per_segment: 6
+  max_images_per_segment: 10    # HARD CAP: never generate more than this per segment (was uncapped → 33 images)
+  word_count_tolerance: 0.6     # wide band (±60%): accept CRA's natural length on first pass instead of looping corrections
+  word_count_max_retries: 1     # allow 1 LLM rewrite attempt if local trim can't fix word count
+  writer_max_tokens: 1024       # W1: max tokens for writer LLM (150-400 word script ≈ 600 tokens; 1024 is generous)
+  llm_word_fix: false           # W4: set true to enable ONE LLM rewrite when local trim can't fix word count
+  critic_enabled: true          # Phase 0: gate the writer self-critique
+  critic_threshold: 60          # Phase 0: minimum 0-100 score to pass
+  critic_max_rewrites: 2        # Phase 0: max rewrite attempts before forgiving escape hatch
+
+# ── Checkpoints ──────────────────────────────────────────────────
+checkpoint:
+  enabled: true        # CRITICAL for laptop GPU — resume from last segment on crash
+  dir: "studio_checkpoints"
+  max_age_hours: 24    # checkpoints expire after 24h so old topics don't resume incorrectly
+
+# ── Memory ───────────────────────────────────────────────────────
+memory:
+  memory_file: "studio_checkpoints/story_memory.json"
+  llm_world_state: true           # B3: use LLM (3B reviewer) for world-state extraction; false = regex only
+
+# ── Cache ────────────────────────────────────────────────────────
+cache:
+  cache_invented_story: true      # A5: cache invented story to skip re-invention on same topic
+
+# ── Performance ──────────────────────────────────────────────────
+performance:
+  max_workers: 1                  # 6GB GPU: run segments SERIALLY. Every stage (Writer/translator LLM via Ollama, TTS, Stable Diffusion) is GPU-bound and only one model fits in 6GB. Parallel segments deadlock (VRAM full, 0% util). 1 = one full segment at a time, GPU handed off cleanly between stages.
+  checkpoint_interval: 1
+  whisper_model: "tiny"           # tiny is 3x faster than base; word timestamps need speed not accuracy
+  whisper_model_final: "base"     # A12: use base model for final (non-preview/non-dry) renders; more accurate subtitles
+  ffmpeg_threads: 8               # limit FFmpeg to 8 threads (leave headroom for Ollama/SD)
+  vram_evict_wait_s: 15           # A1: max seconds to poll for VRAM free before SD loads
+  vram_sd_threshold_gb: 4.5       # A1: minimum free VRAM (GB) required before loading SD
+  max_segment_retries: 2          # A7: max retries per segment before skipping
+  staged_loop: true               # C1: reorder per-segment stages (text-phase first, then GPU); false = today's order
+  lookahead_segments: 3           # C1: batch text-phase for N segments before first evict (1 = current behavior)
+
+# ── Audio Effects ────────────────────────────────────────────────
+audio_fx:
+  enabled: true                   # P4-8 fix: was `false` (default-off). Only `thunder` SFX is
+                                  #   bundled today; other SFX keywords are silent no-ops until
+                                  #   the corresponding WAV files are dropped in `sfx/`.
+  volume: 0.25
+  program_loudnorm: true          # A3: run 2-pass EBU R128 loudnorm on the final concatenated audio
+  loudnorm_two_pass: true         # A3: use 2-pass (measure then apply) for accurate normalization
+  target_lufs: -14                # A3: target integrated loudness (LUFS); -14 is streaming standard
+  # P4-8 content gap: `_DEFAULT_SFX` in `audio/audio_fx.py` lists the keyword
+  # map. Only `sfx/thunder.wav` is bundled; the rest of the keywords
+  # (wind/rain/heartbeat/footsteps/door_creak/whisper/scream/explosion/bell)
+  # are no-ops until the matching WAV is provided. To add: drop the WAV
+  # into `sfx/` and the keyword becomes active.
+
+# ── RVC Voice Conversion ─────────────────────────────────────────
+rvc:
+  enabled: false
+
+# ── Music ────────────────────────────────────────────────────────
+music:
+  enabled: false
+  ducking: true                   # D5: apply sidechaincompress to duck music under narration
+  duck_ratio: 0.3                 # D5: how far to drop music under narration (0.0-1.0)
+
+# ── Characters ───────────────────────────────────────────────────
+# Each character has LOCKED visual traits (eye color, hair, clothing) that MUST
+# appear in every frame featuring them. Be specific — vague descriptions like
+# "striking eyes" let SD invent random colors each frame.
+characters:
+  protagonist:
+    name: "The Protagonist"
+    description: "young adult, warm brown eyes, short black hair, determined expression, dark grey coat, athletic build, original character"
+    keywords: ["hero", "fight", "journey", "discover", "challenge", "courage", "struggle"]
+
+  mentor:
+    name: "The Mentor"
+    description: "older wise figure, deep green eyes, grey beard, weathered face, long dark brown coat, carries a worn journal, mysterious aura"
+    keywords: ["wisdom", "guide", "secret", "knowledge", "ancient", "teach", "warn"]
+
+  guardian:
+    name: "The Guardian"
+    description: "tall powerful figure, white hair, ice blue eyes, light silver armor, confident heroic stance, protective aura"
+    keywords: ["protect", "battle", "sacrifice", "light", "defend", "strength", "duty"]
+
+# ── Scene Templates ──────────────────────────────────────────────
+scene_templates:
+  monster: "corrupted creature looming, red fog glow, slow dolly-in"
+  fog: "thick fog rolling, bluish-black haze, horizontal tracking"
+
+# ── Auto-Upload ──────────────────────────────────────────────────
+upload:
+  enabled: true
+  platform: "youtube"
+  visibility: "private"           # private, unlisted, or public
+  profile_dir: "chrome_profile"
+
+# ── Critic (writer self-critique quality gate, Phase 0) ─────────
+critic:
+  enabled: true
+  threshold: 60              # minimum 0-100 score to pass
+  max_rewrites: 2            # max rewrite attempts before forgiving escape hatch
+
+# ── Research (auto-topic discovery, Phase 3) ────────────────────
+research:
+  enabled: true
+  sources: ["wikipedia", "wikimedia", "rss"]
+  rss_urls: []
+  user_agent: "VideoAI/6.0 (+https://github.com/...)"
+  budget: 3                  # max HTTP calls per research_topic() invocation
+  timeout_s: 15              # per-HTTP-call wall-clock timeout
+  per_source_limit: 3        # max items returned per source (cap on results)
+
+# ── SEO (YouTube metadata generation, Phase 5) ─────────────────
+seo:
+  enabled: true
+  title_max_chars: 100
+  description_max_chars: 5000
+  tags_count: 15
+  hashtags_count: 5             # #-prefixed tags for the description body
+  chapters_max: 50              # cap on chapter list size
+  description_paragraphs: 2     # number of body paragraphs in the description
+
+# ── Source (dual-entry ingestion, Phase 1) ─────────────────────
+source:
+  allowed_extensions: [".txt", ".md", ".pdf", ".docx"]
+  max_words: 50000           # soft cap — warn but proceed if over
+  url_timeout_s: 30
+  user_agent: "VideoAI/6.0 (+https://github.com/...)"

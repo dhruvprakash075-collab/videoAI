@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "Use All Available Capabilities",
+  "description": "On every prompt, reminds the agent to proactively consider and use all available tools, skills, MCP servers, Kiro Powers, and sub-agents to best solve the task.",
+  "version": "1",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before responding, take full advantage of every capability available to you to solve this task as completely and accurately as possible:\n\n1. TOOLS: Use dedicated tools (file read/write, search, getDiagnostics, terminal) instead of manual workarounds. Run independent tool calls in parallel.\n2. SKILLS: Check whether any available skill matches this task's domain (frameworks, languages, testing, security, design, etc.). If one matches, activate it BEFORE acting.\n3. MCP SERVERS: If an MCP tool or Kiro Power (e.g. context7 for docs, firebase, etc.) is relevant, activate and use it rather than relying on memory.\n4. SUB-AGENTS: For unfamiliar codebase areas or broad investigation, delegate to context-gatherer or another specialized sub-agent. Use specialist reviewers/build-resolvers when appropriate.\n5. WEB SEARCH: For current or version-specific information, search instead of guessing.\n6. POWERS: Consider installed Powers and their keywords; activate any that match the request.\n\nPick only the capabilities that genuinely help this specific request — do not invoke tools for trivial tasks where they add no value. Then proceed to complete the task end-to-end and verify your work."
+  },
+  "workspaceFolderName": "Video.AI",
+  "shortName": "max-capability-usage"
+}
