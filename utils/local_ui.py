@@ -32,7 +32,10 @@ app = FastAPI(title="Dynamic Narrative Video Engine - Local UI")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],  # P2-2: restrict to local dashboard only
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ],  # P2-2: restrict to local dashboard only
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -78,6 +81,7 @@ def _sanitize_path_component(value: str) -> str:
     # Reduce to safe characters
     return re.sub(r"[^a-zA-Z0-9_\-]", "_", value)
 
+
 # Mount output directory to serve final videos
 if not os.path.exists("studio_outputs"):
     os.makedirs("studio_outputs", exist_ok=True)
@@ -87,7 +91,6 @@ app.mount("/studio_outputs", StaticFiles(directory="studio_outputs"), name="stud
 if not os.path.exists("static"):
     os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 
 def run_pipeline_thread(script_content: str, topic: str):
@@ -136,7 +139,9 @@ def run_pipeline_thread(script_content: str, topic: str):
                 UIState.add_log(f"SUCCESS: Video completed! {web_path}")
             else:
                 UIState.status = "error"
-                UIState.add_log("Pipeline succeeded but output video path could not be resolved for UI link.")
+                UIState.add_log(
+                    "Pipeline succeeded but output video path could not be resolved for UI link."
+                )
         else:
             UIState.status = "error"
             UIState.add_log(f"Pipeline ended: {result.get('status')} — {result.get('reason', '')}")
@@ -167,13 +172,22 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
     Endpoint to receive uploaded light novels, stories, or scripts.
     """
     if getattr(UIState, "status", "idle") in ["running", "paused"]:
-        return JSONResponse(status_code=409, content={"status": "error", "message": "A pipeline is already running or paused. Please wait."})
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "message": "A pipeline is already running or paused. Please wait.",
+            },
+        )
 
     try:
         content = await file.read()
         script_text = content.decode("utf-8")
     except Exception as e:
-        return JSONResponse(status_code=400, content={"status": "error", "message": f"Failed to read script file: {e}"})
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Failed to read script file: {e}"},
+        )
 
     # Start execution in a separate background thread
     UIState.logs = ["Engine initialized."]
@@ -189,7 +203,11 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
     t.start()
     UIState.run_thread = t
 
-    return {"status": "success", "filename": file.filename, "message": "Pipeline started in background."}
+    return {
+        "status": "success",
+        "filename": file.filename,
+        "message": "Pipeline started in background.",
+    }
 
 
 @app.post("/api/upload_voice")
@@ -201,6 +219,7 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
     """
     try:
         import subprocess
+
         # Create directory if it doesn't exist
         os.makedirs("character_voices", exist_ok=True)
 
@@ -217,17 +236,34 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
                 f.write(content)
 
             # Optimize for XTTS: Trim to 10s, convert to Mono 22050Hz
-            subprocess.run([
-                "ffmpeg", "-y", "-i", str(temp_path),
-                "-t", "10", "-ac", "1", "-ar", "22050",
-                str(temp_out)
-            ], capture_output=True, check=True)
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(temp_path),
+                    "-t",
+                    "10",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "22050",
+                    str(temp_out),
+                ],
+                capture_output=True,
+                check=True,
+            )
 
             # Atomic replace to prevent concurrent clobbering
             shutil.move(str(temp_out), str(out_path))
 
-            UIState.add_log(f"Backend: Custom character voice sample optimized (10s) and uploaded to '{out_path}'")
-            return {"status": "success", "message": f"Successfully optimized {file.filename} as reference voice."}
+            UIState.add_log(
+                f"Backend: Custom character voice sample optimized (10s) and uploaded to '{out_path}'"
+            )
+            return {
+                "status": "success",
+                "message": f"Successfully optimized {file.filename} as reference voice.",
+            }
         finally:
             # Secure cleanup of temporary files under all branches
             try:
@@ -242,7 +278,9 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
                 pass
     except Exception as e:
         log.error(f"Voice upload failed: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"status": "error", "message": f"Failed to upload voice: {e}"})
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": f"Failed to upload voice: {e}"}
+        )
 
 
 @app.get("/api/status")
@@ -284,11 +322,7 @@ async def get_voices():
 
     voices = []
     for f in voices_dir.glob("*.wav"):
-        voices.append({
-            "name": f.stem,
-            "filename": f.name,
-            "size": f.stat().st_size
-        })
+        voices.append({"name": f.stem, "filename": f.name, "size": f.stat().st_size})
     return {"voices": voices}
 
 
@@ -314,10 +348,11 @@ async def preview_voice(character: str):
         return JSONResponse(status_code=400, content={"error": "Invalid character name"})
 
     if not wav_path.exists():
-        return JSONResponse(status_code=404, content={"error": f"Voice file not found: {safe_name}.wav"})
+        return JSONResponse(
+            status_code=404, content={"error": f"Voice file not found: {safe_name}.wav"}
+        )
 
-    return FileResponse(str(wav_path), media_type="audio/wav",
-                        filename=f"{safe_name}.wav")
+    return FileResponse(str(wav_path), media_type="audio/wav", filename=f"{safe_name}.wav")
 
 
 @app.get("/api/config")
@@ -329,19 +364,26 @@ async def get_ui_config():
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
             # P3-19: return the real saved value instead of always False
             "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),
-            "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6)
+            "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/config")
-async def save_ui_config(voice_engine: str = Form(...), dynamic_subtitles: str = Form(...), uncapped_scaling: str = Form(...), max_images_per_segment: int = Form(...)):
+async def save_ui_config(
+    voice_engine: str = Form(...),
+    dynamic_subtitles: str = Form(...),
+    uncapped_scaling: str = Form(...),
+    max_images_per_segment: int = Form(...),
+):
     try:
         # Load, modify, and save config
         config = load_config()
         config.setdefault("tts", {})["engine"] = voice_engine
-        config.setdefault("subtitles", {})["format"] = "tiktok" if dynamic_subtitles.lower() == "true" else "classic"
+        config.setdefault("subtitles", {})["format"] = (
+            "tiktok" if dynamic_subtitles.lower() == "true" else "classic"
+        )
         # P3-19: persist uncapped_scaling as a bool under script section
         uncapped_bool = uncapped_scaling.lower() == "true"
         config.setdefault("script", {})["uncapped_scaling"] = uncapped_bool
@@ -351,6 +393,7 @@ async def save_ui_config(voice_engine: str = Form(...), dynamic_subtitles: str =
         # Save to config.yaml
         config_path = Path("config/config.yaml")
         import yaml
+
         with open(config_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True)
 
@@ -358,8 +401,10 @@ async def save_ui_config(voice_engine: str = Form(...), dynamic_subtitles: str =
         return {"status": "success", "message": "Configuration saved successfully."}
     except Exception as e:
         log.error(f"Failed to save UI config: {e}", exc_info=True)
-        return JSONResponse(status_code=500, content={"status": "error", "message": f"Failed to save configuration: {e}"})
-
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Failed to save configuration: {e}"},
+        )
 
 
 @app.post("/api/consultation_reply")
@@ -384,18 +429,22 @@ async def manual_pause():
     if UIState.status == "running":
         UIState.add_log("User triggered MANUAL PAUSE. Pausing engine...")
         UIState.status = "paused"
-        UIState.active_question = "Manual Pause: Feel free to guide the creative direction or select resume."
+        UIState.active_question = (
+            "Manual Pause: Feel free to guide the creative direction or select resume."
+        )
         UIState.pause_event.clear()
         return {"status": "paused"}
     return {"status": "ignored", "message": "Engine is not currently running."}
 
 
 @app.post("/api/ab/generate")
-async def ab_generate(background_tasks: BackgroundTasks,
-                      segment_num: int = Form(1),
-                      prompt_a: str = Form(...),
-                      prompt_b: str = Form(...),
-                      topic: str = Form("default_topic")):
+async def ab_generate(
+    background_tasks: BackgroundTasks,
+    segment_num: int = Form(1),
+    prompt_a: str = Form(...),
+    prompt_b: str = Form(...),
+    topic: str = Form("default_topic"),
+):
     """
     Start an A/B generation job. Returns immediately with a job_id.
     Poll GET /api/ab/status/{job_id} to check progress.
@@ -413,8 +462,14 @@ async def ab_generate(background_tasks: BackgroundTasks,
                 _ab_jobs.pop(k, None)
 
         job_id = str(uuid.uuid4())[:8]
-        _ab_jobs[job_id] = {"status": "running", "images_a": [], "images_b": [],
-                            "segment_num": segment_num, "topic": topic, "error": None}
+        _ab_jobs[job_id] = {
+            "status": "running",
+            "images_a": [],
+            "images_b": [],
+            "segment_num": segment_num,
+            "topic": topic,
+            "error": None,
+        }
 
     def _run_ab(job_id: str, pa: str, pb: str):
         with global_scheduler.task("heavy", f"UI-AB:{job_id}"):
@@ -425,17 +480,20 @@ async def ab_generate(background_tasks: BackgroundTasks,
             try:
                 from utils import load_config
                 from video.image_gen.image_gen import generate_images
+
                 cfg = load_config()
 
                 # VRAM-protection: mirror the pipeline's rule that only one
                 # model should occupy VRAM while SD runs.
                 try:
                     from core.segment_runner import evict_ollama_models
+
                     evict_ollama_models(cfg, reason="UI-AB")
                 except Exception:
                     # Best-effort fallback: clear CUDA cache if torch is present.
                     try:
                         import torch
+
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
                     except Exception:
@@ -449,8 +507,7 @@ async def ab_generate(background_tasks: BackgroundTasks,
                 imgs_a = generate_images(pa, out_a, cfg)
                 with _ab_jobs_lock:
                     job["images_a"] = [
-                        "/studio_outputs/ab_test/" + job_id + "/variant_a/" + p.name
-                        for p in imgs_a
+                        "/studio_outputs/ab_test/" + job_id + "/variant_a/" + p.name for p in imgs_a
                     ]
                 # Generate variant B
                 with _ab_jobs_lock:
@@ -458,8 +515,7 @@ async def ab_generate(background_tasks: BackgroundTasks,
                 imgs_b = generate_images(pb, out_b, cfg)
                 with _ab_jobs_lock:
                     job["images_b"] = [
-                        "/studio_outputs/ab_test/" + job_id + "/variant_b/" + p.name
-                        for p in imgs_b
+                        "/studio_outputs/ab_test/" + job_id + "/variant_b/" + p.name for p in imgs_b
                     ]
                     job["status"] = "ready"
                 log.info(f"[A/B] Job {job_id} complete: {len(imgs_a)} + {len(imgs_b)} images")
@@ -493,8 +549,7 @@ async def ab_status(job_id: str):
 
 
 @app.post("/api/ab/pick")
-async def ab_pick(job_id: str = Form(...), choice: str = Form(...),
-                  segment_num: int = Form(1)):
+async def ab_pick(job_id: str = Form(...), choice: str = Form(...), segment_num: int = Form(1)):
     """
     Commit a chosen A/B variant. Copies chosen images to the segment's real output folder.
     choice: 'a' or 'b'
@@ -515,13 +570,17 @@ async def ab_pick(job_id: str = Form(...), choice: str = Form(...),
 
     # P2-3: validate topic and job_id before using them in path construction
     try:
-        safe_topic = _sanitize_path_component(job.get("topic", "default_topic").lower().replace(" ", "_"))
+        safe_topic = _sanitize_path_component(
+            job.get("topic", "default_topic").lower().replace(" ", "_")
+        )
         safe_job_id = _sanitize_path_component(job_id)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"error": f"Invalid path component: {exc}"})
 
     variant_dir = Path("studio_outputs") / "ab_test" / safe_job_id / f"variant_{choice}"
-    seg_images_dir = Path("studio_outputs") / safe_topic / "segments" / f"seg_{segment_num:02d}" / "images"
+    seg_images_dir = (
+        Path("studio_outputs") / safe_topic / "segments" / f"seg_{segment_num:02d}" / "images"
+    )
 
     # Assert both resolved paths stay under the output root (defence-in-depth)
     try:
@@ -545,9 +604,15 @@ async def ab_pick(job_id: str = Form(...), choice: str = Form(...),
     with _ab_jobs_lock:
         if job_id in _ab_jobs:
             _ab_jobs[job_id]["picked"] = choice
-    log.info(f"[A/B] Job {job_id}: user picked variant {choice.upper()}, {len(copied)} images copied")
-    return {"status": "committed", "choice": choice, "copied_to": str(seg_images_dir),
-            "images": copied}
+    log.info(
+        f"[A/B] Job {job_id}: user picked variant {choice.upper()}, {len(copied)} images copied"
+    )
+    return {
+        "status": "committed",
+        "choice": choice,
+        "copied_to": str(seg_images_dir),
+        "images": copied,
+    }
 
 
 if __name__ == "__main__":
@@ -558,6 +623,7 @@ if __name__ == "__main__":
     # Automatically open browser in a separate thread so it doesn't block startup
     def open_browser():
         import time
+
         time.sleep(3)  # Wait slightly longer for Vite to be ready
         try:
             log.info("Opening browser to new UI at http://localhost:5173 ...")
@@ -569,4 +635,3 @@ if __name__ == "__main__":
 
     # Enforce strictly local access
     uvicorn.run(app, host="127.0.0.1", port=8000)
-

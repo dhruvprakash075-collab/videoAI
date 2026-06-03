@@ -39,9 +39,7 @@ from .ui_state import UIState, _devanagari_ratio
 # ── DirectorAgent ──
 
 
-
 class DirectorAgent:
-
     """Creative Director LLM Agent.
 
 
@@ -52,11 +50,7 @@ class DirectorAgent:
 
     """
 
-
-
     _prompts = {}  # class-level cache for loaded YAML prompts
-
-
 
     def __init__(self, llm_config: dict, memory=None):
 
@@ -77,10 +71,7 @@ class DirectorAgent:
         self._force_refresh = False
 
         if not DirectorAgent._prompts:
-
             self._load_prompts()
-
-
 
     # ── LLM Interface (delegation shims → DirectorLlmClient) ────────────────
     # The actual implementations live in agents/llm_client.py. These shims
@@ -93,17 +84,26 @@ class DirectorAgent:
     def _ollama_opts(self) -> tuple:
         return self.llm._ollama_opts()
 
-    def _call_ollama(self, prompt: str, model_type: str = "director",
-                     format_json: bool = False, seed: int | None = None) -> str:
-        return self.llm._call_ollama(prompt, model_type=model_type,
-                                     format_json=format_json, seed=seed)
+    def _call_ollama(
+        self,
+        prompt: str,
+        model_type: str = "director",
+        format_json: bool = False,
+        seed: int | None = None,
+    ) -> str:
+        return self.llm._call_ollama(
+            prompt, model_type=model_type, format_json=format_json, seed=seed
+        )
 
-    def _call_ollama_chat(self, prompt: str, model_type: str = "translator",
-                          system_msg: str = "You are a professional translator. "
-                          "Translate the given text to Hindi (Devanagari script). "
-                          "Output only the translation.") -> str:
-        return self.llm._call_ollama_chat(prompt, model_type=model_type,
-                                          system_msg=system_msg)
+    def _call_ollama_chat(
+        self,
+        prompt: str,
+        model_type: str = "translator",
+        system_msg: str = "You are a professional translator. "
+        "Translate the given text to Hindi (Devanagari script). "
+        "Output only the translation.",
+    ) -> str:
+        return self.llm._call_ollama_chat(prompt, model_type=model_type, system_msg=system_msg)
 
     def _call_ollama_streaming(self, prompt: str, label: str = "") -> str:
         return self.llm._call_ollama_streaming(prompt, label=label)
@@ -111,18 +111,13 @@ class DirectorAgent:
     def _prewarm_ollama(self) -> None:
         self.llm._prewarm_ollama()
 
-
-
     def _parse_json(self, text: str, fallback: dict | None = None) -> dict:
-
         """Extract JSON from LLM response. Returns fallback on failure."""
 
         if not text:
-
             return fallback or {}
 
         try:
-
             match = None
 
             depth = 0
@@ -130,25 +125,19 @@ class DirectorAgent:
             start = -1
 
             for i, ch in enumerate(text):
-
                 if ch == "{":
-
                     if depth == 0:
-
                         start = i
 
                     depth += 1
 
                 elif ch == "}":
-
                     depth -= 1
 
                     if depth == 0 and start >= 0:
-
-                        candidate = text[start:i+1]
+                        candidate = text[start : i + 1]
 
                         try:
-
                             json.loads(candidate)
 
                             match = type("Match", (), {"group": lambda s, *a: candidate})()  # noqa: B023
@@ -156,43 +145,34 @@ class DirectorAgent:
                             break
 
                         except Exception:
-
                             start = -1
 
                             depth = 0
 
             if match:
-
                 return json.loads(match.group(0))
 
             return json.loads(text)
 
         except Exception:
-
             log.debug("JSON parse failed, using fallback")
 
             return fallback or {}
 
-
-
     # ── User Consultation ──
 
-
-
-    def consult_user(self, question: str, options: list[str] | None = None,
-
-                     allow_custom: bool = True) -> str:
-
+    def consult_user(
+        self, question: str, options: list[str] | None = None, allow_custom: bool = True
+    ) -> str:
         """Consult user via web UI or CLI fallback."""
 
         # A6: --yes flag — return default without prompting
-        if getattr(UIState, 'auto_accept', False):
-            _default = (options[0] if options else "Proceed as planned.")
+        if getattr(UIState, "auto_accept", False):
+            _default = options[0] if options else "Proceed as planned."
             log.info(f"[DIRECTOR] --yes flag: auto-accepting default for: {question[:60]}")
             return _default
 
-        if hasattr(UIState, 'is_ui_mode') and UIState.is_ui_mode:
-
+        if hasattr(UIState, "is_ui_mode") and UIState.is_ui_mode:
             UIState.add_log(f"[DIRECTOR PAUSE] {question}")
 
             UIState.active_question = question
@@ -202,14 +182,13 @@ class DirectorAgent:
             UIState.pause_event.clear()
 
             if not UIState.pause_event.wait(timeout=300):
+                log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
 
-                    log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
+                UIState.status = "running"
 
-                    UIState.status = "running"
+                UIState.active_question = None
 
-                    UIState.active_question = None
-
-                    return (options[0] if options else "Proceed as planned.")
+                return options[0] if options else "Proceed as planned."
 
             UIState.status = "running"
 
@@ -221,8 +200,6 @@ class DirectorAgent:
 
             return reply or "Proceed as planned."
 
-
-
         def _safe_input(prompt=""):
             try:
                 if not sys.stdin.isatty():
@@ -231,11 +208,9 @@ class DirectorAgent:
                 pass
 
             try:
-
                 return input(prompt)
 
             except (EOFError, KeyboardInterrupt):
-
                 print()
 
                 return None
@@ -254,7 +229,7 @@ class DirectorAgent:
         except Exception:
             _interactive = False
         if not _interactive:
-            _default = (options[0] if options else "Proceed as planned.")
+            _default = options[0] if options else "Proceed as planned."
             log.info(f"[DIRECTOR] Non-interactive — auto-selecting default for: {question[:60]}")
             return _default
 
@@ -268,29 +243,23 @@ class DirectorAgent:
 
         print(f"\n  {question}\n")
 
-
-
         if options:
-
             shown = options[:12]  # Show first 12, paginate beyond
 
             for idx, opt in enumerate(shown, 1):
-
                 print(f"  [{idx}] {opt}")
 
             if len(options) > 12:
-
                 remaining = len(options) - 12
 
-                print(f"  [{len(shown)+1}] Show {remaining} more option{'s' if remaining>1 else ''}...")
+                print(
+                    f"  [{len(shown) + 1}] Show {remaining} more option{'s' if remaining > 1 else ''}..."
+                )
 
             if allow_custom:
-
                 print("  [0] Custom (type your own)")
 
             print()
-
-
 
             _attempts = 0
             while True:
@@ -316,7 +285,9 @@ class DirectorAgent:
                         idx = int(choice) - 1
                         if 0 <= idx < len(options):
                             return options[idx]
-                        print(f"  Invalid choice. Please enter a number between 1 and {len(options)}, or 0 for custom input.")
+                        print(
+                            f"  Invalid choice. Please enter a number between 1 and {len(options)}, or 0 for custom input."
+                        )
                     except ValueError:
                         print("  Invalid input. Please enter a number.")
                 except Exception as e:
@@ -324,7 +295,6 @@ class DirectorAgent:
                     return options[0] if options else "Proceed as planned."
 
         else:
-
             reply = _safe_input("  Your response: ")
             if reply is None:
                 return "Proceed with default settings."
@@ -332,12 +302,7 @@ class DirectorAgent:
 
             return reply if reply else "Proceed as planned."
 
-
-
-    def consult_fields(self, fields, vision_summary="",
-
-                        timeout=0, allow_regenerate=False):
-
+    def consult_fields(self, fields, vision_summary="", timeout=0, allow_regenerate=False):
         """Present multiple choice fields as a single form.
 
 
@@ -352,9 +317,8 @@ class DirectorAgent:
 
         """
 
-
         # A6: --yes flag — return all defaults without prompting
-        if getattr(UIState, 'auto_accept', False):
+        if getattr(UIState, "auto_accept", False):
             log.info("[DIRECTOR] --yes flag: auto-accepting all field defaults")
             results = {}
             for f in fields:
@@ -362,14 +326,10 @@ class DirectorAgent:
                 results[f["key"]] = opts[0] if opts else f.get("current", "")
             return results
 
-        if hasattr(UIState, 'is_ui_mode') and UIState.is_ui_mode:
-
+        if hasattr(UIState, "is_ui_mode") and UIState.is_ui_mode:
             batch_text = "\n".join(
-
-                "[%d] %s (current: %s)" % (i+1, f['label'], f['current'])
-
+                "[%d] %s (current: %s)" % (i + 1, f["label"], f["current"])
                 for i, f in enumerate(fields)
-
             )
 
             UIState.active_question = "Multiple decisions needed:\n" + batch_text
@@ -379,14 +339,13 @@ class DirectorAgent:
             UIState.pause_event.clear()
 
             if not UIState.pause_event.wait(timeout=300):
+                log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
 
-                    log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
+                UIState.status = "running"
 
-                    UIState.status = "running"
+                UIState.active_question = None
 
-                    UIState.active_question = None
-
-                    return {}
+                return {}
 
             UIState.status = "running"
 
@@ -397,28 +356,22 @@ class DirectorAgent:
             results = {}
 
             for line in reply.strip().split("\n"):
-
                 for part in line.replace(",", " ").split():
-
                     if ":" in part:
-
                         try:
-
                             fi, ci = part.split(":", 1)
 
                             fi, ci = int(fi) - 1, int(ci) - 1
 
-                            if 0 <= fi < len(fields) and 0 <= ci < len(fields[fi].get("options", [])):
-
+                            if 0 <= fi < len(fields) and 0 <= ci < len(
+                                fields[fi].get("options", [])
+                            ):
                                 results[fields[fi]["key"]] = fields[fi]["options"][ci]
 
                         except (ValueError, IndexError):
-
                             pass
 
             return results
-
-
 
         def _safe_input(prompt=""):
             try:
@@ -428,16 +381,12 @@ class DirectorAgent:
                 pass
 
             try:
-
                 return input(prompt)
 
             except (EOFError, KeyboardInterrupt):
-
                 print()
 
                 return ""
-
-
 
         sep = "=" * 60
 
@@ -448,45 +397,31 @@ class DirectorAgent:
         print(sep)
 
         if vision_summary:
-
             print(vision_summary)
 
             print("  " + sep)
 
-
-
         fields = sorted(fields, key=lambda f: f.get("impact", 0), reverse=True)
 
-
-
         for idx, f in enumerate(fields, 1):
+            print("\n  [%d] %s" % (idx, f["label"]))
 
-            print("\n  [%d] %s" % (idx, f['label']))
-
-            print("      Director's pick: " + f['current'])
+            print("      Director's pick: " + f["current"])
 
             opts = f.get("options", [])
 
             if opts:
-
                 for oi, opt in enumerate(opts, 1):
-
                     print("      %d. %s" % (oi, opt))
 
             print("      0. Skip (keep default)")
 
             if allow_regenerate:
-
                 print("      r. Regenerate suggestions")
-
-
 
         print("\n  Quick mode: type '%d' to accept ALL defaults\n" % (len(fields) + 1))
 
-
-
         if timeout > 0:
-
             user_input: list = [None]
 
             def _timer():
@@ -494,7 +429,6 @@ class DirectorAgent:
                 time.sleep(timeout)
 
                 if user_input[0] is None:
-
                     print("\n  [Timeout] Accepting all defaults.")
 
                     user_input[0] = str(len(fields) + 1)
@@ -504,126 +438,94 @@ class DirectorAgent:
             t.start()
 
             try:
-
-                line = (_safe_input(
-
-                    "\n  Format: field:choice (e.g. '1:2 3:5') or Enter for all defaults: "
-
-                ) or "").strip()
+                line = (
+                    _safe_input(
+                        "\n  Format: field:choice (e.g. '1:2 3:5') or Enter for all defaults: "
+                    )
+                    or ""
+                ).strip()
 
             finally:
-
                 user_input[0] = "done"
 
         else:
-
-            line = (_safe_input(
-
-                "\n  Format: field:choice (e.g. '1:2 3:5') or Enter for all defaults: "
-
-            ) or "").strip()
-
-
+            line = (
+                _safe_input("\n  Format: field:choice (e.g. '1:2 3:5') or Enter for all defaults: ")
+                or ""
+            ).strip()
 
         results = {}
 
         if not line or line == str(len(fields) + 1):
-
             for f in fields:
-
                 opts = f.get("options", [])
 
                 results[f["key"]] = opts[0] if opts else f.get("current", "")
 
             return results
 
-
-
         if line.lower() == "r" and allow_regenerate:
-
             return {"_regenerate": True}
 
-
-
         for part in line.replace(",", " ").split():
-
             part = part.strip()
 
             if not part or ":" not in part:
-
                 continue
 
             try:
-
                 fi_str, ci_str = part.split(":", 1)
 
                 fi, ci = int(fi_str) - 1, int(ci_str) - 1
 
                 if 0 <= fi < len(fields):
-
                     opts = fields[fi].get("options", [])
 
                     if ci == -1:
-
-                        results[fields[fi]["key"]] = opts[0] if opts else fields[fi].get("current", "")
+                        results[fields[fi]["key"]] = (
+                            opts[0] if opts else fields[fi].get("current", "")
+                        )
 
                     elif 0 <= ci < len(opts):
-
                         results[fields[fi]["key"]] = opts[ci]
 
             except (ValueError, IndexError):
-
                 continue
 
-
-
         for f in fields:
-
             if f["key"] not in results:
-
                 opts = f.get("options", [])
 
                 results[f["key"]] = opts[0] if opts else f.get("current", "")
 
-
-
         return results
 
+    # ── Insert consult_on_config body here ──
 
-
-# ── Insert consult_on_config body here ──
-
-
-
-
-
-
-    def consult_user_stream(self, question: str, options: list[str] | None = None,
-                            allow_custom: bool = True) -> str:
+    def consult_user_stream(
+        self, question: str, options: list[str] | None = None, allow_custom: bool = True
+    ) -> str:
         """Streaming variant: options appear progressively."""
         if hasattr(UIState, "is_ui_mode") and UIState.is_ui_mode:
             import time as _ts
+
             UIState.add_log(f"[STREAM] {question}")
             if options:
                 for i, opt in enumerate(options[:12]):
-                    UIState.add_log(f"[OPTION {i+1}] {opt}")
+                    UIState.add_log(f"[OPTION {i + 1}] {opt}")
                     _ts.sleep(0.1)
         return self.consult_user(question, options, allow_custom)
 
     @classmethod
-
     def _load_prompts(cls):
-
         """Load prompt templates from prompts.yaml."""
 
         if cls._prompts:
-
             return
 
         import yaml  # type: ignore[import-untyped]
 
         try:
-
             # prompts.yaml lives at the repo root, not in agents/
             prompts_path = Path(__file__).parent.parent / "prompts.yaml"
             if not prompts_path.exists():
@@ -631,60 +533,51 @@ class DirectorAgent:
                 prompts_path = Path(__file__).parent / "prompts.yaml"
 
             if prompts_path.exists():
-
                 with open(prompts_path, encoding="utf-8") as f:
-
                     cls._prompts = yaml.safe_load(f) or {}
 
-                log.info(f"[DIRECTOR] Loaded {len(cls._prompts)} prompt templates from {prompts_path}")
+                log.info(
+                    f"[DIRECTOR] Loaded {len(cls._prompts)} prompt templates from {prompts_path}"
+                )
 
         except Exception as e:
-
             log.warning(f"[DIRECTOR] Failed to load prompts: {e}")
 
             cls._prompts = {}
 
-
-
     def _prompt(self, key: str, **kwargs) -> str:
-
         """Get a formatted prompt template by key."""
 
         template = DirectorAgent._prompts.get(key, "")
 
         if not template:
-
             return ""
 
         try:
-
             # Escape user-controlled values to prevent attribute injection via format()
 
             safe_kwargs = {}
 
             for k, v in kwargs.items():
-
                 if isinstance(v, str):
-
                     safe_kwargs[k] = v.replace("{", "{{").replace("}", "}}")
 
                 else:
-
                     safe_kwargs[k] = v
 
             return template.format(**safe_kwargs)
 
         except KeyError:
-
             return template
 
-
-
     def _research_cache_path(self, topic: str) -> "Path":
-
         """Path for cached research results."""
 
-        cdir = self.llm_config.get("cache_dir", "cache") if isinstance(self.llm_config, dict) else "cache"
+        cdir = (
+            self.llm_config.get("cache_dir", "cache")
+            if isinstance(self.llm_config, dict)
+            else "cache"
+        )
 
         cache_dir = Path(cdir)
 
@@ -692,20 +585,14 @@ class DirectorAgent:
 
         return cache_dir / f"research_{re.sub(r'[^a-z0-9_]', '_', topic.strip().lower())[:60]}.json"
 
-
-
     # ── Research & Analysis ──
 
-
-
     def research_story(self, topic: str) -> dict:
-
         """Search the web for background on this topic."""
 
         log.info(f"[DIRECTOR] Phase 1/5: Researching '{topic}'...")
 
         try:
-
             from utils.web_search import search_story_web
 
             result = search_story_web(topic)
@@ -714,21 +601,26 @@ class DirectorAgent:
 
             raw = result.get("wikipedia_results", []) + result.get("ddg_results", [])
 
-            return {"topic": topic, "combined_summary": summary, "result_count": len(raw), "raw_results": raw}
+            return {
+                "topic": topic,
+                "combined_summary": summary,
+                "result_count": len(raw),
+                "raw_results": raw,
+            }
 
         except ImportError:
-
             log.warning("[DIRECTOR] web_search module not available, using empty research")
 
             return {"topic": topic, "combined_summary": topic, "result_count": 0}
 
-
-
     def _vision_cache_path(self) -> "Path":
-
         """Path to the vision analysis cache file."""
 
-        cdir = self.llm_config.get("cache_dir", "cache") if isinstance(self.llm_config, dict) else "cache"
+        cdir = (
+            self.llm_config.get("cache_dir", "cache")
+            if isinstance(self.llm_config, dict)
+            else "cache"
+        )
 
         cache_dir = Path(cdir)
 
@@ -736,55 +628,40 @@ class DirectorAgent:
 
         return cache_dir / "vision_cache.json"
 
-
-
     def _load_vision_cache(self) -> dict:
-
         """Load cached vision analyses, keyed by normalized topic."""
 
         cp = self._vision_cache_path()
 
         try:
-
             if cp.exists():
-
                 return json.loads(cp.read_text(encoding="utf-8"))
 
         except Exception:
-
             pass
 
         return {}
 
-
-
     def _save_vision_cache(self, cache: dict) -> None:
-
         """Persist vision cache to disk."""
 
         try:
-
             self._vision_cache_path().write_text(json.dumps(cache, indent=2), encoding="utf-8")
 
         except Exception as e:
-
             log.warning(f"[DIRECTOR] Failed to persist vision cache: {e}")
 
-
-
     def _topic_key(self, topic: str) -> str:
-
         """Normalise a topic into a cache key."""
         return re.sub(r"[^a-z0-9_]", "_", topic.strip().lower())[:80]
 
-
-
-    def analyze_with_research(self, topic: str, research: dict,
-
-                              target_duration_min: int = 10,
-
-                              content_text: str | None = None) -> dict:
-
+    def analyze_with_research(
+        self,
+        topic: str,
+        research: dict,
+        target_duration_min: int = 10,
+        content_text: str | None = None,
+    ) -> dict:
         """Phase 2: Director analyzes story + research. Returns vision doc."""
 
         # Reset the duration estimate for this run
@@ -793,8 +670,13 @@ class DirectorAgent:
 
         # Check cache first
         from utils.vision_cache import VisionCache
+
         cache = VisionCache(
-            cache_dir=str(Path(self.llm_config.get("cache_dir", "cache")) if isinstance(self.llm_config, dict) else "cache"),
+            cache_dir=str(
+                Path(self.llm_config.get("cache_dir", "cache"))
+                if isinstance(self.llm_config, dict)
+                else "cache"
+            ),
             # P2-12 fix: thread force_refresh so the caller can bypass a stale vision doc.
             force_refresh=getattr(self, "_force_refresh", False),
         )
@@ -802,182 +684,133 @@ class DirectorAgent:
         if cached is not None:
             return cached
 
-
-
-
         log.info("[DIRECTOR] Phase 2/5: Analyzing story...")
-
-
 
         research_text = research.get("combined_summary", "")
 
         content_text = content_text or ""
 
-
-
         # Auto-calculate video duration from uploaded content density
 
         if content_text and len(content_text) > 500:
-
             total_words = len(content_text.split())
 
             estimated_minutes = max(5, int((total_words / 150) * 1.15))
 
-
             self._last_estimated_minutes = estimated_minutes
 
-            log.info(f"[DIRECTOR] Content analysis: {total_words} words -> approx {estimated_minutes} min")
-
-
+            log.info(
+                f"[DIRECTOR] Content analysis: {total_words} words -> approx {estimated_minutes} min"
+            )
 
             content_block = (
-
                 f"The following story is present:\n{content_text[:3000]}\n"
-
                 f"Word count: {total_words} words.\n"
-
                 f"You MUST include a 'recommended_duration_min' field in your JSON output.\n"
-
                 f"Decide the optimal video duration based on:\n"
-
                 f"  - Content length and complexity\n"
-
                 f"  - Number of characters and story arcs\n"
-
                 f"  - Pacing needs (slow lore vs fast action)\n"
-
                 f"  - Emotional beats and dramatic structure\n"
-
                 f"  - Whether the story has natural break points\n"
-
                 f"Rules:\n"
-
                 f"  - Minimum: 5 minutes\n"
-
                 f"  - Maximum: 180 minutes (3 hours)\n"
-
                 f"  - For short stories (<1000 words): 5-15 min\n"
-
                 f"  - For medium stories (1000-5000 words): 15-45 min\n"
-
                 f"  - For long stories (5000-15000 words): 45-90 min\n"
-
                 f"  - For epic stories (15000+ words): 90-180 min\n"
-
                 f"  - Prioritize story completeness over arbitrary length\n"
-
                 f"Estimated from word count: ~{estimated_minutes} min (use as reference, not hard rule)."
-
             )
 
         else:
-
             content_block = ""
 
-
-
-        prompt = self._prompt("analyze_story",
-
+        prompt = self._prompt(
+            "analyze_story",
             topic=topic,
-
             research_text=research_text,
-
             content_block=content_block,
-
         ) or (
-
             f"You are the Creative Director for a narrative video production.\n"
-
             f"Analyze this story topic: {topic}\n"
-
             f"Research: {research_text[:1000]}\n"
-
             f"{content_block}\n"
-
             f"Output JSON with: characters, visual_style, theme, emotions, pacing, "
-
             f"shot_distribution, tts_recommendation, subtitle_style, "
-
             f"ambiguity_detected, ambiguity_question, ambiguity_fields, recommendations, "
-
             f"recommended_duration_min.\n"
-
             f"recommended_duration_min: the optimal video length in minutes based on the content analysis.\n"
-
             f"Output ONLY the JSON."
-
         )
 
-
-
-        res = self._call_ollama(prompt, format_json=True, seed=int(hashlib.sha256(topic.encode()).hexdigest()[:8], 16))
+        res = self._call_ollama(
+            prompt, format_json=True, seed=int(hashlib.sha256(topic.encode()).hexdigest()[:8], 16)
+        )
 
         vision_doc = self._validate_vision_doc(
-
-            self._parse_json(res, {
-
-                "characters": [{"name": "Protagonist", "description": "The central character", "voice": "clear"}],
-
-                "visual_style": "hybrid 2d anime visual novel style",
-
-                "theme": topic,
-
-                "emotions": "tension, curiosity",
-
-                "pacing": "moderate",
-
-                "shot_distribution": {"establishing": 0.10, "environment": 0.20,
-
-                                     "character_medium": 0.35, "character_closeup": 0.20,
-
-                                     "emotional_detail": 0.10, "action": 0.05},
-
-                "tts_recommendation": "chattts",
-
-                "subtitle_style": {"format": "classic", "size": "small", "color": "white", "position": "bottom"},
-
-                "ambiguity_detected": False,
-
-                "ambiguity_question": "",
-
-                "ambiguity_fields": [],
-
-                "recommendations": [],
-
-                "recommended_duration_min": 10,
-
-                "topic": topic,
-
-            })
-
+            self._parse_json(
+                res,
+                {
+                    "characters": [
+                        {
+                            "name": "Protagonist",
+                            "description": "The central character",
+                            "voice": "clear",
+                        }
+                    ],
+                    "visual_style": "hybrid 2d anime visual novel style",
+                    "theme": topic,
+                    "emotions": "tension, curiosity",
+                    "pacing": "moderate",
+                    "shot_distribution": {
+                        "establishing": 0.10,
+                        "environment": 0.20,
+                        "character_medium": 0.35,
+                        "character_closeup": 0.20,
+                        "emotional_detail": 0.10,
+                        "action": 0.05,
+                    },
+                    "tts_recommendation": "chattts",
+                    "subtitle_style": {
+                        "format": "classic",
+                        "size": "small",
+                        "color": "white",
+                        "position": "bottom",
+                    },
+                    "ambiguity_detected": False,
+                    "ambiguity_question": "",
+                    "ambiguity_fields": [],
+                    "recommendations": [],
+                    "recommended_duration_min": 10,
+                    "topic": topic,
+                },
+            )
         )
-
-
 
         # Cache the result
 
         _input_hash = hashlib.sha256(
-            (topic + json.dumps(vision_doc if isinstance(vision_doc, dict) else {}, sort_keys=True)).encode()
+            (
+                topic
+                + json.dumps(vision_doc if isinstance(vision_doc, dict) else {}, sort_keys=True)
+            ).encode()
         ).hexdigest()[:12]
         vision_doc["source_hash"] = _input_hash
         cache.set(topic, vision_doc, content_text=content_text or "")
 
-
-        log.info(f"[DIRECTOR] Vision doc: {len(vision_doc.get('characters', []))} character(s), "
-
-                 f"style={vision_doc.get('visual_style')}, pacing={vision_doc.get('pacing')}")
+        log.info(
+            f"[DIRECTOR] Vision doc: {len(vision_doc.get('characters', []))} character(s), "
+            f"style={vision_doc.get('visual_style')}, pacing={vision_doc.get('pacing')}"
+        )
 
         return vision_doc
 
-
-
     def consult_on_config(self, vision_doc: dict):
-
         """Phase 3: Present config decisions to user as a single form."""
 
         log.info("[DIRECTOR] Phase 3/5: Consulting user...")
-
-
 
         # Vision summary header (S8)
 
@@ -1000,62 +833,37 @@ class DirectorAgent:
         char_names = ", ".join(c.get("name", "?") for c in chars[:4])
 
         if len(chars) > 4:
-
             char_names += " +%d more" % (len(chars) - 4)
 
-
-
         vision_summary = (
-
-            "\n  Story: {}\n"
-
-            "  Style: {}  |  Pacing: {}  |  Emotions: {}\n"
-
-            "  Characters: {}"
-
+            "\n  Story: {}\n  Style: {}  |  Pacing: {}  |  Emotions: {}\n  Characters: {}"
         ).format(
-
             vision_doc.get("theme", "Untitled"),
-
             vision_doc.get("visual_style", "?"),
-
             vision_doc.get("pacing", "?"),
-
             vision_doc.get("emotions", "?"),
-
             char_names,
-
         )
-
-
 
         # Ambiguity check
 
         ambiguity_q = vision_doc.get("ambiguity_question", "")
 
         if vision_doc.get("ambiguity_detected") and ambiguity_q:
-
             reply = self.consult_user(
-
                 f"Ambiguity detected: {ambiguity_q}",
-
                 allow_custom=True,
-
             )
 
             user_responses = {}
 
             if reply is not None and reply.strip():
-
                 user_responses["ambiguity_resolution"] = reply.strip()
 
                 log.info(f"[DIRECTOR] User resolved ambiguity: {reply:.80}...")
 
         else:
-
             user_responses = {}
-
-
 
         # Questionnaire
 
@@ -1063,100 +871,71 @@ class DirectorAgent:
 
         q_data = {"fields": {}, "breakdown": {}}
 
-
-
         if uncertain_fields:
-
             chars_text = "\n".join(
-
-                "  {}: {}".format(c.get("name", "?"), c.get("description", ""))
-
-                for c in chars[:5]
-
+                "  {}: {}".format(c.get("name", "?"), c.get("description", "")) for c in chars[:5]
             )
-
-
 
             current_vals = {f: str(vision_doc.get(f, "not set")) for f in uncertain_fields}
 
-            questionnaire_prompt = self._prompt("consultation_questionnaire",
-
+            questionnaire_prompt = self._prompt(
+                "consultation_questionnaire",
                 theme=vision_doc.get("theme", "?"),
-
                 visual_style=vision_doc.get("visual_style", "?"),
-
                 pacing=vision_doc.get("pacing", "?"),
-
                 emotions=vision_doc.get("emotions", "?"),
-
                 chars_text=chars_text,
-
                 fields_list=", ".join(uncertain_fields),
-
                 current_values=json.dumps(current_vals),
-
             ) or (
-
                 "You are the Director of a video production.\n"
-
                 "Uncertain about: {}.\n"
-
                 "Current values: {}\n"
-
                 "Output JSON with 'fields' key containing per-field options.\n"
-
                 'Example: {{"fields": {{"visual_style": {{"options": ["gothic", "watercolor", '
-
                 '"bright shonen"]}}}}, "pacing": {{"options": ["slow", "moderate", "fast"]}}}}}}}}\n'
-
             ).format(", ".join(uncertain_fields), json.dumps(current_vals))
 
-
-
             questionnaire_prompt += (
-
                 "\n\nAlso provide a creative screenwriter breakdown as a 'breakdown' key:\n"
-
                 '{"breakdown": {"segment_count": <int 3-8>, "words_per_segment": <int 100-400>, '
-
                 '"image_count_per_segment": <int 5-12>, "opening_hook_style": "...", "pacing_notes": "..."}}\n'
-
             )
-
-
 
             # S10: Impact ranking for progressive disclosure
 
             impact_order = {
-
-                "visual_style": 10, "pacing": 9, "subtitle_style": 8,
-
-                "tts_engine": 7, "narrator_voice": 5, "color_palette": 4,
-
-                "music_style": 3, "shot_distribution": 2, "transition_style": 1,
-
+                "visual_style": 10,
+                "pacing": 9,
+                "subtitle_style": 8,
+                "tts_engine": 7,
+                "narrator_voice": 5,
+                "color_palette": 4,
+                "music_style": 3,
+                "shot_distribution": 2,
+                "transition_style": 1,
             }
-
-
 
             max_regenerations = 2
 
             for regen_attempt in range(max_regenerations + 1):
-
-                q_raw = self._call_ollama(questionnaire_prompt, format_json=True, seed=int(hashlib.sha256(questionnaire_prompt.encode()).hexdigest()[:8], 16))
+                q_raw = self._call_ollama(
+                    questionnaire_prompt,
+                    format_json=True,
+                    seed=int(hashlib.sha256(questionnaire_prompt.encode()).hexdigest()[:8], 16),
+                )
 
                 q_data = self._parse_json(q_raw, {"fields": {}, "breakdown": {}})
 
-                q_fields = q_data.get("fields", {}) if isinstance(q_data.get("fields"), dict) else {}
+                q_fields = (
+                    q_data.get("fields", {}) if isinstance(q_data.get("fields"), dict) else {}
+                )
 
                 q_fields_lower = {k.lower(): v for k, v in q_fields.items()}
-
-
 
                 field_forms = []
 
                 for field in uncertain_fields:
-
                     field_key = field.strip().lower()
 
                     fdata = q_fields_lower.get(field_key, {})
@@ -1164,13 +943,12 @@ class DirectorAgent:
                     options = fdata.get("options", []) if isinstance(fdata, dict) else []
 
                     if not isinstance(options, list) or len(options) < 2:
-
-                        options = ["Keep as-is: {}".format(vision_doc.get(field, "current setting")),
-
-                                   "Something different"]
+                        options = [
+                            "Keep as-is: {}".format(vision_doc.get(field, "current setting")),
+                            "Something different",
+                        ]
 
                     else:
-
                         # S4: validate relevance
 
                         vision_value = str(vision_doc.get(field, "")).lower()
@@ -1178,79 +956,59 @@ class DirectorAgent:
                         vision_words = set(vision_value.split()) if vision_value else set()
 
                         if vision_words:
-
                             any_relevant = any(
-
                                 bool(vision_words & set(str(o).lower().split()))
-
                                 for o in options[:3]
-
                             )
 
                             if not any_relevant:
+                                options = [
+                                    "Keep as-is: {}".format(
+                                        vision_doc.get(field, "current setting")
+                                    ),
+                                    *options,
+                                ]
 
-                                options = ["Keep as-is: {}".format(vision_doc.get(field, "current setting")), *options]
-
-
-
-                    field_forms.append({
-
-                        "key": field_key,
-
-                        "label": field.replace("_", " ").title(),
-
-                        "current": str(vision_doc.get(field, "not set")),
-
-                        "options": options,
-
-                        "impact": impact_order.get(field_key, 5),
-
-                    })
-
-
+                    field_forms.append(
+                        {
+                            "key": field_key,
+                            "label": field.replace("_", " ").title(),
+                            "current": str(vision_doc.get(field, "not set")),
+                            "options": options,
+                            "impact": impact_order.get(field_key, 5),
+                        }
+                    )
 
                 # S6: Single form. S7: Enter=default. S9: regenerate. S13: timeout.
 
                 import os
 
                 try:
-
                     timeout = int(os.environ.get("DIRECTOR_TIMEOUT", "0"))
 
                     timeout = max(0, timeout)  # clamp negative
 
                 except (ValueError, TypeError):
-
                     timeout = 0
 
                 field_results = self.consult_fields(
-
                     field_forms,
-
                     vision_summary=vision_summary,
-
                     timeout=timeout,
-
                     allow_regenerate=(regen_attempt < max_regenerations),
-
                 )
 
-
-
                 if field_results.get("_regenerate"):
-
-                    log.info("[DIRECTOR] Regenerating options (attempt %d/%d)" %
-
-                             (regen_attempt + 1, max_regenerations))
+                    log.info(
+                        "[DIRECTOR] Regenerating options (attempt %d/%d)"
+                        % (regen_attempt + 1, max_regenerations)
+                    )
 
                     continue
-
-
 
                 # S12: skip storing fields identical to vision_doc default
 
                 for f_meta in field_forms:
-
                     k = str(f_meta["key"])
 
                     choice = str(field_results.get(k, ""))
@@ -1259,101 +1017,98 @@ class DirectorAgent:
 
                     stripped_default = f"Keep as-is: {default_val}"
 
-                    if (choice and choice not in (stripped_default, default_val) and not choice.startswith("Keep as-is")):
-
+                    if (
+                        choice
+                        and choice not in (stripped_default, default_val)
+                        and not choice.startswith("Keep as-is")
+                    ):
                         user_responses[k] = choice
 
                         log.info(f"[DIRECTOR] '{k}' = {choice[:60]}")
 
                     else:
-
                         log.info(f"[DIRECTOR] '{k}' kept default: {default_val[:60]}")
-
-
 
                 break
 
-
-
-            log.info("[DIRECTOR] User consulted on %d fields (of %d offered)" %
-
-                     (len(user_responses), len(uncertain_fields)))
-
-
+            log.info(
+                "[DIRECTOR] User consulted on %d fields (of %d offered)"
+                % (len(user_responses), len(uncertain_fields))
+            )
 
         # Custom instructions
 
-        ci_options_prompt = self._prompt("custom_instructions_options",
-
+        ci_options_prompt = self._prompt(
+            "custom_instructions_options",
             theme=vision_doc.get("theme", "?"),
-
             visual_style=vision_doc.get("visual_style", "?"),
-
             pacing=vision_doc.get("pacing", "?"),
-
             emotions=vision_doc.get("emotions", "?"),
-
         )
 
         if not ci_options_prompt:
-
             ci_options_prompt = "Suggest 3-5 production tweaks. Include No additional instructions as option 1. Output one per line."
 
-        ci_options_prompt += ('\n\nOutput JSON: {"options": ["option 1", "option 2", ...]}. '
+        ci_options_prompt += (
+            '\n\nOutput JSON: {"options": ["option 1", "option 2", ...]}. '
+            "Include exactly 3-5 options."
+        )
 
-                              'Include exactly 3-5 options.')
-
-        ci_raw = self._call_ollama(ci_options_prompt, format_json=True, seed=int(hashlib.sha256(ci_options_prompt.encode()).hexdigest()[:8], 16))
+        ci_raw = self._call_ollama(
+            ci_options_prompt,
+            format_json=True,
+            seed=int(hashlib.sha256(ci_options_prompt.encode()).hexdigest()[:8], 16),
+        )
 
         ci_options = []
 
         if ci_raw:
-
             ci_parsed = self._parse_json(ci_raw, {"options": []})
 
             if isinstance(ci_parsed, dict) and "options" in ci_parsed:
-
-                ci_options = [o for o in ci_parsed["options"] if isinstance(o, str) and len(o.strip()) > 3]
+                ci_options = [
+                    o for o in ci_parsed["options"] if isinstance(o, str) and len(o.strip()) > 3
+                ]
 
             if not ci_options:
-
-                ci_options = [o.strip().strip(".-") for o in ci_raw.splitlines() if o.strip().strip(".-")]
+                ci_options = [
+                    o.strip().strip(".-") for o in ci_raw.splitlines() if o.strip().strip(".-")
+                ]
 
                 ci_options = [o for o in ci_options if len(o) > 5]
 
         if not ci_options or len(ci_options) < 2:
-
             ci_options = [
-
                 "No additional instructions \u2014 proceed with Director's plan",
-
                 "Add my own custom instructions",
-
             ]
 
         ci_reply = self.consult_user(
-
             "Any additional instructions for the production?",
-
             options=ci_options,
-
             allow_custom=True,
-
         )
 
-        if ci_reply and ci_reply != ci_options[0] and "proceed with director" not in ci_reply.lower():
-
+        if (
+            ci_reply
+            and ci_reply != ci_options[0]
+            and "proceed with director" not in ci_reply.lower()
+        ):
             # Sanitize: block common prompt injection patterns
 
             sanitized = ci_reply
 
-            for bad_phrase in ["ignore previous instructions", "ignore all previous",
-
-                               "system prompt", "you are now", "new instructions:"]:
-
+            for bad_phrase in [
+                "ignore previous instructions",
+                "ignore all previous",
+                "system prompt",
+                "you are now",
+                "new instructions:",
+            ]:
                 if bad_phrase in sanitized.lower():
-
-                    log.warning(f"[DIRECTOR] Prompt injection detected in custom_instructions: '{sanitized[:60]}'")
+                    log.warning(
+                        f"[DIRECTOR] Prompt injection detected in custom_instructions: '{sanitized[:60]}'"
+                    )
 
                     sanitized = sanitized.replace(bad_phrase, "[FILTERED]")
 
@@ -1362,32 +1117,27 @@ class DirectorAgent:
             log.info(f"[DIRECTOR] Custom instructions: {ci_reply:.60}")
 
         else:
-
             log.info("[DIRECTOR] No custom instructions")
-
-
 
         # Extract writer breakdown from combined response
 
-        writer_input = q_data.get("breakdown", {}) if isinstance(q_data.get("breakdown"), dict) else {}
+        writer_input = (
+            q_data.get("breakdown", {}) if isinstance(q_data.get("breakdown"), dict) else {}
+        )
 
-        if writer_input and "segment_count" in writer_input and isinstance(writer_input["segment_count"], (int, float)):
-
+        if (
+            writer_input
+            and "segment_count" in writer_input
+            and isinstance(writer_input["segment_count"], (int, float))
+        ):
             self._last_segment_count = int(writer_input["segment_count"])
 
-
-
-        log.info("[DIRECTOR] Phase 3 complete: %d user changes, %s segments from writer" %
-
-                 (len(user_responses), writer_input.get("segment_count", "?")))
+        log.info(
+            "[DIRECTOR] Phase 3 complete: %d user changes, %s segments from writer"
+            % (len(user_responses), writer_input.get("segment_count", "?"))
+        )
 
         return user_responses, writer_input
-
-
-
-
-
-
 
     def _validate_vision_doc(self, vision: dict) -> dict:
         """Validate and normalise vision document fields.
@@ -1427,8 +1177,7 @@ class DirectorAgent:
             _tone = vs.get("tone", "")
             _elems = vs.get("elements", [])
             vision["visual_style"] = (
-                f"{_tone}, {', '.join(str(e) for e in _elems)}"
-                if _elems else (_tone or "anime")
+                f"{_tone}, {', '.join(str(e) for e in _elems)}" if _elems else (_tone or "anime")
             )
         elif not isinstance(vs, str):
             vision["visual_style"] = str(vs) if vs else "anime"
@@ -1466,8 +1215,12 @@ class DirectorAgent:
             total = sum(v for v in sdist.values() if isinstance(v, (int, float)))
             if total == 0:
                 vision["shot_distribution"] = {
-                    "establishing": 0.10, "environment": 0.20, "character_medium": 0.35,
-                    "character_closeup": 0.20, "emotional_detail": 0.10, "action": 0.05,
+                    "establishing": 0.10,
+                    "environment": 0.20,
+                    "character_medium": 0.35,
+                    "character_closeup": 0.20,
+                    "emotional_detail": 0.10,
+                    "action": 0.05,
                 }
             elif abs(total - 1.0) > 0.01:
                 for k in sdist:
@@ -1476,15 +1229,10 @@ class DirectorAgent:
 
         return vision
 
-
-
     def consult_with_writer(self, vision_doc: dict, user_responses: dict) -> dict:
-
         """Phase 4: Collaborate with the LLM Writer for production guidance."""
 
         log.info("[DIRECTOR] Phase 4/5: Collaborating with Writer...")
-
-
 
         chars = vision_doc.get("characters", [])
         if isinstance(chars, dict):
@@ -1499,116 +1247,91 @@ class DirectorAgent:
             chars = chars_list
 
         chars_text = "\n".join(
-            f'  {c.get("name", "?")}: {c.get("description", "")}'
-            for c in chars[:5]
+            f"  {c.get('name', '?')}: {c.get('description', '')}" for c in chars[:5]
         )
 
         user_str = "\n".join(
-
-            f'  {k}: {v}' for k, v in user_responses.items()
-
+            f"  {k}: {v}"
+            for k, v in user_responses.items()
             if v and str(v).strip() and k != "ambiguity_resolution"
-
         )
 
-        recommendations = "\n".join(
+        recommendations = "\n".join(f"  - {r}" for r in vision_doc.get("recommendations", []))
 
-            f'  - {r}' for r in vision_doc.get('recommendations', [])
-
-        )
-
-        prompt = self._prompt("writer_breakdown",
-
-            visual_style=vision_doc.get('visual_style', '?'),
-
-            theme=vision_doc.get('theme', '?'),
-
-            emotions=vision_doc.get('emotions', '?'),
-
-            pacing=vision_doc.get('pacing', '?'),
-
-            chars_text=chars_text if chars_text.strip() else 'No character details available.',
-
-            user_str=user_str if user_str.strip() else 'No user preferences provided.',
-
-            recommendations=recommendations if recommendations.strip() else 'No recommendations.',
-
+        prompt = self._prompt(
+            "writer_breakdown",
+            visual_style=vision_doc.get("visual_style", "?"),
+            theme=vision_doc.get("theme", "?"),
+            emotions=vision_doc.get("emotions", "?"),
+            pacing=vision_doc.get("pacing", "?"),
+            chars_text=chars_text if chars_text.strip() else "No character details available.",
+            user_str=user_str if user_str.strip() else "No user preferences provided.",
+            recommendations=recommendations if recommendations.strip() else "No recommendations.",
         )
 
         if not prompt:
-
             log.warning("[DIRECTOR] writer_breakdown prompt missing, using fallback")
 
             import json
 
-            vkeys = ('theme', 'visual_style', 'pacing', 'emotions')
+            vkeys = ("theme", "visual_style", "pacing", "emotions")
 
             prompt = (
-
                 "You are the Creative Screenwriter.\n"
-
                 f"Based on vision and user input, suggest scene breakdown.\n"
-
-                f'Vision: {json.dumps({k: v for k, v in vision_doc.items() if k in vkeys})}\n'
-
-                f'User: {json.dumps(user_responses)}\n'
-
+                f"Vision: {json.dumps({k: v for k, v in vision_doc.items() if k in vkeys})}\n"
+                f"User: {json.dumps(user_responses)}\n"
                 'Output JSON: {"segment_count": int, "words_per_segment": int, '
-
                 '"image_count_per_segment": int, "opening_hook_style": "...", "pacing_notes": "..."}'
-
             )
 
-        raw = self._call_ollama(prompt, format_json=True, seed=int(hashlib.sha256(prompt.encode()).hexdigest()[:8], 16))
+        raw = self._call_ollama(
+            prompt, format_json=True, seed=int(hashlib.sha256(prompt.encode()).hexdigest()[:8], 16)
+        )
 
-        writer_input = self._parse_json(raw, {
+        writer_input = self._parse_json(
+            raw,
+            {
+                "segment_count": 3,
+                "words_per_segment": 390,
+                "image_count_per_segment": 6,
+                "opening_hook_style": "",
+                "pacing_notes": "",
+            },
+        )
 
-            "segment_count": 3, "words_per_segment": 390,
+        if "segment_count" in writer_input and isinstance(
+            writer_input["segment_count"], (int, float)
+        ):
+            self._last_segment_count = int(writer_input["segment_count"])
 
-            "image_count_per_segment": 6, "opening_hook_style": "", "pacing_notes": "",
-
-        })
-
-        if 'segment_count' in writer_input and isinstance(writer_input['segment_count'], (int, float)):
-
-            self._last_segment_count = int(writer_input['segment_count'])
-
-        log.info(f'[DIRECTOR] Writer suggests: {writer_input.get("segment_count")} segments, '
-
-                 f'{writer_input.get("words_per_segment")} words/seg, '
-
-                 f'{writer_input.get("image_count_per_segment")} images/seg')
+        log.info(
+            f"[DIRECTOR] Writer suggests: {writer_input.get('segment_count')} segments, "
+            f"{writer_input.get('words_per_segment')} words/seg, "
+            f"{writer_input.get('image_count_per_segment')} images/seg"
+        )
 
         return writer_input
 
-
-
-
-
     @staticmethod
-
     def _normalize_shot_distribution(sdist: dict) -> dict:
-
         """Normalize shot distribution to sum exactly 1.0."""
 
         defaults = {
-
-            "establishing": 0.10, "environment": 0.20,
-
-            "character_medium": 0.35, "character_closeup": 0.20,
-
-            "emotional_detail": 0.10, "action": 0.05,
-
+            "establishing": 0.10,
+            "environment": 0.20,
+            "character_medium": 0.35,
+            "character_closeup": 0.20,
+            "emotional_detail": 0.10,
+            "action": 0.05,
         }
 
         if not sdist or not isinstance(sdist, dict):
-
             return dict(defaults)
 
         total = sum(float(v) for v in sdist.values() if isinstance(v, (int, float)))
 
         if total <= 0:
-
             return dict(defaults)
 
         result = {k: round(float(v) / total, 4) for k, v in sdist.items()}
@@ -1618,17 +1341,13 @@ class DirectorAgent:
         keys = list(result.keys())
 
         if keys:
-
             result[keys[-1]] = round(1.0 - sum(result[k] for k in keys[:-1]), 4)
 
         return result
 
-
-
-
-
-    def produce_runtime_config(self, vision_doc: dict, user_responses: dict,
-                               writer_input: dict, mode: str = "full") -> dict:
+    def produce_runtime_config(
+        self, vision_doc: dict, user_responses: dict, writer_input: dict, mode: str = "full"
+    ) -> dict:
         """Phase 5: Merge vision, user, and writer input into config overlay.
 
         mode: "full" (default), "video-only" (no audio), "voice-only" (no visuals).
@@ -1676,10 +1395,12 @@ class DirectorAgent:
                 while f"{key}_{suffix}" in chars_dict:
                     suffix += 1
                 key = f"{key}_{suffix}"
-            chars_dict[key] = {"name": c.get("name", key),
-                              "description": c.get("description", ""),
-                              "keywords": [],
-                              "voice_sample": c.get("voice", "")}
+            chars_dict[key] = {
+                "name": c.get("name", key),
+                "description": c.get("description", ""),
+                "keywords": [],
+                "voice_sample": c.get("voice", ""),
+            }
 
         # -- Clamp integers from writer_input --
         seg_count = max(1, min(20, int((writer_input.get("segment_count") or 3) or 3)))
@@ -1689,9 +1410,15 @@ class DirectorAgent:
         # -- Visual Style (skip for voice-only) --
         if _mode != "voice-only":
             style_response = user_responses.get("visual_style", "")
-            if style_response and style_response.lower() != str(vision_doc.get("visual_style", "")).lower():
+            if (
+                style_response
+                and style_response.lower() != str(vision_doc.get("visual_style", "")).lower()
+            ):
                 from style_resolver import StyleResolver
-                _styler = StyleResolver(styles_path=str(Path(__file__).resolve().parent.parent / "styles.yaml"))
+
+                _styler = StyleResolver(
+                    styles_path=str(Path(__file__).resolve().parent.parent / "styles.yaml")
+                )
                 _rname, _rprompt = _styler.resolve(style_response)
                 style_response = _rprompt
             final_style = style_response or vision_doc.get("visual_style", "")
@@ -1704,17 +1431,25 @@ class DirectorAgent:
             final_style = "n/a"
 
         # -- Narrator voice mapping --
-        narrator_voice = user_responses.get("narrator_voice", "").lower() if _mode != "video-only" else ""
+        narrator_voice = (
+            user_responses.get("narrator_voice", "").lower() if _mode != "video-only" else ""
+        )
         voice_map = {
-            "deep": "deep_male_narrator", "dramatic": "ras_dramatic_narrator",
-            "news": "news_anchor_clear", "calm": "calm_female_smooth",
+            "deep": "deep_male_narrator",
+            "dramatic": "ras_dramatic_narrator",
+            "news": "news_anchor_clear",
+            "calm": "calm_female_smooth",
             "storyteller": "storyteller_warm",
         }
         if narrator_voice:
             mapped = False
             for k, v in voice_map.items():
-                if k in narrator_voice: narrator_voice = v; mapped = True; break
-            if not mapped: narrator_voice = "storyteller_warm"
+                if k in narrator_voice:
+                    narrator_voice = v
+                    mapped = True
+                    break
+            if not mapped:
+                narrator_voice = "storyteller_warm"
         else:
             narrator_voice = "storyteller_warm" if _mode != "video-only" else "none"
 
@@ -1728,26 +1463,29 @@ class DirectorAgent:
                 engine = "edge"
             elif "omnivoice" in tts_response:
                 engine = "omnivoice"
-            tts_lang = self.llm_config.get("tts", {}).get("lang", "hi") if isinstance(self.llm_config, dict) else "hi"
+            tts_lang = (
+                self.llm_config.get("tts", {}).get("lang", "hi")
+                if isinstance(self.llm_config, dict)
+                else "hi"
+            )
             tts = {
                 "engine": engine,
                 "lang": tts_lang,
                 "narrator_voice": narrator_voice,
-                "omnivoice": {
-                    "speed": 0.85,
-                    "num_step": 40,
-                    "guidance_scale": 2.5
-                }
+                "omnivoice": {"speed": 0.85, "num_step": 40, "guidance_scale": 2.5},
             }
         else:
             tts = {"engine": "none", "lang": "n/a", "narrator_voice": "none"}
 
         # -- Script --
-        script = {"words_per_segment": words_per,
-                 "dynamic_image_count": True,
-                 "default_images_per_segment": img_per_seg,
-                 "shot_distribution": self._normalize_shot_distribution(
-                    vision_doc.get("shot_distribution", {}))}
+        script = {
+            "words_per_segment": words_per,
+            "dynamic_image_count": True,
+            "default_images_per_segment": img_per_seg,
+            "shot_distribution": self._normalize_shot_distribution(
+                vision_doc.get("shot_distribution", {})
+            ),
+        }
 
         # -- Subtitles (skip for voice-only) --
         if _mode != "voice-only":
@@ -1755,68 +1493,123 @@ class DirectorAgent:
             sub_config = json.loads(json.dumps(vision_doc.get("subtitle_style", {})))
             if sub_response:
                 sl = sub_response.lower()
-                if "yellow" in sl: sub_config["color"] = "yellow"
-                elif "white" in sl or "classic" in sl: sub_config["color"] = "white"; sub_config["format"] = "classic"
-                if "tiktok" in sl or "centered" in sl: sub_config["format"] = "tiktok"
-                if "bottom" in sl: sub_config["position"] = "bottom"
-                if "none" in sl or "no subtitles" in sl: sub_config = {"format": "none"}
+                if "yellow" in sl:
+                    sub_config["color"] = "yellow"
+                elif "white" in sl or "classic" in sl:
+                    sub_config["color"] = "white"
+                    sub_config["format"] = "classic"
+                if "tiktok" in sl or "centered" in sl:
+                    sub_config["format"] = "tiktok"
+                if "bottom" in sl:
+                    sub_config["position"] = "bottom"
+                if "none" in sl or "no subtitles" in sl:
+                    sub_config = {"format": "none"}
             if isinstance(sub_config, str):
-                    sub_config = {"format": sub_config}
-            subtitles = {"format": sub_config.get("format", "classic") if isinstance(sub_config, dict) else "classic", "font": "Arial",
-                        "size": {"small": 20, "medium": 28, "large": 38}.get(sub_config.get("size", "small"), 24),
-                        "color": {"white": "&H00FFFFFF&", "yellow": "&H0000FFFF&",
-                                  "cyan": "&H00FFFF00&"}.get(sub_config.get("color", "white"), "&H00FFFFFF&"),
-                        "position": sub_config.get("position", "bottom")}
+                sub_config = {"format": sub_config}
+            subtitles = {
+                "format": sub_config.get("format", "classic")
+                if isinstance(sub_config, dict)
+                else "classic",
+                "font": "Arial",
+                "size": {"small": 20, "medium": 28, "large": 38}.get(
+                    sub_config.get("size", "small"), 24
+                ),
+                "color": {
+                    "white": "&H00FFFFFF&",
+                    "yellow": "&H0000FFFF&",
+                    "cyan": "&H00FFFF00&",
+                }.get(sub_config.get("color", "white"), "&H00FFFFFF&"),
+                "position": sub_config.get("position", "bottom"),
+            }
         else:
-            subtitles = {"format": "none", "font": "n/a", "size": 0, "color": "n/a", "position": "n/a"}
+            subtitles = {
+                "format": "none",
+                "font": "n/a",
+                "size": 0,
+                "color": "n/a",
+                "position": "n/a",
+            }
 
         # -- Pacing --
-        pacing = {"style": vision_doc.get("pacing", "moderate"),
-                 "opening_hook": str(writer_input.get("opening_hook_style") or ""),
-                 "notes": str(writer_input.get("pacing_notes") or "")}
+        pacing = {
+            "style": vision_doc.get("pacing", "moderate"),
+            "opening_hook": str(writer_input.get("opening_hook_style") or ""),
+            "notes": str(writer_input.get("pacing_notes") or ""),
+        }
 
         # -- Transitions --
-        _mood_to_transition = {"mysterious": "domain_warp_dissolve", "horror": "glitch",
-                              "action": "light_leak", "dramatic": "chromatic_radial_split",
-                              "epic": "gravitational_lens", "calm": "cross_fade", "intimate": "cross_fade"}
+        _mood_to_transition = {
+            "mysterious": "domain_warp_dissolve",
+            "horror": "glitch",
+            "action": "light_leak",
+            "dramatic": "chromatic_radial_split",
+            "epic": "gravitational_lens",
+            "calm": "cross_fade",
+            "intimate": "cross_fade",
+        }
         emotions_text = str(vision_doc.get("emotions", "")).lower()
         pacing_text = str(vision_doc.get("pacing", "")).lower()
         transition = "cross_fade"
         for mood, t in _mood_to_transition.items():
-            if mood in emotions_text: transition = t; break
+            if mood in emotions_text:
+                transition = t
+                break
         if transition == "cross_fade":
             transition = _mood_to_transition.get(pacing_text, "cross_fade")
-        visualization = {"transition": transition if _mode != "voice-only" else "none",
-                        "transition_blocks": list(set(_mood_to_transition.values()))}
+        visualization = {
+            "transition": transition if _mode != "voice-only" else "none",
+            "transition_blocks": list(set(_mood_to_transition.values())),
+        }
 
         # -- Video --
-        seg_dur_min = self.llm_config.get("video", {}).get("segment_duration_min", 2) if isinstance(self.llm_config, dict) else 2
+        seg_dur_min = (
+            self.llm_config.get("video", {}).get("segment_duration_min", 2)
+            if isinstance(self.llm_config, dict)
+            else 2
+        )
         # P4-22 fix: use the clamped seg_count (not the potentially stale
         # _last_segment_count from a previous call) to compute est_duration.
         est_duration = seg_count * seg_dur_min
         video = {"total_duration_min": est_duration, "segment_duration_min": seg_dur_min}
 
         # -- Music style from emotions --
-        music_map = {"horror": "ambient_dark", "tension": "ambient_cinematic",
-                     "action": "orchestral_heroic", "epic": "orchestral_epic",
-                     "mysterious": "ambient_mystery", "calm": "ambient_peaceful",
-                     "dramatic": "orchestral_dramatic", "romantic": "ambient_warm"}
+        music_map = {
+            "horror": "ambient_dark",
+            "tension": "ambient_cinematic",
+            "action": "orchestral_heroic",
+            "epic": "orchestral_epic",
+            "mysterious": "ambient_mystery",
+            "calm": "ambient_peaceful",
+            "dramatic": "orchestral_dramatic",
+            "romantic": "ambient_warm",
+        }
         music_style = "ambient_cinematic"
         for e, genre in music_map.items():
-            if e in emotions_text: music_style = genre; break
+            if e in emotions_text:
+                music_style = genre
+                break
         duck_ratio = 0.3  # Music volume during narration: 30% music, 100% voice
 
         # -- Production Notes --
-        production_notes = {"recommendations": vision_doc.get("recommendations", []),
-                           "custom_instructions": user_responses.get("custom_instructions", ""),
-                           "theme": vision_doc.get("theme", ""),
-                           "emotions": vision_doc.get("emotions", ""),
-                           "music_style": music_style,
-                           "duck_ratio": duck_ratio,
-                           "output_mode": _mode}
+        production_notes = {
+            "recommendations": vision_doc.get("recommendations", []),
+            "custom_instructions": user_responses.get("custom_instructions", ""),
+            "theme": vision_doc.get("theme", ""),
+            "emotions": vision_doc.get("emotions", ""),
+            "music_style": music_style,
+            "duck_ratio": duck_ratio,
+            "output_mode": _mode,
+        }
 
-        known_keys = {"visual_style", "subtitle_style", "tts_engine",
-                     "ambiguity_resolution", "custom_instructions", "narrator_voice", "music_style"}
+        known_keys = {
+            "visual_style",
+            "subtitle_style",
+            "tts_engine",
+            "ambiguity_resolution",
+            "custom_instructions",
+            "narrator_voice",
+            "music_style",
+        }
         user_overrides = {}
         for k, v in user_responses.items():
             if k not in known_keys and v and str(v).strip():
@@ -1825,34 +1618,51 @@ class DirectorAgent:
             production_notes["user_overrides"] = user_overrides
 
         # -- Provenance --
-        _provenance = {"characters": "vision_doc", "visual": "vision+user", "tts": "vision+user",
-                       "script": "writer+vision", "subtitles": "vision+user",
-                       "pacing": "vision+writer", "video": "writer+estimate",
-                       "visualization": "vision", "production_notes": "vision+user",
-                       "music_style": "emotions_map", "narrator_voice": "user_response"}
+        _provenance = {
+            "characters": "vision_doc",
+            "visual": "vision+user",
+            "tts": "vision+user",
+            "script": "writer+vision",
+            "subtitles": "vision+user",
+            "pacing": "vision+writer",
+            "video": "writer+estimate",
+            "visualization": "vision",
+            "production_notes": "vision+user",
+            "music_style": "emotions_map",
+            "narrator_voice": "user_response",
+        }
 
         # -- Final Overlay --
-        overlay = {"_provenance": _provenance, "characters": chars_dict,
-                  "visual": visual, "tts": tts, "script": script, "subtitles": subtitles,
-                  "pacing": pacing, "video": video, "visualization": visualization,
-                  "production_notes": production_notes,
-                  "_director_vision": {"theme": vision_doc.get("theme", ""),
-                                      "emotions": vision_doc.get("emotions", ""),
-                                      "pacing": vision_doc.get("pacing", ""),
-                                      "visual_style": vision_doc.get("visual_style", "")}}
+        overlay = {
+            "_provenance": _provenance,
+            "characters": chars_dict,
+            "visual": visual,
+            "tts": tts,
+            "script": script,
+            "subtitles": subtitles,
+            "pacing": pacing,
+            "video": video,
+            "visualization": visualization,
+            "production_notes": production_notes,
+            "_director_vision": {
+                "theme": vision_doc.get("theme", ""),
+                "emotions": vision_doc.get("emotions", ""),
+                "pacing": vision_doc.get("pacing", ""),
+                "visual_style": vision_doc.get("visual_style", ""),
+            },
+        }
 
-        log.info(f"[DIRECTOR] Config overlay built: {len(chars_dict)} chars, "
-                 f"style={visual.get('style', '?')}, "
-                 f"segments={seg_count}, engine={tts.get('engine','none')}, mode={_mode}")
+        log.info(
+            f"[DIRECTOR] Config overlay built: {len(chars_dict)} chars, "
+            f"style={visual.get('style', '?')}, "
+            f"segments={seg_count}, engine={tts.get('engine', 'none')}, mode={_mode}"
+        )
         return overlay
 
-
     def consult_on_duration(self, auto_minutes: int) -> dict:
-
         """Ask user whether to keep, reduce, or adjust video duration."""
 
         if auto_minutes <= 5:
-
             return {"accepted": True, "target_minutes": auto_minutes, "action": "keep"}
 
         h = auto_minutes // 60
@@ -1862,13 +1672,11 @@ class DirectorAgent:
         dur_str = f"{h}h {m}min" if h > 0 else f"{m}min"
 
         choice = self.consult_user(
-
             f"Content analysis estimates ~{dur_str} ({auto_minutes} minutes) of video. Would you like to control the duration?",
-
-            options=["Keep estimated duration (Recommended)", "Reduce or adjust the duration"])
+            options=["Keep estimated duration (Recommended)", "Reduce or adjust the duration"],
+        )
 
         if "keep" in choice.lower() or "recommended" in choice.lower():
-
             return {"accepted": True, "target_minutes": auto_minutes, "action": "keep"}
 
         action = self.consult_user("Target duration in minutes?", allow_custom=True)
@@ -1882,14 +1690,11 @@ class DirectorAgent:
             return {"accepted": True, "target_minutes": target, "action": "adjusted"}
 
         except (ValueError, TypeError):
-
             log.warning(
                 f"[DURATION] consult_on_duration: could not parse action {action!r} "
                 f"(type={type(action).__name__}) — defaulting to 'keep'"
             )
             return {"accepted": True, "target_minutes": auto_minutes, "action": "keep"}
-
-
 
     def suggest_cliffhangers(self, content: str, current_minutes: int) -> list:
         """Suggest 2–3 high-note end points for a cliffhanger-style video cut.
@@ -1900,8 +1705,16 @@ class DirectorAgent:
         if not content or len(content) < 200:
             log.warning("[DIRECTOR] suggest_cliffhangers: content too short, returning defaults")
             return [
-                {"point": 50, "outcome": "Story reaches its midpoint climax", "reason": "Natural midpoint"},
-                {"point": 75, "outcome": "Story reaches a dramatic turning point", "reason": "Three-quarter climax"},
+                {
+                    "point": 50,
+                    "outcome": "Story reaches its midpoint climax",
+                    "reason": "Natural midpoint",
+                },
+                {
+                    "point": 75,
+                    "outcome": "Story reaches a dramatic turning point",
+                    "reason": "Three-quarter climax",
+                },
             ]
 
         prompt = (
@@ -1926,11 +1739,13 @@ class DirectorAgent:
             for c in cliffs:
                 if isinstance(c, dict) and "point" in c and "outcome" in c:
                     point = max(10, min(95, float(c["point"])))
-                    result.append({
-                        "point": point,
-                        "outcome": str(c.get("outcome", "Dramatic moment"))[:120],
-                        "reason": str(c.get("reason", ""))[:120],
-                    })
+                    result.append(
+                        {
+                            "point": point,
+                            "outcome": str(c.get("outcome", "Dramatic moment"))[:120],
+                            "reason": str(c.get("reason", ""))[:120],
+                        }
+                    )
             if len(result) >= 2:
                 log.info(f"[DIRECTOR] Cliffhanger options: {len(result)} points")
                 return sorted(result, key=lambda x: x["point"])
@@ -1939,11 +1754,17 @@ class DirectorAgent:
 
         # Fallback
         return [
-            {"point": 50, "outcome": "Story reaches its midpoint climax", "reason": "Natural midpoint"},
-            {"point": 75, "outcome": "Story reaches a dramatic turning point", "reason": "Three-quarter climax"},
+            {
+                "point": 50,
+                "outcome": "Story reaches its midpoint climax",
+                "reason": "Natural midpoint",
+            },
+            {
+                "point": 75,
+                "outcome": "Story reaches a dramatic turning point",
+                "reason": "Three-quarter climax",
+            },
         ]
-
-
 
     def compact_story(self, content: str, target_minutes: int, original_minutes: int) -> str:
         """Condense story text to fit a target video duration.
@@ -1994,59 +1815,45 @@ class DirectorAgent:
             log.warning(f"[DIRECTOR] compact_story LLM call failed: {e} — using original")
             return content
 
-
-
     # ── User Decision Prompts ──
 
-
-
     def ask_cache_ttl(self) -> None:
-
         """Ask user for cache TTL preference."""
 
         pass
 
-
-
     def ask_search_online(self) -> bool:
-
         """Ask user whether to search online for research."""
 
-        choice = self.consult_user("Search online for story context?",
-
-                                   options=["Yes, search online", "No, use story only"])
+        choice = self.consult_user(
+            "Search online for story context?", options=["Yes, search online", "No, use story only"]
+        )
 
         return "yes" in choice.lower()
 
-
-
     def ask_create_from_scratch(self, topic: str) -> tuple:
-
         """Ask user if they want to create a story from scratch."""
 
-        choice = self.consult_user(f"Create original story for '{topic}'?",
-
-                                   options=["Yes, create from scratch", "No, I have a story"])
+        choice = self.consult_user(
+            f"Create original story for '{topic}'?",
+            options=["Yes, create from scratch", "No, I have a story"],
+        )
 
         if "yes" in choice.lower():
-
             notes = self.consult_user("Any notes for the story?", allow_custom=True)
 
             return True, notes
 
         return False, ""
 
-
-
     # ── Story Generation ──
-
-
 
     def _sync_memory_to_worldstate(self, topic: str, config: dict) -> None:
         """Sync character/lore to world state for continuity."""
         from pathlib import Path
 
         from memory.memory import WorldState
+
         ck_dir = Path(config.get("checkpoint", {}).get("dir", "studio_checkpoints"))
         ws = WorldState(topic=topic, checkpoint_dir=ck_dir)
 
@@ -2075,10 +1882,7 @@ class DirectorAgent:
 
         ws._save()
 
-
-
     def invent_story(self, topic: str, user_notes: str, force_refresh: bool = False) -> str:
-
         """Generate an original story from scratch.
 
         A5: Caches the invented story to cache/story_{topic_hash}.json so the same
@@ -2098,7 +1902,11 @@ class DirectorAgent:
 
         if _cache_enabled and not force_refresh:
             _topic_hash = _hs.sha256(topic.strip().lower().encode()).hexdigest()[:12]
-            _cache_dir = Path(self.llm_config.get("cache_dir", "cache") if isinstance(self.llm_config, dict) else "cache")
+            _cache_dir = Path(
+                self.llm_config.get("cache_dir", "cache")
+                if isinstance(self.llm_config, dict)
+                else "cache"
+            )
             _cache_dir.mkdir(parents=True, exist_ok=True)
             _cache_path = _cache_dir / f"story_{_topic_hash}.json"
             if _cache_path.exists():
@@ -2106,17 +1914,16 @@ class DirectorAgent:
                     _cached = _js.loads(_cache_path.read_text(encoding="utf-8"))
                     _story = _cached.get("story", "")
                     if _story:
-                        log.info(f"[DIRECTOR] A5: story cache hit for '{topic[:40]}' ({len(_story.split())} words)")
+                        log.info(
+                            f"[DIRECTOR] A5: story cache hit for '{topic[:40]}' ({len(_story.split())} words)"
+                        )
                         return _story
                 except Exception as _ce:
                     log.debug(f"[DIRECTOR] A5: cache read failed ({_ce}), regenerating")
 
         prompt = self._prompt("invent_story", topic=topic, notes=user_notes) or (
-
             f"Create a short dramatic story about: {topic}. {user_notes}\n"
-
             f"Length: ~500 words. Include 2-3 characters and a clear arc."
-
         )
 
         res = self._call_ollama(prompt)
@@ -2127,20 +1934,22 @@ class DirectorAgent:
         if _cache_enabled and res:
             try:
                 _topic_hash = _hs.sha256(topic.strip().lower().encode()).hexdigest()[:12]
-                _cache_dir = Path(self.llm_config.get("cache_dir", "cache") if isinstance(self.llm_config, dict) else "cache")
+                _cache_dir = Path(
+                    self.llm_config.get("cache_dir", "cache")
+                    if isinstance(self.llm_config, dict)
+                    else "cache"
+                )
                 _cache_dir.mkdir(parents=True, exist_ok=True)
                 _cache_path = _cache_dir / f"story_{_topic_hash}.json"
                 _cache_path.write_text(
                     _js.dumps({"topic": topic, "story": res}, indent=2, ensure_ascii=False),
-                    encoding="utf-8"
+                    encoding="utf-8",
                 )
                 log.info(f"[DIRECTOR] A5: story cached to {_cache_path.name}")
             except Exception as _cwe:
                 log.debug(f"[DIRECTOR] A5: cache write failed ({_cwe})")
 
         return res
-
-
 
     def read_story(self, full_script: str) -> dict[str, Any]:
         """Parse a full story script into structured segments."""
@@ -2157,14 +1966,12 @@ class DirectorAgent:
             # The first part before any header might be empty or preamble
             splits[0].strip()
             for idx, part in enumerate(splits[1:]):
-                header = headers[idx] if idx < len(headers) else f"Part {idx+1}"
+                header = headers[idx] if idx < len(headers) else f"Part {idx + 1}"
                 text = part.strip()
                 if text:
-                    segments.append({
-                        "header": header,
-                        "text": text,
-                        "word_count": len(text.split())
-                    })
+                    segments.append(
+                        {"header": header, "text": text, "word_count": len(text.split())}
+                    )
         else:
             # Split by double newlines (paragraphs)
             paragraphs = [p.strip() for p in full_script.split("\n\n") if p.strip()]
@@ -2175,11 +1982,13 @@ class DirectorAgent:
                 p_words = len(p.split())
                 if current_word_count + p_words > 250 and current_seg:
                     text = "\n\n".join(current_seg)
-                    segments.append({
-                        "header": f"Segment {seg_idx}",
-                        "text": text,
-                        "word_count": current_word_count
-                    })
+                    segments.append(
+                        {
+                            "header": f"Segment {seg_idx}",
+                            "text": text,
+                            "word_count": current_word_count,
+                        }
+                    )
                     seg_idx += 1
                     current_seg = [p]
                     current_word_count = p_words
@@ -2188,42 +1997,31 @@ class DirectorAgent:
                     current_word_count += p_words
             if current_seg:
                 text = "\n\n".join(current_seg)
-                segments.append({
-                    "header": f"Segment {seg_idx}",
-                    "text": text,
-                    "word_count": current_word_count
-                })
+                segments.append(
+                    {"header": f"Segment {seg_idx}", "text": text, "word_count": current_word_count}
+                )
 
         # Fallback if no segments resolved
         if not segments:
-            segments = [{
-                "header": "Segment 1",
-                "text": full_script,
-                "word_count": len(full_script.split())
-            }]
+            segments = [
+                {"header": "Segment 1", "text": full_script, "word_count": len(full_script.split())}
+            ]
 
         total_words = sum(int(s["word_count"]) for s in segments)
 
         # Estimate last estimated minutes based on segment count
         self._last_estimated_minutes = len(segments)
 
-        return {
-            "segments": segments,
-            "total_words": total_words,
-            "theme": "Untitled Story"
-        }
-
-
+        return {"segments": segments, "total_words": total_words, "theme": "Untitled Story"}
 
     def define_pacing_and_length(self, vision_doc: dict) -> int:
-
         """Determine pacing and target length from vision doc."""
 
         return self._last_estimated_minutes
 
-
-
-    def translate_to_devanagari(self, english_script: str, segment_plan: dict, context: str = "") -> str:
+    def translate_to_devanagari(
+        self, english_script: str, segment_plan: dict, context: str = ""
+    ) -> str:
         """Translate English narration script to Devanagari Hindi using Director model.
 
         Uses full story context (mood, characters, theme) to produce contextually
@@ -2242,7 +2040,9 @@ class DirectorAgent:
         key_event = segment_plan.get("key_event", "")
 
         # Build character context from config
-        characters = self.llm_config.get("characters", {}) if isinstance(self.llm_config, dict) else {}
+        characters = (
+            self.llm_config.get("characters", {}) if isinstance(self.llm_config, dict) else {}
+        )
         char_lines = []
         for c_key, c_data in characters.items():
             name = c_data.get("name", c_key)
@@ -2251,7 +2051,9 @@ class DirectorAgent:
                 char_lines.append(f"  - {name}: {desc[:100]}" if desc else f"  - {name}")
         chars_block = "\n".join(char_lines) if char_lines else "No character details."
 
-        vision = self.llm_config.get("_director_vision", {}) if isinstance(self.llm_config, dict) else {}
+        vision = (
+            self.llm_config.get("_director_vision", {}) if isinstance(self.llm_config, dict) else {}
+        )
         theme = vision.get("theme", "") or segment_plan.get("theme", "")
         emotions = vision.get("emotions", "") or mood
 
@@ -2289,10 +2091,16 @@ class DirectorAgent:
             f"Hindi (Devanagari) translation:"
         )
 
-        log.info(f"[DIRECTOR] Translating segment to Devanagari (mood={mood}, {len(english_script)} chars)...")
+        log.info(
+            f"[DIRECTOR] Translating segment to Devanagari (mood={mood}, {len(english_script)} chars)..."
+        )
 
         try:
-            translated = self._call_ollama_chat(prompt, model_type="translator", system_msg="You are a translator who writes MODERN, casual, everyday spoken Hindi for YouTube narration — the way young people actually talk today. Use simple common words, NOT literary, Sanskritized, or archaic Hindi. Write everything in Devanagari script. Output only the translation, no commentary.")
+            translated = self._call_ollama_chat(
+                prompt,
+                model_type="translator",
+                system_msg="You are a translator who writes MODERN, casual, everyday spoken Hindi for YouTube narration — the way young people actually talk today. Use simple common words, NOT literary, Sanskritized, or archaic Hindi. Write everything in Devanagari script. Output only the translation, no commentary.",
+            )
             if not translated:
                 log.warning("[DIRECTOR] Translation returned empty \u2014 using original English")
                 return english_script
@@ -2302,9 +2110,11 @@ class DirectorAgent:
             translated = re.sub(r"<\|.*?\|>", "", translated).strip()
 
             # Validate: at least some Devanagari characters present (U+0900-U+097F)
-            devanagari_chars = sum(1 for c in translated if "\u0900" <= c <= "\u097F")
+            devanagari_chars = sum(1 for c in translated if "\u0900" <= c <= "\u097f")
             if devanagari_chars < 10:
-                log.warning(f"[DIRECTOR] Translation has only {devanagari_chars} Devanagari chars — may have failed. Using original.")
+                log.warning(
+                    f"[DIRECTOR] Translation has only {devanagari_chars} Devanagari chars — may have failed. Using original."
+                )
                 return english_script
 
             # R2.7: Devanagari-ratio check with bounded re-translation (task 4.6).
@@ -2318,14 +2128,14 @@ class DirectorAgent:
                     _full_cfg = {}
             except Exception:
                 _full_cfg = {}
-            _deva_cfg      = _full_cfg.get("tts", {}).get("devanagari", {})
-            _max_latin      = float(_deva_cfg.get("max_latin_ratio", 0.10))
-            _max_retries    = int(_deva_cfg.get("max_retranslate_retries", 2))
+            _deva_cfg = _full_cfg.get("tts", {}).get("devanagari", {})
+            _max_latin = float(_deva_cfg.get("max_latin_ratio", 0.10))
+            _max_retries = int(_deva_cfg.get("max_retranslate_retries", 2))
             _min_deva_ratio = 1.0 - _max_latin
 
-            best           = translated
-            best_ratio     = _devanagari_ratio(best)
-            attempt        = 0
+            best = translated
+            best_ratio = _devanagari_ratio(best)
+            attempt = 0
 
             while best_ratio < _min_deva_ratio and attempt < _max_retries:
                 attempt += 1
@@ -2340,16 +2150,21 @@ class DirectorAgent:
                 )
                 try:
                     _candidate = self._call_ollama_chat(
-                        _stricter, model_type="translator",
-                        system_msg="You are an expert literary translator. Output ONLY Devanagari Hindi."
+                        _stricter,
+                        model_type="translator",
+                        system_msg="You are an expert literary translator. Output ONLY Devanagari Hindi.",
                     )
                     if _candidate:
-                        _candidate = re.sub(r"<think>.*?</think>", "", _candidate, flags=re.DOTALL).strip()
+                        _candidate = re.sub(
+                            r"<think>.*?</think>", "", _candidate, flags=re.DOTALL
+                        ).strip()
                         _candidate = re.sub(r"<\|.*?\|>", "", _candidate).strip()
                         _cand_ratio = _devanagari_ratio(_candidate)
                         if _cand_ratio > best_ratio:
                             best, best_ratio = _candidate, _cand_ratio
-                            log.debug(f"[DIRECTOR] Re-translation attempt {attempt}: ratio improved to {best_ratio:.0%}")
+                            log.debug(
+                                f"[DIRECTOR] Re-translation attempt {attempt}: ratio improved to {best_ratio:.0%}"
+                            )
                 except Exception as _re_err:
                     log.warning(f"[DIRECTOR] Re-translation attempt {attempt} failed ({_re_err})")
                     break
@@ -2363,13 +2178,14 @@ class DirectorAgent:
             else:
                 log.debug(f"[DIRECTOR] Devanagari ratio OK: {best_ratio:.0%}")
 
-            log.info(f"[DIRECTOR] Devanagari translation complete: {len(translated)} chars, {devanagari_chars} Devanagari chars")
+            log.info(
+                f"[DIRECTOR] Devanagari translation complete: {len(translated)} chars, {devanagari_chars} Devanagari chars"
+            )
             return translated
 
         except Exception as e:
             log.exception(f"[DIRECTOR] Translation failed: {e}. Falling back to English.")
             return english_script
-
 
     def generate_hinglish_script(self, segment_plan: dict) -> str:
         """Convert English segment to Hinglish voiceover script."""
@@ -2400,4 +2216,3 @@ class DirectorAgent:
         except Exception as e:
             log.warning(f"Failed to generate Hinglish script: {e}")
             return f"Aise hi shuru hoti hai kahani. {summary}. Aur phir, {key_event}."
-

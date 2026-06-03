@@ -7,6 +7,7 @@ Unit tests for task 10.7 — acceleration adapter:
 
 No real GPU or model loads — all diffusers/torch calls are mocked.
 """
+
 import sys
 from pathlib import Path
 
@@ -20,16 +21,17 @@ from video.image_gen.image_gen import _prompt_cache_key
 
 # ── Guidance / step resolver logic ───────────────────────────────────────
 
+
 def _resolve(cfg: dict):
     """Mirror the resolver logic from _stable_diffusion for unit testing."""
     accel = cfg.get("acceleration") or {}
     active = (accel.get("type") or "none").lower() != "none"
     if active:
         steps = int(accel.get("steps", 6))
-        gs    = float(accel.get("guidance_scale", 1.5))
+        gs = float(accel.get("guidance_scale", 1.5))
     else:
         steps = int(cfg.get("steps", 12))
-        gs    = float(cfg.get("guidance_scale", 6.0))
+        gs = float(cfg.get("guidance_scale", 6.0))
     return steps, gs
 
 
@@ -44,7 +46,8 @@ def test_accel_off_uses_config_values():
 def test_accel_on_overrides_steps_and_guidance():
     """With type:dmd2, resolver returns accel steps and guidance."""
     cfg = {
-        "steps": 12, "guidance_scale": 6.0,
+        "steps": 12,
+        "guidance_scale": 6.0,
         "acceleration": {"type": "dmd2", "steps": 4, "guidance_scale": 1.0},
     }
     steps, gs = _resolve(cfg)
@@ -54,11 +57,10 @@ def test_accel_on_overrides_steps_and_guidance():
 
 def test_accel_lcm_defaults():
     """LCM with no explicit steps/guidance uses safe defaults."""
-    cfg = {"steps": 12, "guidance_scale": 6.0,
-           "acceleration": {"type": "lcm"}}
+    cfg = {"steps": 12, "guidance_scale": 6.0, "acceleration": {"type": "lcm"}}
     steps, gs = _resolve(cfg)
-    assert steps == 6       # default accel steps
-    assert gs == 1.5        # default accel guidance (safe for distilled)
+    assert steps == 6  # default accel steps
+    assert gs == 1.5  # default accel guidance (safe for distilled)
 
 
 def test_accel_off_missing_key():
@@ -71,12 +73,15 @@ def test_accel_off_missing_key():
 
 # ── Cache key tests ───────────────────────────────────────────────────────
 
+
 def test_cache_key_changes_with_accel_type():
     """Same prompt, different accel type → different cache key."""
     base_cfg = {
-        "steps": 12, "guidance_scale": 6.0,
+        "steps": 12,
+        "guidance_scale": 6.0,
         "sd_model_path": "Lykon/AnyLoRA",
-        "width": 768, "height": 432,
+        "width": 768,
+        "height": 432,
     }
     cfg_none = {**base_cfg, "acceleration": {"type": "none"}}
     cfg_dmd2 = {**base_cfg, "acceleration": {"type": "dmd2", "steps": 4, "guidance_scale": 1.0}}
@@ -90,9 +95,11 @@ def test_cache_key_changes_with_accel_type():
 def test_cache_key_stable_when_accel_unchanged():
     """Same config twice → same cache key (deterministic)."""
     cfg = {
-        "steps": 12, "guidance_scale": 6.0,
+        "steps": 12,
+        "guidance_scale": 6.0,
         "sd_model_path": "Lykon/AnyLoRA",
-        "width": 768, "height": 432,
+        "width": 768,
+        "height": 432,
         "acceleration": {"type": "none"},
     }
     assert _prompt_cache_key("test prompt", cfg) == _prompt_cache_key("test prompt", cfg)
@@ -101,9 +108,11 @@ def test_cache_key_stable_when_accel_unchanged():
 def test_cache_key_changes_with_accel_steps():
     """Same type but different accel steps → different key."""
     base = {
-        "steps": 12, "guidance_scale": 6.0,
+        "steps": 12,
+        "guidance_scale": 6.0,
         "sd_model_path": "Lykon/AnyLoRA",
-        "width": 768, "height": 432,
+        "width": 768,
+        "height": 432,
     }
     cfg_4 = {**base, "acceleration": {"type": "dmd2", "steps": 4, "guidance_scale": 1.0}}
     cfg_6 = {**base, "acceleration": {"type": "dmd2", "steps": 6, "guidance_scale": 1.0}}
@@ -113,14 +122,17 @@ def test_cache_key_changes_with_accel_steps():
 
 # ── Missing LoRA path — no crash ──────────────────────────────────────────
 
+
 def test_missing_lora_path_warns_not_crashes():
     """Acceleration enabled but LoRA file missing → logs warning, no exception."""
     from unittest.mock import patch as _patch
 
     cfg = {
-        "steps": 12, "guidance_scale": 6.0,
+        "steps": 12,
+        "guidance_scale": 6.0,
         "sd_model_path": "Lykon/AnyLoRA",
-        "width": 768, "height": 432,
+        "width": 768,
+        "height": 432,
         "dtype": "float16",
         "acceleration": {
             "type": "dmd2",
@@ -133,6 +145,7 @@ def test_missing_lora_path_warns_not_crashes():
     # We only test the LoRA-path-missing branch, not the full SD pipeline.
     # Simulate: Path(lora_path).exists() → False → should log warning, not raise.
     from video.image_gen import image_gen as _ig
+
     accel = cfg["acceleration"]
     lora_path = accel.get("lora_path", "")
 
@@ -147,6 +160,8 @@ def test_missing_lora_path_warns_not_crashes():
     with _patch.object(_ig.log, "warning", side_effect=warned.append):
         # Simulate the branch directly
         if lora_path and not Path(lora_path).exists():
-            _ig.log.warning(f"[ACCEL] LoRA path not found: {lora_path} — using step/guidance overrides only")
+            _ig.log.warning(
+                f"[ACCEL] LoRA path not found: {lora_path} — using step/guidance overrides only"
+            )
 
     assert any("LoRA path not found" in w for w in warned)

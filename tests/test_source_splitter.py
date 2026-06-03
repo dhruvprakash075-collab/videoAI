@@ -8,6 +8,7 @@ Covers:
   - _split_by_llm (mocked Ollama; valid JSON, malformed, fallback)
   - split_source dispatcher (strategy selection, fallback, error paths)
 """
+
 from __future__ import annotations
 
 import json
@@ -33,15 +34,19 @@ from utils.source_splitter import (
 
 # ── SourceDocument factory ──────────────────────────────────────────────────
 
+
 def _doc(text="", source_type="txt", metadata=None, language="en"):
     return SourceDocument(
-        text=text, word_count=_word_count(text),
-        language=language, source_type=source_type,
+        text=text,
+        word_count=_word_count(text),
+        language=language,
+        source_type=source_type,
         metadata=metadata or {},
     )
 
 
 # ── Pure helpers ────────────────────────────────────────────────────────────
+
 
 class TestWordCount:
     def test_empty(self):
@@ -54,7 +59,10 @@ class TestWordCount:
         assert _word_count("the quick brown fox") == 4
 
     def test_devanagari(self):
-        assert _word_count("\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e") == 2
+        assert (
+            _word_count("\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e")
+            == 2
+        )
 
 
 class TestSplitSentences:
@@ -170,6 +178,7 @@ class TestIndex:
 
 # ── _split_by_chapter ───────────────────────────────────────────────────────
 
+
 class TestSplitByChapter:
     def test_md_three_h1(self):
         md = "# Chapter 1\nAlpha text here.\n# Chapter 2\nBeta text here.\n# Chapter 3\nGamma text here."
@@ -209,6 +218,7 @@ class TestSplitByChapter:
 
 # ── _split_by_word_count ────────────────────────────────────────────────────
 
+
 class TestSplitByWordCount:
     def test_empty_text(self):
         assert _split_by_word_count("", 3, 100) == []
@@ -220,14 +230,22 @@ class TestSplitByWordCount:
     def test_chunks_at_target(self):
         text = " ".join([f"Sentence number {i}." for i in range(20)])
         source = _doc(text=text, source_type="txt")
-        chunks = split_source(source, 4, {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 10}})
+        chunks = split_source(
+            source,
+            4,
+            {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 10}},
+        )
         assert len(chunks) == 4
         assert all(c.text for c in chunks)
 
     def test_devanagari_sentences(self):
         text = "\u092a\u0939\u0932\u093e \u0935\u093e\u0915\u094d\u092f\u0964 " * 20
         source = _doc(text=text, source_type="txt")
-        chunks = split_source(source, 4, {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 10}})
+        chunks = split_source(
+            source,
+            4,
+            {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 10}},
+        )
         assert len(chunks) == 4
         assert all(c.text for c in chunks)
 
@@ -247,16 +265,21 @@ class TestSplitByWordCount:
 
 # ── _split_by_llm (mocked) ──────────────────────────────────────────────────
 
+
 class TestSplitByLlm:
     def test_valid_response(self):
         source = _doc(text="Long source text " * 50, source_type="txt")
-        llm_response = json.dumps([
-            {"text": "excerpt 1", "b_roll_hint": "city skyline", "key_event": "intro"},
-            {"text": "excerpt 2", "b_roll_hint": "forest path", "key_event": "rising action"},
-            {"text": "excerpt 3", "b_roll_hint": "climax", "key_event": "climax"},
-        ])
+        llm_response = json.dumps(
+            [
+                {"text": "excerpt 1", "b_roll_hint": "city skyline", "key_event": "intro"},
+                {"text": "excerpt 2", "b_roll_hint": "forest path", "key_event": "rising action"},
+                {"text": "excerpt 3", "b_roll_hint": "climax", "key_event": "climax"},
+            ]
+        )
         config = {"models": {"writer": "zephyr-writer"}}
-        with patch("utils.crewai_breaker.guarded_ollama_call", return_value=llm_response) as mock_call:
+        with patch(
+            "utils.crewai_breaker.guarded_ollama_call", return_value=llm_response
+        ) as mock_call:
             chunks = _split_by_llm(source, 3, config)
         assert len(chunks) == 3
         assert chunks[0].text == "excerpt 1"
@@ -296,6 +319,7 @@ class TestSplitByLlm:
 
 # ── split_source dispatcher ────────────────────────────────────────────────
 
+
 class TestSplitSourceDispatcher:
     def test_default_strategy_is_by_word_count(self):
         text = "Sentence one. Sentence two. Sentence three. Sentence four. Sentence five."
@@ -319,13 +343,17 @@ class TestSplitSourceDispatcher:
     def test_by_word_count_explicit(self):
         text = " ".join([f"S{i}." for i in range(30)])
         source = _doc(text=text, source_type="txt")
-        chunks = split_source(source, 5, {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 5}})
+        chunks = split_source(
+            source,
+            5,
+            {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 5}},
+        )
         assert len(chunks) == 5
 
     def test_by_llm_uses_writer(self):
-        llm_response = json.dumps([
-            {"text": f"t{i}", "b_roll_hint": f"b{i}", "key_event": f"e{i}"} for i in range(4)
-        ])
+        llm_response = json.dumps(
+            [{"text": f"t{i}", "b_roll_hint": f"b{i}", "key_event": f"e{i}"} for i in range(4)]
+        )
         source = _doc(text="x " * 100, source_type="txt")
         config = {"source": {"split_strategy": "by_llm"}, "models": {"writer": "zephyr-writer"}}
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=llm_response):
@@ -376,18 +404,30 @@ class TestSplitSourceDispatcher:
 
 # ── End-to-end (source_loader + splitter) ──────────────────────────────────
 
+
 class TestEndToEnd:
     def test_txt_source_pipes_through_splitter(self):
         from utils.source_loader import load_source
+
         body = "Sentence one. Sentence two. " * 20
         import tempfile
         from pathlib import Path
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write(body)
             tmp_path = Path(f.name)
         try:
             doc = load_source(tmp_path, {})
-            chunks = split_source(doc, 4, {"source": {"split_strategy": "by_word_count"}, "script": {"words_per_segment": 20}})
+            chunks = split_source(
+                doc,
+                4,
+                {
+                    "source": {"split_strategy": "by_word_count"},
+                    "script": {"words_per_segment": 20},
+                },
+            )
             assert len(chunks) == 4
             assert all(c.text for c in chunks)
         finally:

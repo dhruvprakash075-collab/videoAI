@@ -35,7 +35,7 @@ def _safe(name: str, maxlen: int = 60) -> str:
     # The old [^a-zA-Z0-9_\-] pattern stripped all non-ASCII, causing filename
     # collisions for distinct Hindi topics.  We allow \w (Unicode letters/digits)
     # plus Devanagari combining marks (U+0900–U+097F) and hyphens.
-    return re.sub(r'[^\w\u0900-\u097F\-]', '_', name, flags=re.UNICODE)[:maxlen]
+    return re.sub(r"[^\w\u0900-\u097F\-]", "_", name, flags=re.UNICODE)[:maxlen]
 
 
 def _atomic_write(path: Path, data: dict) -> None:
@@ -67,6 +67,7 @@ def _load_json(path: Path, default: Any = None) -> Any:
 # ══════════════════════════════════════════════════════════════════════════════
 # ProjectStore — shared continuity across stories in a project
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ProjectStore:
     """Shared continuity store for a named project.
@@ -100,8 +101,7 @@ class ProjectStore:
 
     # ── Characters ────────────────────────────────────────────────────────
 
-    def log_character(self, name: str, visual_description: str,
-                      voice_reference: str = "") -> None:
+    def log_character(self, name: str, visual_description: str, voice_reference: str = "") -> None:
         with self._lock:
             key = name.lower().replace(" ", "_")
             self._data["characters"][key] = {
@@ -131,10 +131,14 @@ class ProjectStore:
 
     # ── Visual locks (per-character appearance lock) ──────────────────────
 
-    def set_visual_lock(self, char_key: str, description: str,
-                        seed: int | None = None,
-                        lora_path: str | None = None,
-                        provenance: str = "director") -> None:
+    def set_visual_lock(
+        self,
+        char_key: str,
+        description: str,
+        seed: int | None = None,
+        lora_path: str | None = None,
+        provenance: str = "director",
+    ) -> None:
         """Store a visual lock for a character (Req 13)."""
         with self._lock:
             if not description or len(description) < 20:
@@ -176,6 +180,7 @@ class ProjectStore:
 # StoryStore — per-story state (segments, arc, audit)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class StoryStore:
     """Per-story state: segments, arc, and continuity audit log.
 
@@ -184,8 +189,9 @@ class StoryStore:
     never written to any project.json.
     """
 
-    def __init__(self, story_name: str, project_name: str | None = None,
-                 root: Path = PROJECTS_ROOT):
+    def __init__(
+        self, story_name: str, project_name: str | None = None, root: Path = PROJECTS_ROOT
+    ):
         self._lock = threading.RLock()
         if project_name:
             self._dir = root / _safe(project_name) / "stories" / _safe(story_name)
@@ -233,22 +239,21 @@ class StoryStore:
             self._data["segments"] = [
                 s for s in self._data["segments"] if s.get("segment") != segment
             ]
-            self._data["segments"].append({
-                "segment": segment, "script": script, "summary": summary
-            })
+            self._data["segments"].append(
+                {"segment": segment, "script": script, "summary": summary}
+            )
             self._save_story()
 
     def load_recent_context(self, n: int = 3) -> str:
         with self._lock:
             segs = self._data.get("segments", [])[-n:]
-            return "\n".join(
-                f"Segment {s['segment']}: {s['summary']}" for s in segs
-            )
+            return "\n".join(f"Segment {s['segment']}: {s['summary']}" for s in segs)
 
     # ── Continuity audit ──────────────────────────────────────────────────
 
-    def check_continuity(self, segment_assets: dict,
-                         project_store: ProjectStore | None = None) -> bool:
+    def check_continuity(
+        self, segment_assets: dict, project_store: ProjectStore | None = None
+    ) -> bool:
         """Audit a segment against project characters + story facts."""
         with self._lock:
             seg_num = segment_assets.get("seg_num", "?")
@@ -262,7 +267,7 @@ class StoryStore:
             for _key, info in chars.items():
                 name = info.get("name", "").lower()
                 first = name.split()[0] if name else ""
-                if first and re.search(rf'\b{re.escape(first)}\b', target):
+                if first and re.search(rf"\b{re.escape(first)}\b", target):
                     desc = info.get("visual_description", "").lower()
                     if "blue eyes" in desc and "red eyes" in target:
                         violations.append(
@@ -274,8 +279,10 @@ class StoryStore:
                         )
 
             audit = {
-                "segment": seg_num, "passed": not violations,
-                "violations": violations, "timestamp": time.time()
+                "segment": seg_num,
+                "passed": not violations,
+                "violations": violations,
+                "timestamp": time.time(),
             }
             audit_data = _load_json(self._audit_path, {"entries": []})
             audit_data["entries"].append(audit)
@@ -295,6 +302,7 @@ class StoryStore:
 # PermanentMemoryLog compatibility shim
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class PermanentMemoryLog:
     """Backward-compatible wrapper over ProjectStore + StoryStore.
 
@@ -310,9 +318,12 @@ class PermanentMemoryLog:
         on every update so that a crashed run can resume with full continuity.
     """
 
-    def __init__(self, topic: str = "default_topic",
-                 base_dir: str = "studio_checkpoints",
-                 project_name: str | None = None):
+    def __init__(
+        self,
+        topic: str = "default_topic",
+        base_dir: str = "studio_checkpoints",
+        project_name: str | None = None,
+    ):
         self._topic = topic
         self._project_name = project_name
         self._lock = threading.RLock()
@@ -381,9 +392,7 @@ class PermanentMemoryLog:
             legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
             for seg in legacy.get("segments", []):
                 self._story.save_segment(
-                    seg.get("segment", 0),
-                    seg.get("script", ""),
-                    seg.get("summary", "")
+                    seg.get("segment", 0), seg.get("script", ""), seg.get("summary", "")
                 )
             for key, char in legacy.get("characters", {}).items():
                 name = char.get("name", key)
@@ -436,14 +445,16 @@ class PermanentMemoryLog:
                 # populated (e.g. crash before first segment is saved).
                 if self._one_time_mem_path is not None:
                     try:
-                        _atomic_write(self._one_time_mem_path, {
-                            "characters": self.data.get("characters", {}),
-                            "motifs": self.data.get("motifs", {}),
-                        })
+                        _atomic_write(
+                            self._one_time_mem_path,
+                            {
+                                "characters": self.data.get("characters", {}),
+                                "motifs": self.data.get("motifs", {}),
+                            },
+                        )
                     except Exception as e:
                         log.warning(
-                            f"[PermanentMemoryLog] Could not write one-time memory "
-                            f"checkpoint: {e}"
+                            f"[PermanentMemoryLog] Could not write one-time memory checkpoint: {e}"
                         )
             for key, motif in self.data.get("motifs", {}).items():
                 if self._project:
@@ -452,8 +463,7 @@ class PermanentMemoryLog:
 
     # ── Public API (unchanged from original PermanentMemoryLog) ───────────
 
-    def log_character(self, name: str, visual_description: str,
-                      voice_reference: str) -> None:
+    def log_character(self, name: str, visual_description: str, voice_reference: str) -> None:
         if self._project:
             self._project.log_character(name, visual_description, voice_reference)
         else:
@@ -469,14 +479,16 @@ class PermanentMemoryLog:
                 self._story._save_story()
                 if self._one_time_mem_path is not None:
                     try:
-                        _atomic_write(self._one_time_mem_path, {
-                            "characters": self.data.get("characters", {}),
-                            "motifs": self.data.get("motifs", {}),
-                        })
+                        _atomic_write(
+                            self._one_time_mem_path,
+                            {
+                                "characters": self.data.get("characters", {}),
+                                "motifs": self.data.get("motifs", {}),
+                            },
+                        )
                     except Exception as e:
                         log.warning(
-                            f"[PermanentMemoryLog] Could not write one-time memory "
-                            f"checkpoint: {e}"
+                            f"[PermanentMemoryLog] Could not write one-time memory checkpoint: {e}"
                         )
         log.info(f"[PermanentMemoryLog] Character logged: {name}")
 
@@ -516,14 +528,16 @@ class PermanentMemoryLog:
                 self._story._save_story()
                 if self._one_time_mem_path is not None:
                     try:
-                        _atomic_write(self._one_time_mem_path, {
-                            "characters": self.data.get("characters", {}),
-                            "motifs": self.data.get("motifs", {}),
-                        })
+                        _atomic_write(
+                            self._one_time_mem_path,
+                            {
+                                "characters": self.data.get("characters", {}),
+                                "motifs": self.data.get("motifs", {}),
+                            },
+                        )
                     except Exception as e:
                         log.warning(
-                            f"[PermanentMemoryLog] Could not write one-time memory "
-                            f"checkpoint: {e}"
+                            f"[PermanentMemoryLog] Could not write one-time memory checkpoint: {e}"
                         )
 
     def check_continuity(self, segment_assets: dict) -> bool:

@@ -20,39 +20,44 @@ def setup_run_logging(log_dir: Path) -> None:
     # We no longer clear root handlers to prevent wiping other concurrent pipeline logs.
     # Instead, we just check if we already have a handler for this specific file.
     file_resolved = log_file.resolve()
-    if any(isinstance(h, RotatingFileHandler) and Path(h.baseFilename) == file_resolved for h in logging.root.handlers):
+    if any(
+        isinstance(h, RotatingFileHandler) and Path(h.baseFilename) == file_resolved
+        for h in logging.root.handlers
+    ):
         return  # Already configured for this run
 
     # Rotating File handler (10MB max, keep 5 backups)
     fh = RotatingFileHandler(log_file, encoding="utf-8", maxBytes=10 * 1024 * 1024, backupCount=5)
     fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
-    ))
+    fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s"))
 
     # Console handler
     import sys
+
     class SafeStream:
         def __init__(self, stream):
             self.stream = stream
+
         def write(self, s):
             try:
                 self.stream.write(s)
             except UnicodeEncodeError:
-                self.stream.write(s.encode('ascii', 'replace').decode('ascii'))
+                self.stream.write(s.encode("ascii", "replace").decode("ascii"))
+
         def flush(self):
             self.stream.flush()
 
     ch = logging.StreamHandler(SafeStream(sys.stdout))
     ch.setLevel(logging.INFO)
-    ch.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s"
-    ))
+    ch.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
     logging.root.addHandler(fh)
 
     # Only add console handler if one doesn't exist
-    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in logging.root.handlers):
+    if not any(
+        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        for h in logging.root.handlers
+    ):
         logging.root.addHandler(ch)
 
     logging.root.setLevel(logging.DEBUG)
@@ -78,7 +83,7 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
     char_presence_map = plan.get("char_presence", []) if plan else []
     max_weight = 0.0
     best_key = None
-    for frame in (char_presence_map if isinstance(char_presence_map, list) else []):
+    for frame in char_presence_map if isinstance(char_presence_map, list) else []:
         if isinstance(frame, dict):
             for ck, cw in frame.items():
                 if cw > max_weight:
@@ -180,22 +185,50 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
     # Pools of distinct descriptors. Each frame draws a unique combination based on
     # its index so no two frames within a segment produce identical prompt strings.
     _angles = [
-        "low angle", "high angle", "eye-level", "Dutch angle", "bird's eye view",
-        "worm's eye view", "over-the-shoulder", "profile view", "three-quarter view",
-        "front-on", "wide angle", "telephoto compression",
+        "low angle",
+        "high angle",
+        "eye-level",
+        "Dutch angle",
+        "bird's eye view",
+        "worm's eye view",
+        "over-the-shoulder",
+        "profile view",
+        "three-quarter view",
+        "front-on",
+        "wide angle",
+        "telephoto compression",
     ]
     _distances = [
-        "extreme wide shot", "wide shot", "full shot", "medium-wide shot",
-        "medium shot", "medium close-up", "close-up", "extreme close-up",
+        "extreme wide shot",
+        "wide shot",
+        "full shot",
+        "medium-wide shot",
+        "medium shot",
+        "medium close-up",
+        "close-up",
+        "extreme close-up",
     ]
     _light = [
-        "golden hour glow", "blue-hour twilight", "harsh midday sun", "moonlit",
-        "candlelit interior", "backlit silhouette", "rim-lit", "soft diffused light",
-        "dramatic chiaroscuro", "neon-tinged shadows", "overcast grey", "dawn mist",
+        "golden hour glow",
+        "blue-hour twilight",
+        "harsh midday sun",
+        "moonlit",
+        "candlelit interior",
+        "backlit silhouette",
+        "rim-lit",
+        "soft diffused light",
+        "dramatic chiaroscuro",
+        "neon-tinged shadows",
+        "overcast grey",
+        "dawn mist",
     ]
     _focus = [
-        "deep focus", "shallow depth of field", "tilt-shift", "soft bokeh background",
-        "rack focus", "sharp foreground detail",
+        "deep focus",
+        "shallow depth of field",
+        "tilt-shift",
+        "soft bokeh background",
+        "rack focus",
+        "sharp foreground detail",
     ]
 
     remaining = target_count - len(prompts)
@@ -221,7 +254,9 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
         if p in _seen:
             _seen[p] += 1
             # Add a distinct variation cue drawn from the pools
-            _tag = f"{_angles[idx % len(_angles)]}, {_light[idx % len(_light)]}, variation {idx+1}"
+            _tag = (
+                f"{_angles[idx % len(_angles)]}, {_light[idx % len(_light)]}, variation {idx + 1}"
+            )
             p = f"{p}, {_tag}"
         else:
             _seen[p] = 1
@@ -278,17 +313,14 @@ def save_outputs(topic: str, outputs: dict, out_base: Path) -> None:
         return v
 
     meta_file = out_base / "outputs_meta.json"
-    meta = {
-        "topic": topic,
-        "outputs": {k: _sanitize(v) for k, v in outputs.items()}
-    }
+    meta = {"topic": topic, "outputs": {k: _sanitize(v) for k, v in outputs.items()}}
 
     meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     log.info(f"Outputs saved to {meta_file}")
 
 
-
 # ── Shared Audio Utilities ─────────────────────────────────────────────────
+
 
 def get_audio_duration(audio_path: Path) -> float:
     """Get audio duration in seconds using ffprobe.
@@ -304,9 +336,21 @@ def get_audio_duration(audio_path: Path) -> float:
     """
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "json", str(audio_path)],
-            capture_output=True, check=True, text=True, encoding="utf-8", timeout=15,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "json",
+                str(audio_path),
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
         )
         data = json.loads(result.stdout)
         duration = float(data.get("format", {}).get("duration", 30.0))

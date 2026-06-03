@@ -12,6 +12,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_config():
     return {
         "models": {"writer": "zephyr-writer"},
@@ -23,6 +24,7 @@ def _make_config():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_structured_extraction_happy_path(monkeypatch):
     """When OllamaClient.generate returns valid JSON, narration is extracted."""

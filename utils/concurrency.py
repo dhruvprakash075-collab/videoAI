@@ -21,6 +21,7 @@ class _Count(int):
     ``__iadd__`` / ``__isub__`` preserve the ``_Count`` type so the callable
     property survives ``self.active_heavy_count += 1``.
     """
+
     __slots__ = ()
 
     def __call__(self):  # type: ignore[override]
@@ -94,6 +95,7 @@ class WorkloadScheduler:
                     f"[SCHEDULER] [DONE] Finished LIGHT task '{task_name}' "
                     f"(Active Heavy: {self.active_heavy_count}, Active Light: {self.active_light_count})"
                 )
+
 
 # Global singleton instance for the pipeline to share
 global_scheduler = WorkloadScheduler()

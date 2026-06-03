@@ -13,6 +13,7 @@ runs ONCE after all segments complete:
 This module NEVER touches the per-segment loop, TTS, SD, or the Director. It
 is a pure post-processor that takes (mp4s, outline, config) → final video.
 """
+
 from __future__ import annotations
 
 import json as _json
@@ -27,8 +28,7 @@ from utils import _safe_filename
 log = logging.getLogger(__name__)
 
 
-def write_manifest(topic: str, result: dict, config: dict,
-                   n_segs: int, wall_time_s: float) -> None:
+def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_time_s: float) -> None:
     """Write a structured JSON run manifest for this pipeline run."""
     manifest_dir = Path("studio_outputs") / _safe_filename(topic)
     manifest_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +61,7 @@ def write_manifest(topic: str, result: dict, config: dict,
 
     try:
         from agents.director_agent import UIState as _UIS
+
         manifest["degradations"] = list(_UIS.degradations)
     except Exception:
         manifest["degradations"] = []
@@ -74,6 +75,7 @@ def write_manifest(topic: str, result: dict, config: dict,
 
     try:
         from memory.blackboard import get_blackboard
+
         _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
         _rec = _bb.read_decision()
         if _rec is not None:
@@ -148,15 +150,27 @@ def _generate_thumbnail(final_video: Path, topic: str) -> str:
         return None
     try:
         import subprocess as _sp
+
         _thumb_out = Path("studio_outputs") / _safe_filename(topic) / "thumbnail.png"
         _thumb_out.parent.mkdir(parents=True, exist_ok=True)
-        _sp.run([
-            "ffmpeg", "-y", "-i", str(final_video),
-            "-ss", "0", "-vframes", "1",
-            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
-                   "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-            str(_thumb_out),
-        ], capture_output=True, timeout=60)
+        _sp.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(final_video),
+                "-ss",
+                "0",
+                "-vframes",
+                "1",
+                "-vf",
+                "scale=1280:720:force_original_aspect_ratio=decrease,"
+                "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                str(_thumb_out),
+            ],
+            capture_output=True,
+            timeout=60,
+        )
         if _thumb_out.exists():
             log.info(f"[D3] Thumbnail saved: {_thumb_out}")
             return str(_thumb_out)
@@ -167,8 +181,9 @@ def _generate_thumbnail(final_video: Path, topic: str) -> str:
         return None
 
 
-def finalize_dry_run(topic: str, config: dict, outline: list,
-                     n_segs: int, mp4s: list, wall_time_s: float) -> dict:
+def finalize_dry_run(
+    topic: str, config: dict, outline: list, n_segs: int, mp4s: list, wall_time_s: float
+) -> dict:
     """Dry-run finalization: chapters + manifest, no real concat."""
     default_out = f"studio_outputs/{_safe_filename(topic)}_final_video.mp4"
     final_out = Path(config["video"].get("output_path", ""))
@@ -187,8 +202,9 @@ def finalize_dry_run(topic: str, config: dict, outline: list,
     return _dry_result
 
 
-def finalize_production(topic: str, config: dict, outline: list,
-                        n_segs: int, mp4s: list, wall_time_s: float) -> dict:
+def finalize_production(
+    topic: str, config: dict, outline: list, n_segs: int, mp4s: list, wall_time_s: float
+) -> dict:
     """Production finalization: concat, thumbnail, QC, manifest, chapters."""
     from core.segment_runner import log_vram_usage
     from utils.quality_check import check_video
@@ -240,8 +256,11 @@ def finalize_production(topic: str, config: dict, outline: list,
     # Quality check
     log.info("Running quality checks...")
     _actual_duration_s = sum(get_video_duration(p) for p in mp4s if p is not None)
-    qc = check_video(final_video, config,
-                     expected_duration_s=_actual_duration_s if _actual_duration_s > 0 else None)
+    qc = check_video(
+        final_video,
+        config,
+        expected_duration_s=_actual_duration_s if _actual_duration_s > 0 else None,
+    )
     log.info(f"  Quality: {'PASS' if qc['passed'] else 'FAIL'}")
     if qc["issues"]:
         for issue in qc["issues"]:
@@ -268,11 +287,13 @@ def finalize_production(topic: str, config: dict, outline: list,
         log.info("[YouTube] Auto-upload enabled. Initiating Playwright upload...")
 
         from utils.seo_generator import generate_seo_metadata
+
         seo_meta = generate_seo_metadata(topic, outline, config)
         title = seo_meta["title"]
         tags = seo_meta["tags"]
 
         from utils.youtube_uploader import upload_to_youtube
+
         desc_lines = [f"Auto-generated video about: {topic}\n\nChapters:"] + (chapters or [])
         description = "\n".join(desc_lines)
 
@@ -283,7 +304,7 @@ def finalize_production(topic: str, config: dict, outline: list,
             tags=tags,
             visibility=upload_cfg.get("visibility", "private"),
             profile_dir=upload_cfg.get("profile_dir", "chrome_profile"),
-            headless=True
+            headless=True,
         )
         _success_result["youtube_upload"] = "success" if uploaded else "failed"
 

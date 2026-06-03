@@ -1,4 +1,5 @@
 """test_retry_budget.py - Tests for A7: per-segment retry budget."""
+
 import sys
 from pathlib import Path
 
@@ -29,8 +30,9 @@ def _make_budget_wrapper(max_retries: int, fail_times: int):
                 retry_counts[i] += 1
                 if retry_counts[i] > max_retries:
                     with contextlib.suppress(Exception):
-                        UIState.add_degradation(i, "segment_skip",
-                                                f"retry budget exhausted: {str(_e)[:100]}")
+                        UIState.add_degradation(
+                            i, "segment_skip", f"retry budget exhausted: {str(_e)[:100]}"
+                        )
                     return
 
     return _process_segment_with_budget, call_count, retry_counts

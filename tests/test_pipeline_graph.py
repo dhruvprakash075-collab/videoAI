@@ -2,22 +2,35 @@
 core/pipeline_graph.py. Verifies the graph builds, the routing logic is
 correct, and state propagates through nodes.
 """
+
 from core.pipeline_graph import END, SegmentGraphBuilder
 
 
 class _FakeCtx:
     """Minimal context for SegmentGraphBuilder - supplies config + node fns."""
+
     def __init__(self, max_rewrites=2):
         self.config = {
             "script": {"critic_max_rewrites": max_rewrites, "critic_threshold": 60},
         }
 
-    def do_write_script(self, state): return {"script": "draft"}
-    def do_critic(self, state):       return {"critic_approved": True, "critic_feedback": "", "rewrites_attempted": 1}
-    def do_translate(self, state):    return {"devanagari_script": "ट्रांसलेट"}
-    def do_tts(self, state):          return {"audio_path": "/tmp/a.wav"}
-    def do_image_gen(self, state):    return {"images": ["/tmp/i.png"]}
-    def do_render(self, state):       return {"mp4_path": "/tmp/v.mp4"}
+    def do_write_script(self, state):
+        return {"script": "draft"}
+
+    def do_critic(self, state):
+        return {"critic_approved": True, "critic_feedback": "", "rewrites_attempted": 1}
+
+    def do_translate(self, state):
+        return {"devanagari_script": "ट्रांसलेट"}
+
+    def do_tts(self, state):
+        return {"audio_path": "/tmp/a.wav"}
+
+    def do_image_gen(self, state):
+        return {"images": ["/tmp/i.png"]}
+
+    def do_render(self, state):
+        return {"mp4_path": "/tmp/v.mp4"}
 
 
 def test_graph_builds_without_error():
@@ -61,3 +74,15 @@ def test_state_script_propagates_across_write_to_critic():
     assert new_state["script"] == "draft"
     critic_out = builder.critic_node(new_state)
     assert "critic_approved" in critic_out
+
+
+def test_nodes_skip_or_abort():
+    builder = SegmentGraphBuilder(_FakeCtx())
+    for s_key in ("aborted", "skip"):
+        state = {s_key: True}
+        assert builder.write_script_node(state) == {}
+        assert builder.critic_node(state) == {}
+        assert builder.translate_node(state) == {}
+        assert builder.tts_node(state) == {}
+        assert builder.image_node(state) == {}
+        assert builder.render_node(state) == {}

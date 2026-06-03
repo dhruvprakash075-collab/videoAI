@@ -26,28 +26,70 @@ _HEADERS = {"User-Agent": "VideoAI/1.0 (research bot; contact@example.com)"}
 
 # Wikipedia sections to INCLUDE (setting/character info, not plot spoilers)
 _WIKI_INCLUDE_SECTIONS = [
-    "premise", "setting", "overview", "introduction",
-    "background", "universe", "world", "concept",
-    "characters", "protagonist",
-    "concept and creation", "development", "design",
-    "publication", "publication history", "inspiration",
-    "themes", "style", "style and themes",
-    "worldbuilding", "lore", "cosmology",
-    "description", "appearance", "abilities",
-    "powers", "personality", "role",
-    "characteristics", "profile",
-    "gameplay", "mechanics",
+    "premise",
+    "setting",
+    "overview",
+    "introduction",
+    "background",
+    "universe",
+    "world",
+    "concept",
+    "characters",
+    "protagonist",
+    "concept and creation",
+    "development",
+    "design",
+    "publication",
+    "publication history",
+    "inspiration",
+    "themes",
+    "style",
+    "style and themes",
+    "worldbuilding",
+    "lore",
+    "cosmology",
+    "description",
+    "appearance",
+    "abilities",
+    "powers",
+    "personality",
+    "role",
+    "characteristics",
+    "profile",
+    "gameplay",
+    "mechanics",
 ]
 
 # Wikipedia sections to SKIP (plot spoilers)
 _WIKI_SKIP_SECTIONS = [
-    "plot", "synopsis", "story", "episodes", "chapters",
-    "ending", "conclusion", "sequel", "death", "arc",
-    "history", "biography", "career", "trivia",
-    "reception", "legacy", "spin-off", "adaptation",
-    "controvers", "criticism", "prequel",
-    "volumes", "volume list", "anime", "film",
-    "media", "manga", "novel",
+    "plot",
+    "synopsis",
+    "story",
+    "episodes",
+    "chapters",
+    "ending",
+    "conclusion",
+    "sequel",
+    "death",
+    "arc",
+    "history",
+    "biography",
+    "career",
+    "trivia",
+    "reception",
+    "legacy",
+    "spin-off",
+    "adaptation",
+    "controvers",
+    "criticism",
+    "prequel",
+    "volumes",
+    "volume list",
+    "anime",
+    "film",
+    "media",
+    "manga",
+    "novel",
 ]
 
 _SPOILER_REGEX = [
@@ -64,7 +106,9 @@ _SPOILER_REGEX = [
 
 _SPOILER_LEADING = re.compile(
     r"(?i)^(the ending|in the finale|the final battle|the series concludes|"
-    r"ultimately|eventually|the novel ends|in the final chapter)")
+    r"ultimately|eventually|the novel ends|in the final chapter)"
+)
+
 
 def _filter_sections(text: str, topic: str = "") -> str:
     """Filter Wikipedia extract by sections: keep INCLUDE, skip SKIP, strip spoilers.
@@ -113,6 +157,7 @@ def _filter_sections(text: str, topic: str = "") -> str:
         result = result[:5000] + "..."
     return result
 
+
 def _wiki_api_request(params: dict) -> dict:
     """Make a Wikipedia API request."""
     resp = requests.get(_WIKI_API, params=params, headers=_HEADERS, timeout=15)
@@ -126,13 +171,15 @@ def _search_wikipedia(query: str) -> list[dict]:
 
     # Step 1: Search for pages
     try:
-        search_data = _wiki_api_request({
-            "action": "query",
-            "list": "search",
-            "srsearch": query,
-            "srlimit": 5,
-            "format": "json",
-        })
+        search_data = _wiki_api_request(
+            {
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srlimit": 5,
+                "format": "json",
+            }
+        )
         search_results = search_data.get("query", {}).get("search", [])
     except Exception as e:
         log.debug(f"Wikipedia search failed for '{query}': {e}")
@@ -146,16 +193,18 @@ def _search_wikipedia(query: str) -> list[dict]:
 
         # Step 2: Get full page extract with sections (not just intro)
         try:
-            extract_data = _wiki_api_request({
-                "action": "query",
-                "prop": "extracts|info",
-                "explaintext": "1",
-                "exsectionformat": "wiki",
-                "exlimit": "max",
-                "inprop": "url",
-                "pageids": pageid,
-                "format": "json",
-            })
+            extract_data = _wiki_api_request(
+                {
+                    "action": "query",
+                    "prop": "extracts|info",
+                    "explaintext": "1",
+                    "exsectionformat": "wiki",
+                    "exlimit": "max",
+                    "inprop": "url",
+                    "pageids": pageid,
+                    "format": "json",
+                }
+            )
             pages = extract_data.get("query", {}).get("pages", {})
             page = pages.get(str(pageid), {})
             extract = page.get("extract", "")
@@ -163,12 +212,14 @@ def _search_wikipedia(query: str) -> list[dict]:
 
             if extract and extract.strip() and not extract.startswith("may refer to:"):
                 safe_text = _filter_sections(extract, query)
-                results.append({
-                    "source": "wikipedia",
-                    "title": title,
-                    "summary": safe_text,
-                    "url": url,
-                })
+                results.append(
+                    {
+                        "source": "wikipedia",
+                        "title": title,
+                        "summary": safe_text,
+                        "url": url,
+                    }
+                )
                 log.debug(f"Wikipedia: fetched '{title}' ({len(safe_text)} chars)")
         except Exception as e:
             log.debug(f"Wikipedia extract failed for '{title}': {e}")
@@ -182,7 +233,15 @@ def _search_duckduckgo(query: str) -> list[dict]:
 
     results = []
     try:
-        req = urllib.request.Request(_DDG_HTML, data=data, headers={**_HEADERS, "Accept": "text/html", "Content-Type": "application/x-www-form-urlencoded"})
+        req = urllib.request.Request(
+            _DDG_HTML,
+            data=data,
+            headers={
+                **_HEADERS,
+                "Accept": "text/html",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
         # P3-17 fix: urlopen RAISES urllib.error.HTTPError on 403 — it never returns
         # a response with status 403.  Catch the exception and retry on 403.
         try:
@@ -191,8 +250,17 @@ def _search_duckduckgo(query: str) -> list[dict]:
             if e.code == 403:
                 log.warning("DDG returned 403 — retrying after 3s delay...")
                 import time
+
                 time.sleep(3)
-                req2 = urllib.request.Request(_DDG_HTML, data=data, headers={**_HEADERS, "Accept": "text/html", "Content-Type": "application/x-www-form-urlencoded"})
+                req2 = urllib.request.Request(
+                    _DDG_HTML,
+                    data=data,
+                    headers={
+                        **_HEADERS,
+                        "Accept": "text/html",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                )
                 resp_ctx = urllib.request.urlopen(req2, timeout=10)
             else:
                 raise
@@ -203,13 +271,23 @@ def _search_duckduckgo(query: str) -> list[dict]:
                 return results
 
         soup = BeautifulSoup(html_text, "html.parser")
-        result_divs = soup.select(".result") or soup.select(".web-result") or soup.select(".results_links")
+        result_divs = (
+            soup.select(".result") or soup.select(".web-result") or soup.select(".results_links")
+        )
         if not result_divs:
             log.debug("DuckDuckGo: no result elements found (HTML may have changed)")
             return results
         for result_div in result_divs[:5]:
-            title_el = result_div.select_one(".result__title a") or result_div.select_one(".result__a") or result_div.select_one("a.result-link")
-            snippet_el = result_div.select_one(".result__snippet") or result_div.select_one(".result-snippet") or result_div.select_one(".snippet")
+            title_el = (
+                result_div.select_one(".result__title a")
+                or result_div.select_one(".result__a")
+                or result_div.select_one("a.result-link")
+            )
+            snippet_el = (
+                result_div.select_one(".result__snippet")
+                or result_div.select_one(".result-snippet")
+                or result_div.select_one(".snippet")
+            )
             link_el = result_div.select_one(".result__url")
 
             title = title_el.get_text(strip=True) if title_el else ""
@@ -217,12 +295,14 @@ def _search_duckduckgo(query: str) -> list[dict]:
             link = link_el.get("href", "") if link_el else ""
 
             if snippet:
-                results.append({
-                    "source": "duckduckgo",
-                    "title": title or query,
-                    "summary": _strip_spoilers(snippet, query),
-                    "url": link,
-                })
+                results.append(
+                    {
+                        "source": "duckduckgo",
+                        "title": title or query,
+                        "summary": _strip_spoilers(snippet, query),
+                        "url": link,
+                    }
+                )
 
         log.debug(f"DuckDuckGo (HTML): {len(results)} results for '{query}'")
     except Exception as e:
@@ -274,6 +354,7 @@ def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict:
     all_ddg = []
 
     from concurrent.futures import ThreadPoolExecutor
+
     for query in queries:
         with ThreadPoolExecutor(max_workers=2) as pool:
             wiki_future = pool.submit(_search_wikipedia, query)
@@ -311,7 +392,7 @@ def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict:
     for r in all_wiki:
         combined_parts.append(f"[Wikipedia: {r['title']}] {r['summary']}")
     for r in all_ddg:
-        if r.get('summary', '').strip():
+        if r.get("summary", "").strip():
             combined_parts.append(f"[Web: {r.get('title', '')}] {r['summary']}")
 
     combined = "\n\n".join(combined_parts[:10])

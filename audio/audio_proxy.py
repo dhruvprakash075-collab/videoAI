@@ -67,8 +67,7 @@ def normalize_tts_engine(engine: str) -> str:
     """
     if not isinstance(engine, str):
         log.warning(
-            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — "
-            "defaulting to 'f5'"
+            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — defaulting to 'f5'"
         )
         return "f5"
 
@@ -89,12 +88,13 @@ def normalize_tts_engine(engine: str) -> str:
     return "f5"
 
 
-
-
-
-def _call_edge_direct(text: str, lang: str = "hi", output_dir: Path | None = None,
-                      voice_profile: dict[str, Any] | None = None,
-                      speed: float | None = None) -> dict[str, Any]:
+def _call_edge_direct(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    voice_profile: dict[str, Any] | None = None,
+    speed: float | None = None,
+) -> dict[str, Any]:
     """Call edge-tts directly from venv.
 
     Uses edge-tts package for fast cloud TTS as a fallback.
@@ -130,7 +130,9 @@ def _call_edge_direct(text: str, lang: str = "hi", output_dir: Path | None = Non
             rate = f"+{rate_pct}%" if rate_pct >= 0 else f"{rate_pct}%"
             log.debug(f"[edge-tts] mood-based speed {speed:.2f} → rate={rate!r}")
         except (TypeError, ValueError) as exc:
-            log.warning(f"[edge-tts] Could not convert speed {speed!r} to rate string: {exc}; using profile default {rate!r}")
+            log.warning(
+                f"[edge-tts] Could not convert speed {speed!r} to rate string: {exc}; using profile default {rate!r}"
+            )
 
     try:
         from edge_tts import Communicate
@@ -144,6 +146,7 @@ def _call_edge_direct(text: str, lang: str = "hi", output_dir: Path | None = Non
         except RuntimeError:
             try:
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 asyncio.get_event_loop().run_until_complete(_gen())
             except (ImportError, ModuleNotFoundError):
@@ -156,6 +159,7 @@ def _call_edge_direct(text: str, lang: str = "hi", output_dir: Path | None = Non
         # Get duration
         try:
             from pydub import AudioSegment
+
             audio = AudioSegment.from_file(str(output_mp3))
             duration = len(audio) / 1000.0
         except Exception:
@@ -200,16 +204,20 @@ class _OmniVoiceWorker:
         try:
             self._proc = subprocess.Popen(
                 [python_exe, str(worker_script), "--serve"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
                 # B-fix: send stderr to DEVNULL, NOT PIPE. Whisper/transformers emit
                 # heavy stderr logging; an unread PIPE fills the OS buffer and the
                 # worker blocks on write() — a deadlock that looks like a TTS stall
                 # (GPU 0%, no progress). DEVNULL can never fill.
                 stderr=subprocess.DEVNULL,
-                text=True, encoding="utf-8", bufsize=1,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
             )
             # Wait for the readiness line (model load can take a while)
             import time as _t
+
             deadline = _t.time() + 300
             while _t.time() < deadline:
                 line = self._proc.stdout.readline()
@@ -231,7 +239,9 @@ class _OmniVoiceWorker:
                     raise RuntimeError(msg.get("message", "worker init error"))
             raise RuntimeError("worker readiness timeout")
         except Exception as e:
-            log.warning(f"[OmniVoice] Persistent worker unavailable ({e}) — using one-shot fallback")
+            log.warning(
+                f"[OmniVoice] Persistent worker unavailable ({e}) — using one-shot fallback"
+            )
             self._failed = True
             self._cleanup_proc()
             return False
@@ -256,6 +266,7 @@ class _OmniVoiceWorker:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+
                 # timeout is an IDLE timeout: it resets each time the worker emits a
                 # line (including progress), so total time scales with the work done.
                 deadline = _t.time() + timeout
@@ -282,7 +293,9 @@ class _OmniVoiceWorker:
                     return msg
                 raise RuntimeError("worker response timeout (no progress within idle window)")
             except Exception as e:
-                log.warning(f"[OmniVoice] Persistent worker request failed ({e}) — disabling persistent mode")
+                log.warning(
+                    f"[OmniVoice] Persistent worker request failed ({e}) — disabling persistent mode"
+                )
                 self._failed = True
                 self._cleanup_proc()
                 return None
@@ -310,6 +323,7 @@ def shutdown_omnivoice_worker():
 
 # ── F5-TTS persistent worker (T1) ────────────────────────────────────────────
 
+
 class _F5Worker:
     """Persistent F5-TTS worker subprocess (mirrors _OmniVoiceWorker design).
 
@@ -336,7 +350,9 @@ class _F5Worker:
             # Resolve model path from config
             try:
                 _f5_cfg = load_config().get("tts", {}).get("f5", {})
-                _model_path = _f5_cfg.get("model_path", "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main")
+                _model_path = _f5_cfg.get(
+                    "model_path", "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main"
+                )
             except Exception:
                 _model_path = "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main"
 
@@ -344,13 +360,13 @@ class _F5Worker:
             if not Path(_model_path).exists():
                 try:
                     from audio.f5_worker import _resolve_model_path as _fp_resolve
+
                     _model_path = _fp_resolve(_model_path)
                 except Exception:
                     pass
             if not Path(_model_path).exists():
                 raise FileNotFoundError(
-                    f"F5 model not found at '{_model_path}'. "
-                    "Run setup_f5.ps1 to download it."
+                    f"F5 model not found at '{_model_path}'. Run setup_f5.ps1 to download it."
                 )
 
             # Critical env for the F5 subprocess on Windows:
@@ -359,23 +375,28 @@ class _F5Worker:
             #  - PYTHONIOENCODING=utf-8: f5 prints Hindi text internally.
             #  - HF_HUB_DISABLE_XET: xet backend stalls model loads on Windows.
             _f5_env = dict(os.environ)
-            _f5_env.update({
-                "WANDB_MODE": "disabled",
-                "WANDB_DISABLED": "true",
-                "WANDB_CONSOLE": "off",
-                "PYTHONIOENCODING": "utf-8",
-                "HF_HUB_DISABLE_XET": "1",
-                "HF_HUB_DISABLE_SYMLINKS_WARNING": "1",
-            })
+            _f5_env.update(
+                {
+                    "WANDB_MODE": "disabled",
+                    "WANDB_DISABLED": "true",
+                    "WANDB_CONSOLE": "off",
+                    "PYTHONIOENCODING": "utf-8",
+                    "HF_HUB_DISABLE_XET": "1",
+                    "HF_HUB_DISABLE_SYMLINKS_WARNING": "1",
+                }
+            )
             self._proc = subprocess.Popen(
-                [str(python_exe), str(worker_script), "--serve",
-                 f"--model-path={_model_path}"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                [str(python_exe), str(worker_script), "--serve", f"--model-path={_model_path}"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                text=True, encoding="utf-8", bufsize=1,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
                 env=_f5_env,
             )
             import time as _t
+
             deadline = _t.time() + 300
             while _t.time() < deadline:
                 line = self._proc.stdout.readline()
@@ -397,7 +418,9 @@ class _F5Worker:
                     raise RuntimeError(msg.get("message", "F5 worker init error"))
             raise RuntimeError("F5 worker readiness timeout")
         except Exception as e:
-            log.warning(f"[F5-TTS] Persistent worker unavailable ({e}) — will fall back to omnivoice")
+            log.warning(
+                f"[F5-TTS] Persistent worker unavailable ({e}) — will fall back to omnivoice"
+            )
             self._failed = True
             self._cleanup_proc()
             return False
@@ -417,6 +440,7 @@ class _F5Worker:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
                     line = self._proc.stdout.readline()
@@ -464,9 +488,13 @@ def shutdown_f5_worker():
     _f5_worker.shutdown()
 
 
-def _call_f5_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
-                    voice_sample: str = "",
-                    speed_override: float | None = None) -> dict[str, Any]:
+def _call_f5_worker(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    voice_sample: str = "",
+    speed_override: float | None = None,
+) -> dict[str, Any]:
     """Generate F5-TTS audio.
 
     T1: Tries the persistent worker first (model stays loaded across segments).
@@ -514,7 +542,9 @@ def _call_f5_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
         worker_script = Path(__file__).parent / "f5_worker.py"
         try:
             _f5_cfg2 = load_config().get("tts", {}).get("f5", {})
-            _model_path = _f5_cfg2.get("model_path", "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main")
+            _model_path = _f5_cfg2.get(
+                "model_path", "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main"
+            )
         except Exception:
             _model_path = "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main"
 
@@ -522,6 +552,7 @@ def _call_f5_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
         if not Path(_model_path).exists():
             try:
                 from audio.f5_worker import _resolve_model_path as _fp_resolve2
+
                 _model_path = _fp_resolve2(_model_path)
             except Exception:
                 pass
@@ -532,7 +563,8 @@ def _call_f5_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
         temp_file.write_text(text, encoding="utf-8", errors="replace")
 
         cmd = [
-            str(python_exe), str(worker_script),
+            str(python_exe),
+            str(worker_script),
             f"--text-file={temp_file}",
             f"--output={out_wav}",
             f"--model-path={_model_path}",
@@ -564,10 +596,14 @@ def _call_f5_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
         return {"status": "error", "message": str(e)[:200]}
 
 
-def _call_omnivoice_worker(text: str, lang: str = "hi", output_dir: Path | None = None,
-                           voice_sample: str = "",
-                           speed_override: float | None = None,
-                           sentence_gap_ms: int | None = None) -> dict[str, Any]:
+def _call_omnivoice_worker(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    voice_sample: str = "",
+    speed_override: float | None = None,
+    sentence_gap_ms: int | None = None,
+) -> dict[str, Any]:
     """Generate OmniVoice TTS.
 
     B16 fix: tries the persistent worker first (model stays loaded across segments),
@@ -615,16 +651,27 @@ def _call_omnivoice_worker(text: str, lang: str = "hi", output_dir: Path | None 
     # ── 2. Fallback: one-shot subprocess (original behavior) ───────────────
     log.info("[OmniVoice] Using one-shot subprocess fallback")
     return _call_omnivoice_oneshot(
-        text, output_dir=output_dir, out_wav=out_wav, voice_sample=voice_sample,
-        speed=speed, num_step=num_step, guidance_scale=guidance_scale,
+        text,
+        output_dir=output_dir,
+        out_wav=out_wav,
+        voice_sample=voice_sample,
+        speed=speed,
+        num_step=num_step,
+        guidance_scale=guidance_scale,
         ref_text=omnivoice_cfg.get("ref_text", "") or "",
     )
 
 
-def _call_omnivoice_oneshot(text: str, output_dir: Path, out_wav: Path,
-                            voice_sample: str = "", speed: float = 0.85,
-                            num_step: int = 24, guidance_scale: float = 2.5,
-                            ref_text: str = "") -> dict[str, Any]:
+def _call_omnivoice_oneshot(
+    text: str,
+    output_dir: Path,
+    out_wav: Path,
+    voice_sample: str = "",
+    speed: float = 0.85,
+    num_step: int = 24,
+    guidance_scale: float = 2.5,
+    ref_text: str = "",
+) -> dict[str, Any]:
     """One-shot OmniVoice subprocess (model loads per call — fallback path).
 
     P2-13 fix: accepts ref_text and passes --ref-text to the worker so OmniVoice
@@ -640,7 +687,8 @@ def _call_omnivoice_oneshot(text: str, output_dir: Path, out_wav: Path,
     try:
         temp_file.write_text(text, encoding="utf-8", errors="replace")
         cmd = [
-            str(python_exe), str(worker_script),
+            str(python_exe),
+            str(worker_script),
             f"--text-file={temp_file}",
             f"--output={out_wav}",
             f"--speed={speed}",
@@ -657,9 +705,9 @@ def _call_omnivoice_oneshot(text: str, output_dir: Path, out_wav: Path,
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
 
         if result.returncode == 0 and result.stdout.strip():
-            for line in reversed(result.stdout.strip().split('\n')):
+            for line in reversed(result.stdout.strip().split("\n")):
                 line = line.strip()
-                if line.startswith('{') and line.endswith('}'):
+                if line.startswith("{") and line.endswith("}"):
                     try:
                         return json.loads(line)
                     except json.JSONDecodeError:
@@ -677,6 +725,7 @@ def _call_omnivoice_oneshot(text: str, output_dir: Path, out_wav: Path,
                 temp_file.unlink()
         except Exception:
             pass
+
 
 def translate_hinglish(text: str, seg: int = 0) -> str:
     """Translate English to natural Romanized Hinglish using local Ollama model.
@@ -701,8 +750,7 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
     # Fall back to writer if translator is not configured so existing setups
     # continue to work without a config change.
     model = cfg.get("models", {}).get(
-        "translator",
-        cfg.get("models", {}).get("writer", "zephyr-writer")
+        "translator", cfg.get("models", {}).get("writer", "zephyr-writer")
     )
     host = cfg.get("ollama", {}).get("host", "http://localhost:11434")
     f"{host.rstrip('/')}/api/generate"
@@ -739,18 +787,18 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
             "Hindi translation:"
         )
 
-
     # B1: delegate to the centralized OllamaClient (circuit breaker + unified retry).
     try:
         from utils.ollama_client import get_ollama_client
+
         _client = get_ollama_client(cfg)
         translated = _client.generate(prompt, model=model, temperature=0.3)
         if translated:
             # Clean LLM chat template tokens / markdown (client already strips <think>)
-            translated = re.sub(r'<\|.*?\|>', '', translated).strip()
+            translated = re.sub(r"<\|.*?\|>", "", translated).strip()
             if translated.startswith("```"):
-                translated = re.sub(r'^```[a-zA-Z]*\n', '', translated)
-                translated = re.sub(r'\n```$', '', translated)
+                translated = re.sub(r"^```[a-zA-Z]*\n", "", translated)
+                translated = re.sub(r"\n```$", "", translated)
                 translated = translated.strip()
             if translated:
                 log.info(f"Ollama Hinglish Translation successful: {len(translated)} chars")
@@ -762,16 +810,23 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
     log.warning("Translation failed, using original English text")
     try:
         from agents.director_agent import UIState
-        UIState.add_degradation(seg, "translation_fallback", "Ollama translation failed, using English")
+
+        UIState.add_degradation(
+            seg, "translation_fallback", "Ollama translation failed, using English"
+        )
     except Exception:
         pass
     return text
 
 
-def tts_generate(text: str, lang: str = "hi", slow: bool = False,
-                 output_dir: Path | None = None,
-                 voice_sample: Path | None = None,
-                 speed: float | None = None) -> dict:
+def tts_generate(
+    text: str,
+    lang: str = "hi",
+    slow: bool = False,
+    output_dir: Path | None = None,
+    voice_sample: Path | None = None,
+    speed: float | None = None,
+) -> dict:
     """Generate TTS audio using configured engine.
 
     Args:
@@ -795,12 +850,12 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
     # BUG-13 FIX: start from config defaults so explicit config values always win,
     # not the hardcoded fallback dict below.
     tts_cfg = _cfg.get("tts", {})
-    vp_cfg  = tts_cfg.get("voice_profile", {})
+    vp_cfg = tts_cfg.get("voice_profile", {})
     edge_cfg = tts_cfg.get("edge", {})
     voice_profile = {
-        "edge_voice":      edge_cfg.get("voice",  vp_cfg.get("edge_voice",  "hi-IN-MadhurNeural")),
-        "edge_rate":       edge_cfg.get("rate",   vp_cfg.get("edge_rate",   "+5%")),
-        "edge_volume":     edge_cfg.get("volume", vp_cfg.get("edge_volume", "+0%")),
+        "edge_voice": edge_cfg.get("voice", vp_cfg.get("edge_voice", "hi-IN-MadhurNeural")),
+        "edge_rate": edge_cfg.get("rate", vp_cfg.get("edge_rate", "+5%")),
+        "edge_volume": edge_cfg.get("volume", vp_cfg.get("edge_volume", "+0%")),
         "sentence_gap_ms": vp_cfg.get("sentence_gap_ms", 200),
     }
     if vp_cfg:
@@ -821,7 +876,8 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
             voices_dir = Path("character_voices")
             if voices_dir.exists():
                 wav_files = [
-                    f for f in voices_dir.glob("*.wav")
+                    f
+                    for f in voices_dir.glob("*.wav")
                     if "_ref" not in f.stem and "mono" not in f.stem
                 ]
                 if wav_files:
@@ -844,7 +900,9 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
         # Falls back to omnivoice → edge if F5 model/lib is absent (safe for
         # machines that haven't run setup_f5.ps1 yet).
         result = _call_f5_worker(
-            text, lang=lang, output_dir=output_dir,
+            text,
+            lang=lang,
+            output_dir=output_dir,
             voice_sample=str(voice_sample) if voice_sample else "",
             speed_override=speed,
         )
@@ -853,11 +911,16 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
             log.warning("[TTS] F5 failed — degrading to omnivoice")
             try:
                 from agents.director_agent import UIState as _UIState_tts
-                _UIState_tts.add_degradation(0, "tts_engine_fallback", "F5-TTS failed, using omnivoice")
+
+                _UIState_tts.add_degradation(
+                    0, "tts_engine_fallback", "F5-TTS failed, using omnivoice"
+                )
             except Exception:
                 pass
             result = _call_omnivoice_worker(
-                text, lang=lang, output_dir=output_dir,
+                text,
+                lang=lang,
+                output_dir=output_dir,
                 voice_sample=str(voice_sample) if voice_sample else "",
                 speed_override=speed,
                 sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
@@ -867,31 +930,39 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
             log.warning("[TTS] omnivoice fallback also failed — degrading to edge")
             try:
                 from agents.director_agent import UIState as _UIState_tts2
-                _UIState_tts2.add_degradation(0, "tts_engine_fallback", "omnivoice failed, using edge")
+
+                _UIState_tts2.add_degradation(
+                    0, "tts_engine_fallback", "omnivoice failed, using edge"
+                )
             except Exception:
                 pass
-            result = _call_edge_direct(text, lang=lang, output_dir=output_dir,
-                                       voice_profile=voice_profile, speed=speed)
+            result = _call_edge_direct(
+                text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
+            )
     elif engine == "omnivoice":
         # B9 fix: pass per-call speed override (mood-based) to OmniVoice
         # P4-9 fix: pass sentence_gap_ms from voice_profile so the worker uses
         # the config value instead of a hardcoded gap.
         result = _call_omnivoice_worker(
-            text, lang=lang, output_dir=output_dir,
+            text,
+            lang=lang,
+            output_dir=output_dir,
             voice_sample=str(voice_sample) if voice_sample else "",
             speed_override=speed,
             sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
         )
     elif engine == "edge":
         # P1-8 fix: pass mood-based speed through to edge-tts rate conversion
-        result = _call_edge_direct(text, lang=lang, output_dir=output_dir,
-                                   voice_profile=voice_profile, speed=speed)
+        result = _call_edge_direct(
+            text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
+        )
     else:
         # Unknown engine → documented fallback to edge-tts (R12.7)
         log.warning(f"Unknown TTS engine '{engine}' — falling back to edge-tts")
         # P1-8 fix: pass mood-based speed through to edge-tts rate conversion
-        result = _call_edge_direct(text, lang=lang, output_dir=output_dir,
-                                   voice_profile=voice_profile, speed=speed)
+        result = _call_edge_direct(
+            text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
+        )
 
     if result.get("status") == "success":
         wav_path = Path(result.get("wav_path", ""))
@@ -903,10 +974,7 @@ def tts_generate(text: str, lang: str = "hi", slow: bool = False,
 
         if wav_path.exists():
             log.info(f"TTS generated: {wav_path}")
-            return {
-                "wav_path": wav_path,
-                "word_timestamps": word_timestamps
-            }
+            return {"wav_path": wav_path, "word_timestamps": word_timestamps}
         log.error(f"TTS returned path that doesn't exist: {wav_path}")
         raise RuntimeError(f"TTS file not found at {wav_path}")
 
@@ -928,9 +996,12 @@ def get_audio_duration(wav_path: Path) -> float:
     return _get_audio_duration_utils(wav_path)
 
 
-def rvc_convert(src_wav: Path, output_dir: Path | None = None,
-                rvc_model: Path | None = None,
-                rvc_index: Path | None = None) -> Path:
+def rvc_convert(
+    src_wav: Path,
+    output_dir: Path | None = None,
+    rvc_model: Path | None = None,
+    rvc_index: Path | None = None,
+) -> Path:
     """RVC voice conversion using rvc_worker.py subprocess.
 
     Calls rvc_worker.py to convert TTS output through an RVC voice model.
@@ -955,7 +1026,9 @@ def rvc_convert(src_wav: Path, output_dir: Path | None = None,
         return src_wav
 
     model_path = rvc_model or Path(rvc_cfg.get("model_path", ""))
-    index_path = rvc_index or Path(rvc_cfg.get("index_path", "")) if rvc_cfg.get("index_path") else None
+    index_path = (
+        rvc_index or Path(rvc_cfg.get("index_path", "")) if rvc_cfg.get("index_path") else None
+    )
 
     if not model_path or not Path(model_path).exists():
         log.warning(f"RVC model not found: {model_path} — returning original audio")
@@ -977,7 +1050,8 @@ def rvc_convert(src_wav: Path, output_dir: Path | None = None,
     protect = rvc_cfg.get("protect", 0.33)
 
     cmd = [
-        str(python_exe), str(worker_script),
+        str(python_exe),
+        str(worker_script),
         f"--input={src_wav}",
         f"--model={model_path}",
         f"--output={output_wav}",
@@ -993,8 +1067,8 @@ def rvc_convert(src_wav: Path, output_dir: Path | None = None,
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=300)
 
-        for line in result.stdout.strip().split('\n'):
-            if line.startswith('{'):
+        for line in result.stdout.strip().split("\n"):
+            if line.startswith("{"):
                 try:
                     resp = json.loads(line)
                     if resp.get("status") == "success":
@@ -1003,7 +1077,9 @@ def rvc_convert(src_wav: Path, output_dir: Path | None = None,
                 except json.JSONDecodeError:
                     continue
 
-        log.warning(f"RVC conversion failed: {result.stderr[:200] if result.stderr else 'unknown'} — returning original")
+        log.warning(
+            f"RVC conversion failed: {result.stderr[:200] if result.stderr else 'unknown'} — returning original"
+        )
         return src_wav
 
     except subprocess.TimeoutExpired:
@@ -1015,6 +1091,7 @@ def rvc_convert(src_wav: Path, output_dir: Path | None = None,
 
 
 # ── Engine capability profiles (R12.5) ────────────────────────────────────────
+
 
 def tts_capabilities() -> dict[str, dict[str, Any]]:
     """Return a documented capability profile per TTS engine.

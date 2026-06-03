@@ -7,15 +7,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-
 # ---------------------------------------------------------------------------
 # Inline trim logic (mirrors the W4 implementation in pipeline_long.py)
 # so tests don't need to import the full pipeline.
 # ---------------------------------------------------------------------------
 
+
 def _local_trim(script: str, hi: int) -> str:
     """Trim script to at most `hi` words by cutting at sentence boundaries."""
-    sentences = re.split(r'(?<=[.!?।])\s+', script)
+    sentences = re.split(r"(?<=[.!?।])\s+", script)
     parts = []
     running = 0
     for sent in sentences:
@@ -31,6 +31,7 @@ def _local_trim(script: str, hi: int) -> str:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_over_target_trimmed_to_hi():
     """A 50-word script trimmed to hi=20 must have <= 20 words."""

@@ -9,8 +9,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-def check_video(video_path: Path, config: dict,
-                expected_duration_s: float | None = None) -> dict:
+def check_video(video_path: Path, config: dict, expected_duration_s: float | None = None) -> dict:
     """Run quality checks on the final video.
 
     Checks:
@@ -45,10 +44,21 @@ def check_video(video_path: Path, config: dict,
     # 2. Probe with ffprobe
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries",
-             "format=duration:stream=codec_type,width,height",
-             "-of", "json", str(video_path)],
-            capture_output=True, check=False, text=True, encoding="utf-8", timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration:stream=codec_type,width,height",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
         )
         if result.returncode != 0:
             issues.append(f"ffprobe error: {result.stderr[:100]}")
@@ -88,9 +98,7 @@ def check_video(video_path: Path, config: dict,
     tolerance = expected_s * 0.2  # 20% tolerance
 
     if duration > 0 and abs(duration - expected_s) > tolerance:
-        issues.append(
-            f"Duration mismatch: {duration:.0f}s vs expected {expected_s:.0f}s"
-        )
+        issues.append(f"Duration mismatch: {duration:.0f}s vs expected {expected_s:.0f}s")
 
     # Stream checks
     streams = probe.get("streams", [])
@@ -115,10 +123,8 @@ def check_video(video_path: Path, config: dict,
             exp_w, exp_h = map(int, expected_res.split("x"))
             if vs.get("width") != exp_w or vs.get("height") != exp_h:
                 issues.append(
-                    f"Resolution: {vs.get('width')}x{vs.get('height')} "
-                    f"vs expected {exp_w}x{exp_h}"
+                    f"Resolution: {vs.get('width')}x{vs.get('height')} vs expected {exp_w}x{exp_h}"
                 )
 
     log.info(f"Quality check: {'PASS' if not issues else 'FAIL'}")
     return {"passed": len(issues) == 0, "issues": issues, "details": details}
-

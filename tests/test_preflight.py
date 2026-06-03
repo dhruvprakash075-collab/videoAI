@@ -28,30 +28,36 @@ class TestPreflightCheck:
 
 class TestPreflightResult:
     def test_all_ok_when_no_failures(self):
-        r = PreflightResult(checks=[
-            PreflightCheck(name="a", status="ok"),
-            PreflightCheck(name="b", status="warn"),
-        ])
+        r = PreflightResult(
+            checks=[
+                PreflightCheck(name="a", status="ok"),
+                PreflightCheck(name="b", status="warn"),
+            ]
+        )
         assert r.all_ok is True
         assert r.failures == []
         assert len(r.warnings) == 1
 
     def test_not_all_ok_when_failure(self):
-        r = PreflightResult(checks=[
-            PreflightCheck(name="a", status="ok"),
-            PreflightCheck(name="b", status="fail"),
-        ])
+        r = PreflightResult(
+            checks=[
+                PreflightCheck(name="a", status="ok"),
+                PreflightCheck(name="b", status="fail"),
+            ]
+        )
         assert r.all_ok is False
         assert len(r.failures) == 1
 
     def test_summary_counts(self):
-        r = PreflightResult(checks=[
-            PreflightCheck(name="a", status="ok"),
-            PreflightCheck(name="b", status="ok"),
-            PreflightCheck(name="c", status="warn"),
-            PreflightCheck(name="d", status="fail"),
-            PreflightCheck(name="e", status="skip"),
-        ])
+        r = PreflightResult(
+            checks=[
+                PreflightCheck(name="a", status="ok"),
+                PreflightCheck(name="b", status="ok"),
+                PreflightCheck(name="c", status="warn"),
+                PreflightCheck(name="d", status="fail"),
+                PreflightCheck(name="e", status="skip"),
+            ]
+        )
         assert r.summary() == "ok=2 warn=1 fail=1 skip=1"
 
 

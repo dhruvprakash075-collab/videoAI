@@ -20,6 +20,7 @@ The breaker is per-model (reuses OllamaClient._breaker()) so one bad model
 opening its breaker does NOT block other models. Status is logged so the TUI
 degradation badge stays in sync.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 
 class BreakerOpen(Exception):
     """Raised when the per-model circuit breaker is OPEN and refuses the call."""
+
     def __init__(self, model: str, cooldown_s: float):
         self.model = model
         self.cooldown_s = cooldown_s
@@ -47,6 +49,7 @@ def _get_breaker(model: str, fails_threshold: int = 3, cooldown_s: float = 30.0)
     """Get the per-model breaker, preferring OllamaClient's if available."""
     try:
         from utils.ollama_client import get_ollama_client
+
         # We re-use OllamaClient's per-model breaker so a failing model opens
         # the same breaker whether called via generate() or crew.kickoff().
         client = get_ollama_client({})  # empty config is fine for breaker access
@@ -57,6 +60,7 @@ def _get_breaker(model: str, fails_threshold: int = 3, cooldown_s: float = 30.0)
         with _fallback_lock:
             if model not in _fallback_breakers:
                 from utils.ollama_client import _BreakerState
+
                 _fallback_breakers[model] = _BreakerState(fails_threshold, cooldown_s)
             return _fallback_breakers[model]
 
@@ -83,6 +87,7 @@ def is_breaker_open(model: str) -> bool:
         breaker = _get_breaker(model)
         # ask without side-effects — we use a probe that doesn't transition state
         from utils.ollama_client import _BreakerState
+
         state = breaker.state
         return state == _BreakerState.OPEN
     except Exception:
@@ -91,9 +96,10 @@ def is_breaker_open(model: str) -> bool:
 
 # ── Guarded kickoff wrapper ───────────────────────────────────────────────
 
-def guarded_crewai_kickoff(crew, model_name: str,
-                           timeout_s: float = 240.0,
-                           lock: threading.RLock | None = None) -> Any:
+
+def guarded_crewai_kickoff(
+    crew, model_name: str, timeout_s: float = 240.0, lock: threading.RLock | None = None
+) -> Any:
     """Run crew.kickoff() under the per-model circuit breaker.
 
     Args:
@@ -115,6 +121,7 @@ def guarded_crewai_kickoff(crew, model_name: str,
     """
     breaker = _get_breaker(model_name)
     from utils.ollama_client import _BreakerState
+
     if breaker.state == _BreakerState.OPEN:
         # Cooldown not elapsed — fail fast. Report the real remaining cooldown
         # (not a hardcoded 0) so callers can decide whether to back off, log it,
@@ -174,9 +181,15 @@ def _run_with_timeout(fn, timeout_s: float):
 
 # ── Direct Ollama-call convenience (uses OllamaClient) ────────────────────
 
-def guarded_ollama_call(prompt: str, model: str, format_json: bool = False,
-                        temperature: float = 0.3, num_predict: int = 1024,
-                        timeout_s: float | None = None) -> str:
+
+def guarded_ollama_call(
+    prompt: str,
+    model: str,
+    format_json: bool = False,
+    temperature: float = 0.3,
+    num_predict: int = 1024,
+    timeout_s: float | None = None,
+) -> str:
     """Call OllamaClient with the per-model breaker AND a wall-clock timeout.
 
     Returns "" when the breaker is open or any error occurs (matches the
@@ -184,13 +197,17 @@ def guarded_ollama_call(prompt: str, model: str, format_json: bool = False,
     """
     try:
         from utils.ollama_client import get_ollama_client
+
         client = get_ollama_client({})
     except Exception:
         return ""
     try:
         return client.generate(
-            prompt, model=model, format_json=format_json,
-            temperature=temperature, num_predict=num_predict,
+            prompt,
+            model=model,
+            format_json=format_json,
+            temperature=temperature,
+            num_predict=num_predict,
         )
     except Exception as e:
         log.debug(f"guarded_ollama_call({model}) failed: {e}")

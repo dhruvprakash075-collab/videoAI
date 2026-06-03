@@ -1,4 +1,5 @@
 """test_token_budget.py - Tests for B4: CLIP 77-token budget wiring."""
+
 import sys
 from pathlib import Path
 
@@ -71,17 +72,18 @@ def test_cap_tokens_respects_limit():
 def test_enrich_prompts_uses_config_budget():
     """enrich_prompts should pass config token_budget to assemble_prompt."""
     from utils.scene_director import enrich_prompts
+
     config = {
         "visual": {"style": "anime style"},
         "characters": {
             "hero": {"name": "The Hero", "description": "young adult, brown eyes, dark coat"}
         },
-        "image_gen": {
-            "token_budget": {"identity": 20, "style": 15, "scene": 25}
-        },
+        "image_gen": {"token_budget": {"identity": 20, "style": 15, "scene": 25}},
     }
     plan = {"char_presence": [{"hero": 0.9}]}
-    result_str, _neg = enrich_prompts("hero stands on cliff", "The hero stood bravely.", config, plan)
+    result_str, _neg = enrich_prompts(
+        "hero stands on cliff", "The hero stood bravely.", config, plan
+    )
     # Should not crash and should produce a non-empty result
     assert result_str.strip()
     assert _count_tokens(result_str.split(";")[0]) <= 65

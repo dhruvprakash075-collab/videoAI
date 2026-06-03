@@ -5,6 +5,7 @@ tested with mocked library modules so the suite passes regardless of
 whether pypdf/python-docx are installed (the loader's own try/except
 ImportError path is covered by a separate test).
 """
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -221,8 +222,12 @@ class TestUrlLoader:
         mock_resp.text = html
         mock_resp.status_code = 200
         mock_resp.url = "https://example.com/redirected"
-        with patch("requests.get", return_value=mock_resp), \
-             patch.dict("sys.modules", {"trafilatura": self._mock_traf("Main content here with real text.")}):
+        with (
+            patch("requests.get", return_value=mock_resp),
+            patch.dict(
+                "sys.modules", {"trafilatura": self._mock_traf("Main content here with real text.")}
+            ),
+        ):
             doc = load_source("https://example.com/page")
         assert doc.source_type == "url"
         assert "Main content" in doc.text
@@ -232,10 +237,13 @@ class TestUrlLoader:
 
     def test_fetch_404_raises(self):
         import requests
+
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
-        with patch("requests.get", return_value=mock_resp), \
-             patch.dict("sys.modules", {"trafilatura": self._mock_traf("x")}):
+        with (
+            patch("requests.get", return_value=mock_resp),
+            patch.dict("sys.modules", {"trafilatura": self._mock_traf("x")}),
+        ):
             with pytest.raises(SourceLoaderError, match="URL fetch failed"):
                 load_source("https://example.com/missing")
 
@@ -244,8 +252,10 @@ class TestUrlLoader:
         mock_resp.text = "<html><body><script>var x=1;</script></body></html>"
         mock_resp.status_code = 200
         mock_resp.url = "https://example.com"
-        with patch("requests.get", return_value=mock_resp), \
-             patch.dict("sys.modules", {"trafilatura": self._mock_traf("")}):
+        with (
+            patch("requests.get", return_value=mock_resp),
+            patch.dict("sys.modules", {"trafilatura": self._mock_traf("")}),
+        ):
             with pytest.raises(SourceLoaderError, match="no main-content text"):
                 load_source("https://example.com")
 
@@ -254,8 +264,12 @@ class TestUrlLoader:
         mock_resp.text = "<html><body>content text here for extraction</body></html>"
         mock_resp.status_code = 200
         mock_resp.url = "https://example.com"
-        with patch("requests.get", return_value=mock_resp) as mock_get, \
-             patch.dict("sys.modules", {"trafilatura": self._mock_traf("content text here for extraction")}):
+        with (
+            patch("requests.get", return_value=mock_resp) as mock_get,
+            patch.dict(
+                "sys.modules", {"trafilatura": self._mock_traf("content text here for extraction")}
+            ),
+        ):
             load_source(
                 "https://example.com",
                 config={"source": {"user_agent": "TestAgent/1.0", "url_timeout_s": 5}},
@@ -266,14 +280,17 @@ class TestUrlLoader:
 
     def test_oversize_url_text_warns(self, caplog):
         import logging
+
         big_text = "word " * 60000
         mock_resp = MagicMock()
         mock_resp.text = f"<html><body>{big_text}</body></html>"
         mock_resp.status_code = 200
         mock_resp.url = "https://example.com/big"
-        with caplog.at_level(logging.WARNING), \
-             patch("requests.get", return_value=mock_resp), \
-             patch.dict("sys.modules", {"trafilatura": self._mock_traf(big_text)}):
+        with (
+            caplog.at_level(logging.WARNING),
+            patch("requests.get", return_value=mock_resp),
+            patch.dict("sys.modules", {"trafilatura": self._mock_traf(big_text)}),
+        ):
             doc = load_source("https://example.com/big")
         assert doc.word_count > 50000
         assert any("soft cap" in r.message for r in caplog.records)
@@ -348,10 +365,12 @@ class TestDocxLoader:
 
     def test_basic_docx(self, tmp_path):
         p = _write(tmp_path / "a.docx", b"PK-fake")
-        mock_docx = self._mock_docx([
-            ("Title text", "Heading 1"),
-            ("Body text.", "Normal"),
-        ])
+        mock_docx = self._mock_docx(
+            [
+                ("Title text", "Heading 1"),
+                ("Body text.", "Normal"),
+            ]
+        )
         with patch.dict("sys.modules", {"docx": mock_docx}):
             doc = load_source(p)
         assert doc.source_type == "docx"
@@ -368,12 +387,14 @@ class TestDocxLoader:
 
     def test_multiple_headings_preserved(self, tmp_path):
         p = _write(tmp_path / "a.docx", b"PK-fake")
-        mock_docx = self._mock_docx([
-            ("Chapter 1", "Heading 1"),
-            ("para", "Normal"),
-            ("Section A", "Heading 2"),
-            ("more para", "Normal"),
-        ])
+        mock_docx = self._mock_docx(
+            [
+                ("Chapter 1", "Heading 1"),
+                ("para", "Normal"),
+                ("Section A", "Heading 2"),
+                ("more para", "Normal"),
+            ]
+        )
         with patch.dict("sys.modules", {"docx": mock_docx}):
             doc = load_source(p)
         assert len(doc.metadata["headings"]) == 2
@@ -394,8 +415,10 @@ class TestDispatcher:
         mock_resp.url = "https://x.com"
         mock_traf = MagicMock()
         mock_traf.extract.return_value = "main article content here"
-        with patch("requests.get", return_value=mock_resp), \
-             patch.dict("sys.modules", {"trafilatura": mock_traf}):
+        with (
+            patch("requests.get", return_value=mock_resp),
+            patch.dict("sys.modules", {"trafilatura": mock_traf}),
+        ):
             doc = load_source("https://x.com")
         assert doc.source_type == "url"
 
@@ -409,6 +432,7 @@ class TestDispatcher:
 
     def test_oversize_soft_cap_warns(self, tmp_path, caplog):
         import logging
+
         big = "x " * 60000
         p = _write(tmp_path / "big.txt", big)
         with caplog.at_level(logging.WARNING):

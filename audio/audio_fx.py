@@ -31,8 +31,9 @@ if not Path("sfx").exists():
     log.warning("sfx/ directory not found - SFX mixing will be skipped")
 
 
-def mix_sfx(audio_path: Path, script: str, output_dir: Path,
-            segment_idx: int, sfx_volume: float = 0.25) -> Path:
+def mix_sfx(
+    audio_path: Path, script: str, output_dir: Path, segment_idx: int, sfx_volume: float = 0.25
+) -> Path:
     """Mix relevant sound effects into the audio track based on script content.
 
     Scans the script for keywords and overlays matching SFX files
@@ -47,12 +48,15 @@ def mix_sfx(audio_path: Path, script: str, output_dir: Path,
     Returns:
         Path to the mixed audio file (original if mixing fails)
     """
+
     def _record_sfx_degradation(reason: str) -> None:
         try:
             from agents.director_agent import UIState
+
             UIState.add_degradation(segment_idx, "sfx_skip", reason)
         except Exception:
             pass
+
     if not audio_path.exists():
         log.warning(f"Audio file not found: {audio_path} — skipping SFX")
         return audio_path
@@ -73,6 +77,7 @@ def mix_sfx(audio_path: Path, script: str, output_dir: Path,
     if not matched_sfx:
         log.info("No matching SFX found — copying audio as-is")
         import shutil
+
         shutil.copy(audio_path, output_path)
         return output_path
 
@@ -80,10 +85,12 @@ def mix_sfx(audio_path: Path, script: str, output_dir: Path,
     # Use amix to overlay SFX at random positions
     try:
         import random
+
         duration = get_audio_duration(audio_path)
         if duration <= 0:
             log.warning("Invalid audio duration — skipping SFX")
             import shutil
+
             shutil.copy(audio_path, output_path)
             return output_path
 
@@ -129,13 +136,27 @@ def mix_sfx(audio_path: Path, script: str, output_dir: Path,
             f"amix=inputs={len(sfx_to_mix) + 1}:duration=first:normalize=0[outa]"
         )
 
-        cmd = ["ffmpeg", "-y", "-i", str(audio_path), *sfx_inputs, "-filter_complex", filter_str, "-map", "[outa]", "-c:a", "pcm_s16le", str(output_path)]
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            *sfx_inputs,
+            "-filter_complex",
+            filter_str,
+            "-map",
+            "[outa]",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
 
         log.info(f"Mixing {len(matched_sfx)} SFX tracks")
         result = subprocess.run(cmd, capture_output=True, check=False, timeout=120)
         if result.returncode != 0:
             log.warning(f"SFX mixing failed: {result.stderr.decode(errors='replace')[:100]}")
             import shutil
+
             shutil.copy(audio_path, output_path)
             _record_sfx_degradation("SFX mix FFmpeg error")
             return output_path
@@ -145,16 +166,17 @@ def mix_sfx(audio_path: Path, script: str, output_dir: Path,
     except subprocess.TimeoutExpired:
         log.warning("SFX mixing timeout — using raw audio")
         import shutil
+
         shutil.copy(audio_path, output_path)
         _record_sfx_degradation("SFX mix timeout")
         return output_path
     except Exception as e:
         log.warning(f"SFX mixing failed ({e}) — using raw audio")
         import shutil
+
         shutil.copy(audio_path, output_path)
         _record_sfx_degradation(f"SFX mix exception: {str(e)[:80]}")
         return output_path
-
 
 
 def apply_premium_voice_processing(input_path: Path, output_path: Path) -> bool:
@@ -183,7 +205,7 @@ def apply_premium_voice_processing(input_path: Path, output_path: Path) -> bool:
             for start, end in silences:
                 if start > last_end:
                     chunks.append(sound[last_end:start])
-                chunks.append(sound[start:start + 500])
+                chunks.append(sound[start : start + 500])
                 last_end = end
             if last_end < len(sound):
                 chunks.append(sound[last_end:])
@@ -196,7 +218,9 @@ def apply_premium_voice_processing(input_path: Path, output_path: Path) -> bool:
         sound = sound.set_frame_rate(44100)
 
         # 3. Gentle compression — just tame peaks, don't crush dynamics
-        sound = compress_dynamic_range(sound, threshold=-24.0, ratio=2.0, attack=10.0, release=100.0)
+        sound = compress_dynamic_range(
+            sound, threshold=-24.0, ratio=2.0, attack=10.0, release=100.0
+        )
 
         # 4. Light de-esser: reduce sibilance harshness above 6kHz
         try:
@@ -237,12 +261,15 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
     including a treble harmonic exciter and gap trimming.
     Falls back to ffmpeg light mastering if it fails or dependencies are missing.
     """
+
     def _record_master_degradation(reason: str) -> None:
         try:
             from agents.director_agent import UIState
+
             UIState.add_degradation(segment_idx, "mastering_fallback", reason)
         except Exception:
             pass
+
     if not audio_path.exists():
         log.warning(f"Audio file not found for mastering: {audio_path}")
         return audio_path
@@ -270,20 +297,29 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
     )
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(audio_path),
-        "-af", audio_filter,
-        "-c:a", "pcm_s16le",
-        str(output_path)
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(audio_path),
+        "-af",
+        audio_filter,
+        "-c:a",
+        "pcm_s16le",
+        str(output_path),
     ]
 
     try:
-        log.info(f"Mastering audio ({audio_path.name}) — fallback light chain: HPF 60Hz, 2:1 comp, -14 LUFS LRA 9...")
+        log.info(
+            f"Mastering audio ({audio_path.name}) — fallback light chain: HPF 60Hz, 2:1 comp, -14 LUFS LRA 9..."
+        )
         result = subprocess.run(cmd, capture_output=True, check=False, timeout=120)
         if result.returncode != 0:
-            stderr = result.stderr.decode(errors='replace')
-            log.warning(f"Audio mastering fallback failed, falling back to original copy: {stderr[-500:]}")
+            stderr = result.stderr.decode(errors="replace")
+            log.warning(
+                f"Audio mastering fallback failed, falling back to original copy: {stderr[-500:]}"
+            )
             import shutil
+
             shutil.copy(audio_path, output_path)
             _record_master_degradation("FFmpeg mastering error")
             return output_path
@@ -293,12 +329,14 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
     except subprocess.TimeoutExpired:
         log.warning("Audio mastering fallback timed out, falling back to original copy")
         import shutil
+
         shutil.copy(audio_path, output_path)
         _record_master_degradation("mastering timeout")
         return output_path
     except Exception as e:
         log.warning(f"Audio mastering fallback failed ({e}), falling back to original copy")
         import shutil
+
         shutil.copy(audio_path, output_path)
         _record_master_degradation(f"mastering exception: {str(e)[:80]}")
         return output_path

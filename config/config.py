@@ -11,14 +11,15 @@ log = logging.getLogger(__name__)
 
 
 def _safe_filename(name: str, maxlen: int = 80) -> str:
-    s = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
-    s = s.lstrip('._')
+    s = re.sub(r"[^a-zA-Z0-9_\-]", "_", name)
+    s = s.lstrip("._")
     if not s:
         s = "_"
     return s[:maxlen]
 
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────
+
 
 def dict_merge(dct, merge_dct):
     dct = copy.deepcopy(dct)
@@ -30,7 +31,9 @@ def dict_merge(dct, merge_dct):
     return dct
 
 
-def load_config(config_file: Path = Path(__file__).parent / "config.yaml", project_name: str | None = None) -> dict:
+def load_config(
+    config_file: Path = Path(__file__).parent / "config.yaml", project_name: str | None = None
+) -> dict:
     base_config = _default_config()
     if config_file.exists():
         with open(config_file, encoding="utf-8") as f:
@@ -59,32 +62,47 @@ def load_config(config_file: Path = Path(__file__).parent / "config.yaml", proje
 
 def _default_config() -> dict:
     return {
-        "models":     {"director": "hermes-director", "writer": "zephyr-writer", "script_gen": "ollama/coder"},
-        "visual":     {"num_scenes": 6, "style": "Gothic Horror, Dark Victorian Steampunk"},
-        "tts":        {"lang": "hi", "slow": False},
+        "models": {
+            "director": "hermes-director",
+            "writer": "zephyr-writer",
+            "script_gen": "ollama/coder",
+        },
+        "visual": {"num_scenes": 6, "style": "Gothic Horror, Dark Victorian Steampunk"},
+        "tts": {"lang": "hi", "slow": False},
         "checkpoint": {"enabled": True, "dir": "studio_checkpoints"},
-        "memory":     {"memory_file": "studio_checkpoints/story_memory.json"},
-        "video":      {
-            "total_duration_min": 10, "segment_duration_min": 2,
-            "fps": 24, "resolution": "1920x1080",
+        "memory": {"memory_file": "studio_checkpoints/story_memory.json"},
+        "video": {
+            "total_duration_min": 10,
+            "segment_duration_min": 2,
+            "fps": 24,
+            "resolution": "1920x1080",
             "output_path": "studio_outputs/final_video.mp4",
         },
-        "script":     {"words_per_segment": 130, "min_words": 20, "max_words": 400},
+        "script": {"words_per_segment": 130, "min_words": 20, "max_words": 400},
         "characters": {
             "protagonist": {
                 "name": "The Protagonist",
                 "description": "young adult, determined expression, dark practical clothing, athletic build, striking eyes, original character",
-                "keywords": ["hero", "fight", "journey", "discover", "challenge", "courage", "struggle"],
+                "keywords": [
+                    "hero",
+                    "fight",
+                    "journey",
+                    "discover",
+                    "challenge",
+                    "courage",
+                    "struggle",
+                ],
             }
         },
         "scene_templates": {
             "monster": "corrupted creature looming, red fog glow, slow dolly-in",
-            "fog":     "thick fog rolling, bluish-black haze, horizontal tracking",
+            "fog": "thick fog rolling, bluish-black haze, horizontal tracking",
         },
     }
 
 
 # ── CHARACTER ──────────────────────────────────────────────────────────────
+
 
 def get_character(config: dict, name: str) -> dict:
     chars = config.get("characters")

@@ -10,6 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 # Apply compatibility fixes (encoding, dependency checks)
 try:
     from utils.compatibility import apply_all_patches
+
     apply_all_patches()
 except ImportError:
     pass  # Compatibility module not available
@@ -34,8 +35,12 @@ from crewai import LLM, Agent
 log = logging.getLogger(__name__)
 
 
-def _create_ollama_llm(model_name: str, host: str = "http://localhost:11434",
-                       timeout: int = 240, max_tokens: int = 2048) -> LLM:
+def _create_ollama_llm(
+    model_name: str,
+    host: str = "http://localhost:11434",
+    timeout: int = 240,
+    max_tokens: int = 2048,
+) -> LLM:
     """Create a CrewAI LLM instance for Ollama model.
 
     Args:
@@ -75,9 +80,12 @@ def create_director(config: dict) -> Agent:
     log.info(f"Creating Director agent with Ollama model: {model_name}")
     # W1: per-role max_tokens cap — director needs more headroom for planning JSON
     director_max_tokens = int(config.get("models", {}).get("director_max_tokens", 2048))
-    llm = _create_ollama_llm(model_name, host=ollama_host,
-                             timeout=int(config.get("ollama", {}).get("request_timeout", 240)),
-                             max_tokens=director_max_tokens)
+    llm = _create_ollama_llm(
+        model_name,
+        host=ollama_host,
+        timeout=int(config.get("ollama", {}).get("request_timeout", 240)),
+        max_tokens=director_max_tokens,
+    )
 
     return Agent(
         role="Creative Visionary & Director",
@@ -100,6 +108,7 @@ def _ollama_model_available(model_name: str, host: str) -> bool:
     try:
         import json as _json
         import urllib.request
+
         with urllib.request.urlopen(f"{host.rstrip('/')}/api/tags", timeout=4) as r:
             tags = [t.get("name", "") for t in _json.loads(r.read()).get("models", [])]
         return any(model_name == t or t.startswith(model_name) or model_name in t for t in tags)
@@ -120,17 +129,22 @@ def create_writer(config: dict) -> Agent:
     # yet (e.g. still downloading), fall back so the run still works.
     if not _ollama_model_available(model_name, ollama_host):
         fallback = model_cfg.get("director", "hermes-director")
-        log.warning(f"Writer model '{model_name}' not pulled — falling back to '{fallback}'. "
-                    f"Run: ollama pull {model_name}")
+        log.warning(
+            f"Writer model '{model_name}' not pulled — falling back to '{fallback}'. "
+            f"Run: ollama pull {model_name}"
+        )
         model_name = fallback
 
     log.info(f"Creating Writer agent with Ollama model: {model_name}")
     # W1: writer gets a tight cap — 150-400 word script ≈ 600 tokens; 1024 is
     # generous headroom without letting the model ramble for 4+ minutes.
     writer_max_tokens = int(config.get("script", {}).get("writer_max_tokens", 1024))
-    llm = _create_ollama_llm(model_name, host=ollama_host,
-                             timeout=int(config.get("ollama", {}).get("request_timeout", 240)),
-                             max_tokens=writer_max_tokens)
+    llm = _create_ollama_llm(
+        model_name,
+        host=ollama_host,
+        timeout=int(config.get("ollama", {}).get("request_timeout", 240)),
+        max_tokens=writer_max_tokens,
+    )
 
     persona = config.get("narrator_persona", "")
     persona_prompt = f"Adopt the following persona/narrator voice: {persona}. " if persona else ""

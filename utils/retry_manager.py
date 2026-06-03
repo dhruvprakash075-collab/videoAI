@@ -77,8 +77,7 @@ def retry_with_backoff(
                     # Bounded exceptions: give up quickly
                     if isinstance(e, BOUNDED_EXCEPTIONS) and attempt >= BOUNDED_RETRIES:
                         log.exception(
-                            f"{func.__name__} deterministic failure after "
-                            f"{attempt} attempts: {e}"
+                            f"{func.__name__} deterministic failure after {attempt} attempts: {e}"
                         )
                         raise
                     delay = min(base_delay * (backoff ** (attempt - 1)), MAX_DELAY_S)
@@ -89,7 +88,9 @@ def retry_with_backoff(
                     time.sleep(delay)
             log.error(f"{func.__name__} failed after {max_retries} attempts")
             raise last_exc
+
         return wrapper
+
     return decorator
 
 
@@ -109,6 +110,7 @@ def patch_retries() -> None:
         # Patch tts_generate — transient-only (2 retries; TTS failures are often transient)
         try:
             from audio import audio_proxy
+
             if not hasattr(audio_proxy.tts_generate, "_is_retry_patched"):
                 audio_proxy.tts_generate = retry_with_backoff(
                     max_retries=2, exceptions=TRANSIENT_EXCEPTIONS
@@ -121,6 +123,7 @@ def patch_retries() -> None:
         # Patch translate_hinglish — transient-only (3 retries)
         try:
             from audio import audio_proxy
+
             if not hasattr(audio_proxy.translate_hinglish, "_is_retry_patched"):
                 audio_proxy.translate_hinglish = retry_with_backoff(
                     max_retries=3, exceptions=TRANSIENT_EXCEPTIONS
@@ -136,15 +139,20 @@ def patch_retries() -> None:
         # Sync patched references into pipeline_long namespace
         try:
             import sys
+
             pl = None
             for _mod_name in ("core.pipeline_long", "__main__", "pipeline_long"):
                 if _mod_name in sys.modules:
                     pl = sys.modules[_mod_name]
                     break
             if pl:
-                if hasattr(pl, "tts_generate") and not hasattr(pl.tts_generate, "_is_retry_patched"):
+                if hasattr(pl, "tts_generate") and not hasattr(
+                    pl.tts_generate, "_is_retry_patched"
+                ):
                     pl.tts_generate = audio_proxy.tts_generate
-                if hasattr(pl, "translate_hinglish") and not hasattr(pl.translate_hinglish, "_is_retry_patched"):
+                if hasattr(pl, "translate_hinglish") and not hasattr(
+                    pl.translate_hinglish, "_is_retry_patched"
+                ):
                     pl.translate_hinglish = audio_proxy.translate_hinglish
                 log.info("Synced patched references into pipeline_long namespace")
         except Exception as e:

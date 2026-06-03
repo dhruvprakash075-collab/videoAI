@@ -40,7 +40,7 @@ class ContextWindowManager:
     def __init__(self, budget_tokens: int = _DEFAULT_BUDGET):
         self.budget_tokens = budget_tokens
         self._rolling_summary: str | None = None  # cached LLM compression
-        self._summary_covers_up_to: int = 0          # segment index covered by summary
+        self._summary_covers_up_to: int = 0  # segment index covered by summary
 
     # ── token estimation ─────────────────────────────────────────────────────
 
@@ -74,31 +74,33 @@ class ContextWindowManager:
             return ws
 
         # ── Budget allocation ────────────────────────────────────────────────
-        ws_tokens   = self.estimate_tokens(world_state_block)
-        avail       = self.budget_tokens - ws_tokens - _SYSTEM_OVERHEAD_TOKENS
+        ws_tokens = self.estimate_tokens(world_state_block)
+        avail = self.budget_tokens - ws_tokens - _SYSTEM_OVERHEAD_TOKENS
 
         # ── Always include last 2 verbatim ───────────────────────────────────
-        recent      = memory_entries[-2:]
-        older       = memory_entries[:-2]
+        recent = memory_entries[-2:]
+        older = memory_entries[:-2]
         recent_text = self._format_entries(recent)
-        used        = self.estimate_tokens(recent_text)
+        used = self.estimate_tokens(recent_text)
 
         parts = [recent_text]
 
         if used > avail:
             # Even last 2 are too long — trim to summaries only
-            log.warning(f"[CtxMgr] Recent 2 segments exceed budget ({used} > {avail} tokens) — trimming to summaries")
+            log.warning(
+                f"[CtxMgr] Recent 2 segments exceed budget ({used} > {avail} tokens) — trimming to summaries"
+            )
             parts = [self._format_entries(recent, summaries_only=True)]
-            used  = self.estimate_tokens(parts[0])
+            used = self.estimate_tokens(parts[0])
 
         # ── Fill remaining budget with older entries (newest-first) ───────────
         remaining = avail - used
         older_included = []
 
         for idx in range(len(older) - 1, -1, -1):
-            entry      = older[idx]
+            entry = older[idx]
             entry_text = self._format_entry(entry)
-            cost       = self.estimate_tokens(entry_text)
+            cost = self.estimate_tokens(entry_text)
             if cost <= remaining:
                 older_included.insert(0, entry_text)
                 remaining -= cost
@@ -128,10 +130,12 @@ class ContextWindowManager:
         all_parts.append("[/Recent story context]")
 
         result = "\n".join(all_parts)
-        total  = self.estimate_tokens(result)
-        log.info(f"[CtxMgr] Context built: ~{total} tokens "
-                 f"(budget {self.budget_tokens}, {len(memory_entries)} entries, "
-                 f"{len(older_included)} older + {len(recent)} recent)")
+        total = self.estimate_tokens(result)
+        log.info(
+            f"[CtxMgr] Context built: ~{total} tokens "
+            f"(budget {self.budget_tokens}, {len(memory_entries)} entries, "
+            f"{len(older_included)} older + {len(recent)} recent)"
+        )
         return result
 
     # ── rolling summary ───────────────────────────────────────────────────────
@@ -148,9 +152,14 @@ class ContextWindowManager:
 
         # Use cached summary if it covers these entries
         last_seg = entries[-1].get("segment", 0)
-        if (self._rolling_summary and self._summary_covers_up_to >= last_seg
-                and self.estimate_tokens(self._rolling_summary) <= remaining_budget):
-            log.debug(f"[CtxMgr] Using cached rolling summary (covers up to seg {self._summary_covers_up_to})")
+        if (
+            self._rolling_summary
+            and self._summary_covers_up_to >= last_seg
+            and self.estimate_tokens(self._rolling_summary) <= remaining_budget
+        ):
+            log.debug(
+                f"[CtxMgr] Using cached rolling summary (covers up to seg {self._summary_covers_up_to})"
+            )
             return self._rolling_summary
 
         # Try LLM compression
@@ -158,8 +167,8 @@ class ContextWindowManager:
             try:
                 summary = self._llm_compress(entries, agent)
                 if summary and self.estimate_tokens(summary) <= remaining_budget:
-                    self._rolling_summary        = summary
-                    self._summary_covers_up_to   = last_seg
+                    self._rolling_summary = summary
+                    self._summary_covers_up_to = last_seg
                     log.info(f"[CtxMgr] Built LLM rolling summary for segs 1-{last_seg}")
                     return summary
             except Exception as e:
@@ -167,8 +176,7 @@ class ContextWindowManager:
 
         # Fallback: simple truncated summary
         simple = "; ".join(
-            f"Seg {e.get('segment', '?')}: {e.get('summary', '')[:80]}"
-            for e in entries[-3:]
+            f"Seg {e.get('segment', '?')}: {e.get('summary', '')[:80]}" for e in entries[-3:]
         )
         fallback = f"[Earlier segments summary] {simple} [/Earlier segments summary]"
         if self.estimate_tokens(fallback) <= remaining_budget:
@@ -195,8 +203,7 @@ class ContextWindowManager:
         from utils.crewai_breaker import BreakerOpen, guarded_crewai_kickoff
 
         segs_text = "\n".join(
-            f"Segment {e.get('segment', '?')}: {e.get('summary', '')}"
-            for e in entries
+            f"Segment {e.get('segment', '?')}: {e.get('summary', '')}" for e in entries
         )
         compress_prompt = (
             "Summarize the following story segments in exactly 2 sentences. "
@@ -206,11 +213,13 @@ class ContextWindowManager:
         )
         crew = Crew(
             agents=[agent],
-            tasks=[Task(
-                description=compress_prompt,
-                agent=agent,
-                expected_output="2-sentence story summary",
-            )],
+            tasks=[
+                Task(
+                    description=compress_prompt,
+                    agent=agent,
+                    expected_output="2-sentence story summary",
+                )
+            ],
             process=Process.sequential,
         )
 
@@ -232,7 +241,9 @@ class ContextWindowManager:
                 try:
                     if _sched is not None:
                         with _sched.task("heavy", "context-compress"):
-                            return guarded_crewai_kickoff(crew, model_name=model_name, timeout_s=120.0)
+                            return guarded_crewai_kickoff(
+                                crew, model_name=model_name, timeout_s=120.0
+                            )
                     return guarded_crewai_kickoff(crew, model_name=model_name, timeout_s=120.0)
                 finally:
                     crewai_lock.release()
@@ -258,7 +269,7 @@ class ContextWindowManager:
         if summaries_only:
             return f"Segment {seg}: {entry.get('summary', '')}"
         summary = entry.get("summary", "")
-        script  = entry.get("script",  "")
+        script = entry.get("script", "")
         if script and len(script) > 300:
             script = script[:300] + "..."
         return f"Segment {seg}: {summary}\n  Script excerpt: {script}"

@@ -1,4 +1,5 @@
 """test_world_state.py - Tests for B3: LLM world-state extraction."""
+
 import json
 import sys
 from pathlib import Path
@@ -12,12 +13,14 @@ def test_extract_world_state_parses_llm_json():
     """extract_world_state should parse a valid JSON response from the LLM."""
     from utils.specialized_models import extract_world_state
 
-    fake_response = json.dumps({
-        "characters": ["Arjun", "Priya"],
-        "facts": ["The ancient temple cannot be entered after sunset"],
-        "open_threads": ["Who stole the sacred scroll?"],
-        "resolved_threads": [],
-    })
+    fake_response = json.dumps(
+        {
+            "characters": ["Arjun", "Priya"],
+            "facts": ["The ancient temple cannot be entered after sunset"],
+            "open_threads": ["Who stole the sacred scroll?"],
+            "resolved_threads": [],
+        }
+    )
 
     with patch("utils.specialized_models._call_ollama", return_value=fake_response):
         result = extract_world_state("Some script text", {"ollama": {}, "models": {}})
@@ -98,3 +101,31 @@ def test_world_state_update_regex_only_when_disabled(tmp_path):
 
     ws.update("Meera walked through the ancient forest.", plan, config=config)
     assert "Meera" in ws._data["characters"]
+
+
+def test_script_reviewer_model_is_installed():
+    """SCRIPT_REVIEWER_MODEL must point to an installed Ollama model.
+
+    Regression: 2026-06-02 the default was "script-reviewer" which was removed
+    in Phase 0. extract_world_state was returning 404s and falling back to
+    regex on every memory write. Fix: point to qwen2.5:0.5b (small, fast).
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    import pytest
+
+    from utils.specialized_models import SCRIPT_REVIEWER_MODEL
+
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+            installed = {m["name"].split(":")[0] for m in _json.loads(r.read())["models"]}
+    except urllib.error.URLError as e:
+        pytest.skip(f"Ollama not running: {e}")
+
+    base = SCRIPT_REVIEWER_MODEL.split(":")[0]
+    assert base in installed, (
+        f"SCRIPT_REVIEWER_MODEL={SCRIPT_REVIEWER_MODEL!r} not installed. "
+        f"Available: {sorted(installed)}. Update utils/specialized_models.py:24."
+    )

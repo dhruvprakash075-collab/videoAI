@@ -4,6 +4,7 @@ Verifies that the God-module split (UIState → ui_state.py, LLM client →
 llm_client.py) preserves all public-facing contracts used by other modules
 and the existing test suite.
 """
+
 import sys
 from pathlib import Path
 
@@ -30,16 +31,29 @@ def test_uistate_class_attributes_present():
     from agents.ui_state import UIState
 
     for attr in (
-        "is_ui_mode", "pause_event", "active_question", "user_reply",
-        "status", "logs", "topic", "character", "output_video",
-        "current_script", "auto_accept", "segment_current", "segment_total",
-        "run_start_ts", "vram_text", "degradations",
+        "is_ui_mode",
+        "pause_event",
+        "active_question",
+        "user_reply",
+        "status",
+        "logs",
+        "topic",
+        "character",
+        "output_video",
+        "current_script",
+        "auto_accept",
+        "segment_current",
+        "segment_total",
+        "run_start_ts",
+        "vram_text",
+        "degradations",
     ):
         assert hasattr(UIState, attr), f"UIState.{attr} missing after extraction"
 
     for method in ("add_log", "add_degradation", "reset_run", "set_progress"):
-        assert callable(getattr(UIState, method, None)), \
+        assert callable(getattr(UIState, method, None)), (
             f"UIState.{method} missing after extraction"
+        )
 
 
 def test_devanagari_ratio_reexported():
@@ -62,10 +76,12 @@ def test_director_agent_constructs_llm_client():
     from agents.director_agent import DirectorAgent
     from agents.llm_client import DirectorLlmClient
 
-    a = DirectorAgent(llm_config={
-        "ollama": {"host": "http://localhost:11434"},
-        "models": {"director": "d", "writer": "w"},
-    })
+    a = DirectorAgent(
+        llm_config={
+            "ollama": {"host": "http://localhost:11434"},
+            "models": {"director": "d", "writer": "w"},
+        }
+    )
     assert isinstance(a.llm, DirectorLlmClient)
     assert a.llm.llm_config is a.llm_config
 
@@ -84,7 +100,10 @@ def test_director_agent_call_ollama_delegates_to_llm():
 
     result = a._call_ollama("hi", model_type="director", format_json=True)
     stub._call_ollama.assert_called_once_with(
-        "hi", model_type="director", format_json=True, seed=None,
+        "hi",
+        model_type="director",
+        format_json=True,
+        seed=None,
     )
     assert result == "delegated-text"
 
@@ -108,3 +127,137 @@ def test_llm_client_can_be_constructed_standalone():
     assert host == "h"
     assert timeout == 240
     assert keep_alive == "3m"
+
+
+# ── _call_ollama_streaming ────────────────────────────────────────────────────
+
+
+def test_call_ollama_streaming_success():
+    """_call_ollama_streaming returns accumulated tokens from streaming response."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from agents.llm_client import DirectorLlmClient
+
+    client = DirectorLlmClient(
+        {"models": {"director": "hermes"}, "ollama": {"host": "http://localhost:11434"}}
+    )
+
+    # Build a fake streaming response: two token chunks + done chunk
+    chunks = [
+        {"response": "Hello", "done": False},
+        {"response": " world", "done": False},
+        {"response": "", "done": True, "total_duration": 1_000_000_000},
+    ]
+    lines = [json.dumps(c).encode("utf-8") + b"\n" for c in chunks]
+
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.__iter__ = lambda s: iter(lines)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        result = client._call_ollama_streaming("Test prompt", label="TEST")
+
+    assert result == "Hello world"
+
+
+def test_call_ollama_streaming_skips_blank_lines():
+    """_call_ollama_streaming ignores blank lines in the stream."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from agents.llm_client import DirectorLlmClient
+
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+
+    chunks_lines = [
+        b"\n",  # blank line — must be skipped
+        b"not-json\n",  # invalid JSON — must be skipped
+        json.dumps({"response": "ok", "done": True, "total_duration": 0}).encode() + b"\n",
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.__iter__ = lambda s: iter(chunks_lines)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        result = client._call_ollama_streaming("p")
+
+    assert result == "ok"
+
+
+def test_call_ollama_streaming_preview_every_20_tokens():
+    """_call_ollama_streaming calls UIState._uistate_log for every 20th token."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from agents.llm_client import DirectorLlmClient
+
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+
+    # 20 token chunks then done
+    chunks_lines = [
+        json.dumps({"response": f"t{i}", "done": False}).encode() + b"\n" for i in range(20)
+    ]
+    chunks_lines.append(
+        json.dumps({"response": "", "done": True, "total_duration": 0}).encode() + b"\n"
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.__iter__ = lambda s: iter(chunks_lines)
+
+    log_calls = []
+    with (
+        patch("urllib.request.urlopen", return_value=mock_resp),
+        patch("agents.ui_state.UIState._uistate_log", side_effect=log_calls.append),
+    ):
+        client._call_ollama_streaming("p", label="PREVIEW")
+
+    # The 20th token should trigger a preview log
+    assert any("..." in call for call in log_calls)
+
+
+def test_call_ollama_streaming_retries_on_failure():
+    """_call_ollama_streaming retries up to 3 times, then raises RuntimeError."""
+    from unittest.mock import patch
+
+    from agents.llm_client import DirectorLlmClient
+
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+
+    with (
+        patch("urllib.request.urlopen", side_effect=OSError("Connection refused")),
+        patch("time.sleep"),  # skip actual sleep
+    ):
+        import pytest
+
+        with pytest.raises(RuntimeError, match="Streaming failed after 3 attempts"):
+            client._call_ollama_streaming("p")
+
+
+# ── _prewarm_ollama ───────────────────────────────────────────────────────────
+
+
+def test_prewarm_ollama_fires_two_threads():
+    """_prewarm_ollama starts two daemon threads (director + writer)."""
+    import time
+    from unittest.mock import patch
+
+    from agents.llm_client import DirectorLlmClient
+
+    client = DirectorLlmClient({"models": {"director": "d", "writer": "w"}})
+
+    calls = []
+
+    def _capture(prompt, model_type="director"):
+        calls.append(model_type)
+
+    with patch.object(client, "_call_ollama", side_effect=_capture):
+        client._prewarm_ollama()
+        time.sleep(0.2)  # Let daemon threads fire
+
+    assert "director" in calls or "writer" in calls  # at least one fired

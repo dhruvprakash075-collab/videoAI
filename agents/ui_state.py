@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 # ── Devanagari quality helper (module-level, testable) ────────────────────
 
+
 def _devanagari_ratio(text: str) -> float:
     """Return the fraction of alphabetic characters that are Devanagari (U+0900–U+097F).
 
@@ -43,11 +44,12 @@ def _devanagari_ratio(text: str) -> float:
     total_alpha = sum(1 for c in text if c.isalpha())
     if total_alpha == 0:
         return 1.0
-    deva = sum(1 for c in text if "\u0900" <= c <= "\u097F")
+    deva = sum(1 for c in text if "\u0900" <= c <= "\u097f")
     return min(1.0, deva / total_alpha)
 
 
 # ── UIState ──
+
 
 class UIState:
     """Shared state for local_ui.py web mode. Set externally by the UI."""
@@ -80,13 +82,13 @@ class UIState:
     auto_accept: bool = False
 
     # ── Progress / metrics (additive — safe defaults) ────────────────────────
-    segment_current: int = 0    # segments completed so far
-    segment_total:   int = 0    # total planned segments (0 = unknown / planning)
-    run_start_ts:    float = 0.0  # time.time() when the run began (0 = not started)
-    vram_text:       str = ""   # human-readable VRAM line, or "" if unavailable
+    segment_current: int = 0  # segments completed so far
+    segment_total: int = 0  # total planned segments (0 = unknown / planning)
+    run_start_ts: float = 0.0  # time.time() when the run began (0 = not started)
+    vram_text: str = ""  # human-readable VRAM line, or "" if unavailable
 
     # ── B2: Degradation ledger (additive — safe default) ─────────────────────
-    degradations: list = []     # [{seg, stage, reason}] — silent fallbacks recorded here
+    degradations: list = []  # [{seg, stage, reason}] — silent fallbacks recorded here
 
     @classmethod
     def _uistate_log(cls, message: str) -> None:
@@ -101,7 +103,7 @@ class UIState:
         with cls._log_lock:
             cls.logs.append(msg)
             if len(cls.logs) > cls._log_maxlen:
-                cls.logs = cls.logs[-cls._log_maxlen:]
+                cls.logs = cls.logs[-cls._log_maxlen :]
 
     @classmethod
     def add_degradation(cls, seg: int, stage: str, reason: str) -> None:
@@ -117,12 +119,12 @@ class UIState:
         Zeroes segment counters so a 2nd run in the same session shows
         'planning' instead of stale values from the previous run.
         """
-        cls.topic           = topic
+        cls.topic = topic
         cls.segment_current = 0
-        cls.segment_total   = 0
-        cls.run_start_ts    = time.time()
-        cls.vram_text       = ""
-        cls.degradations    = []  # B2: reset degradation ledger for new run
+        cls.segment_total = 0
+        cls.run_start_ts = time.time()
+        cls.vram_text = ""
+        cls.degradations = []  # B2: reset degradation ledger for new run
 
     @classmethod
     def set_progress(cls, current: int | None = None, total: int | None = None) -> None:

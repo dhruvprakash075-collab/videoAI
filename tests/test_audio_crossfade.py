@@ -1,4 +1,5 @@
 """test_audio_crossfade.py - Tests for D2: smooth audio joins via afade."""
+
 import sys
 from pathlib import Path
 
@@ -27,11 +28,17 @@ def _make_fake_word_timestamps_json(tmp_path, name="audio.words.json"):
     """Phase 0.5: TTS worker now produces {wav}.words.json; verify callers
     can pass a populated JSON into create_segment_mp4 without Whisper fallback."""
     import json as _json
+
     p = tmp_path / name
-    p.write_text(_json.dumps([
-        {"word": "Hello", "start": 0.0, "end": 0.5},
-        {"word": "world", "start": 0.5, "end": 1.0},
-    ]), encoding="utf-8")
+    p.write_text(
+        _json.dumps(
+            [
+                {"word": "Hello", "start": 0.0, "end": 0.5},
+                {"word": "world", "start": 0.5, "end": 1.0},
+            ]
+        ),
+        encoding="utf-8",
+    )
     return p
 
 
@@ -56,6 +63,7 @@ def test_afade_present_when_crossfade_ms_nonzero(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         (tmp_path / "segment_01.mp4").write_bytes(b"fake_mp4")
@@ -63,12 +71,21 @@ def test_afade_present_when_crossfade_ms_nonzero(tmp_path):
     def _whisper_should_not_be_called(*args, **kwargs):
         raise AssertionError("Whisper should not be invoked when word_timestamps_json is supplied")
 
-    with patch("video.renderer.assembler._run", side_effect=fake_run), \
-         patch("video.renderer.assembler.get_audio_duration", return_value=10.0), \
-         patch("video.renderer.assembler._get_whisper_model", side_effect=_whisper_should_not_be_called):
+    with (
+        patch("video.renderer.assembler._run", side_effect=fake_run),
+        patch("video.renderer.assembler.get_audio_duration", return_value=10.0),
+        patch(
+            "video.renderer.assembler._get_whisper_model", side_effect=_whisper_should_not_be_called
+        ),
+    ):
         with contextlib.suppress(Exception):
             create_segment_mp4(
-                1, audio, "test script", tmp_path, config, images=images,
+                1,
+                audio,
+                "test script",
+                tmp_path,
+                config,
+                images=images,
                 word_timestamps_json=words_json,
             )
 
@@ -105,16 +122,24 @@ def test_afade_absent_when_crossfade_ms_zero(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         (tmp_path / "segment_01.mp4").write_bytes(b"fake_mp4")
 
-    with patch("video.renderer.assembler._run", side_effect=fake_run), \
-         patch("video.renderer.assembler.get_audio_duration", return_value=10.0), \
-         patch("video.renderer.assembler._get_whisper_model", return_value=None):
+    with (
+        patch("video.renderer.assembler._run", side_effect=fake_run),
+        patch("video.renderer.assembler.get_audio_duration", return_value=10.0),
+        patch("video.renderer.assembler._get_whisper_model", return_value=None),
+    ):
         with contextlib.suppress(Exception):
             create_segment_mp4(
-                1, audio, "test script", tmp_path, config, images=images,
+                1,
+                audio,
+                "test script",
+                tmp_path,
+                config,
+                images=images,
                 word_timestamps_json=words_json,
             )
 

@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 # Optional cross-process file lock (no hard dependency)
 try:
     from filelock import FileLock as _FileLock
+
     _FILELOCK_AVAILABLE = True
 except ImportError:
     _FileLock = None
@@ -52,10 +53,7 @@ class Blackboard:
             filename = self.FILENAME
         self._path = self._root / filename
         self._lock = threading.RLock()
-        self._file_lock = (
-            _FileLock(str(self._path) + ".lock")
-            if _FILELOCK_AVAILABLE else None
-        )
+        self._file_lock = _FileLock(str(self._path) + ".lock") if _FILELOCK_AVAILABLE else None
 
     # ── Low-level read/write ───────────────────────────────────────────────
 
@@ -83,10 +81,7 @@ class Blackboard:
         """Write data atomically via temp file + os.replace."""
         tmp = self._path.with_suffix(".tmp")
         try:
-            tmp.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False),
-                encoding="utf-8"
-            )
+            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, self._path)
             log.debug(f"[BLACKBOARD] Written: {self._path}")
         except Exception as e:
@@ -100,6 +95,7 @@ class Blackboard:
     def read_decision(self) -> Optional["DecisionRecord"]:
         """Read and deserialize the stored DecisionRecord, or None if absent."""
         from config.config_schemas import load_decision_record
+
         raw = self.read()
         dr_raw = raw.get("decision_record")
         if not dr_raw:
@@ -132,8 +128,12 @@ class Blackboard:
 
 class _NullCtx:
     """No-op context manager used when filelock is unavailable."""
-    def __enter__(self): return self
-    def __exit__(self, *_): pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
 
 
 def get_blackboard(config: dict[str, Any], topic_slug: str = "") -> Blackboard:

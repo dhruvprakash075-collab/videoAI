@@ -7,6 +7,7 @@ from utils.crewai_breaker import guarded_ollama_call
 
 log = logging.getLogger(__name__)
 
+
 def brainstorm_topic(config: dict | None = None) -> str:
     """Uses the Director LLM to brainstorm an intriguing documentary topic."""
     if config is None:
@@ -22,9 +23,7 @@ Example output: The Lost Civilization of the Amazon"""
 
     log.info(f"[Topic Researcher] Brainstorming topic using {model}...")
     try:
-        topic = guarded_ollama_call(
-            prompt, model=model, temperature=0.9, num_predict=50
-        )
+        topic = guarded_ollama_call(prompt, model=model, temperature=0.9, num_predict=50)
         if topic:
             topic = topic.strip().strip('"').strip("'")
             log.info(f"[Topic Researcher] Generated Topic: {topic}")

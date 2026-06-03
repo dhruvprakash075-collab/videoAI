@@ -40,11 +40,13 @@ import torch
 def _maybe_align(wav_path: str) -> str | None:
     try:
         from config import load_config
+
         cfg = load_config()
         align = cfg.get("tts", {}).get("alignment", {})
         if not align.get("enabled", True):
             return None
         from audio.tts_alignment import align_audio
+
         result = align_audio(
             Path(wav_path),
             model_name=align.get("model", "base"),
@@ -67,16 +69,23 @@ def _install_torchaudio_soundfile_patch():
     try:
         import torchaudio
 
-        def _sf_load(filepath, frame_offset=0, num_frames=-1, normalize=True,
-                     channels_first=True, *args, **kwargs):
+        def _sf_load(
+            filepath,
+            frame_offset=0,
+            num_frames=-1,
+            normalize=True,
+            channels_first=True,
+            *args,
+            **kwargs,
+        ):
             data, sr = sf.read(str(filepath), dtype="float32", always_2d=True)
             if frame_offset:
-                data = data[int(frame_offset):]
+                data = data[int(frame_offset) :]
             if num_frames is not None and num_frames > 0:
-                data = data[:int(num_frames)]
+                data = data[: int(num_frames)]
             tensor = torch.from_numpy(data.copy())  # [T, C]
             if channels_first:
-                tensor = tensor.T.contiguous()       # [C, T]
+                tensor = tensor.T.contiguous()  # [C, T]
             return tensor, sr
 
         torchaudio.load = _sf_load
@@ -92,6 +101,7 @@ _TORCHAUDIO_PATCHED = _install_torchaudio_soundfile_patch()
 def _load_model():
     """Load the OmniVoice model once and return it."""
     from omnivoice import OmniVoice
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     device_map = "cuda:0" if device == "cuda" else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
@@ -100,6 +110,7 @@ def _load_model():
 
 def _gen_config(num_step, guidance_scale):
     from omnivoice.models.omnivoice import OmniVoiceGenerationConfig
+
     return OmniVoiceGenerationConfig(
         num_step=num_step,
         guidance_scale=guidance_scale,
@@ -130,6 +141,7 @@ def _split_text_chunks(text: str, max_chars: int = 500):
     up to ~max_chars so we don't over-fragment (which would seam the voice).
     """
     import re as _re
+
     # Split into sentences keeping the delimiter; handle Devanagari danda + Latin punctuation
     parts = _re.split(r"(?<=[।.!?\n])\s+", text.strip())
     chunks = []
@@ -169,10 +181,10 @@ def _prepare_ref_audio(voice_sample: str, max_seconds: float = 8.0) -> str:
         if cached.exists():
             return str(cached)
         data, sr = sf.read(str(src), dtype="float32")
-        if data.ndim > 1:                      # stereo -> mono
+        if data.ndim > 1:  # stereo -> mono
             data = data.mean(axis=1)
         max_samples = int(max_seconds * sr)
-        if len(data) > max_samples:            # trim to first N seconds
+        if len(data) > max_samples:  # trim to first N seconds
             data = data[:max_samples]
         sf.write(str(cached), data, sr)
         return str(cached)
@@ -180,9 +192,18 @@ def _prepare_ref_audio(voice_sample: str, max_seconds: float = 8.0) -> str:
         return voice_sample  # on any error, fall back to the original
 
 
-def _synthesize(model, text, output, voice_sample="", speed=0.85,
-                num_step=40, guidance_scale=2.5, seed=-1, ref_text=None,
-                sentence_gap_ms=None):
+def _synthesize(
+    model,
+    text,
+    output,
+    voice_sample="",
+    speed=0.85,
+    num_step=40,
+    guidance_scale=2.5,
+    seed=-1,
+    ref_text=None,
+    sentence_gap_ms=None,
+):
     """Generate one audio file, synthesizing in short chunks (B21 fix).
 
     Returns the output path (str). Long scripts are split into sentence-bounded
@@ -235,13 +256,20 @@ def _synthesize(model, text, output, voice_sample="", speed=0.85,
         if audio.ndim > 1:
             audio = audio.mean(axis=0)
 
-        if pieces and _xfade_samples > 0 and len(pieces[-1]) >= _xfade_samples and len(audio) >= _xfade_samples:
+        if (
+            pieces
+            and _xfade_samples > 0
+            and len(pieces[-1]) >= _xfade_samples
+            and len(audio) >= _xfade_samples
+        ):
             # Crossfade: blend the tail of the previous chunk with the head of this one.
             prev = pieces[-1]
             fade_out = np.linspace(1.0, 0.0, _xfade_samples, dtype=np.float32)
-            fade_in  = np.linspace(0.0, 1.0, _xfade_samples, dtype=np.float32)
+            fade_in = np.linspace(0.0, 1.0, _xfade_samples, dtype=np.float32)
             # Overwrite the tail of the previous chunk with the blended region
-            prev[-_xfade_samples:] = prev[-_xfade_samples:] * fade_out + audio[:_xfade_samples] * fade_in
+            prev[-_xfade_samples:] = (
+                prev[-_xfade_samples:] * fade_out + audio[:_xfade_samples] * fade_in
+            )
             pieces[-1] = prev
             # Append the remainder of the current chunk (skip the already-blended head)
             pieces.append(audio[_xfade_samples:])
@@ -249,7 +277,9 @@ def _synthesize(model, text, output, voice_sample="", speed=0.85,
             pieces.append(audio)
 
         # Progress line so the parent can see liveness (and we know it's not stalled)
-        print(json.dumps({"status": "progress", "chunk": idx + 1, "total": len(chunks)}), flush=True)
+        print(
+            json.dumps({"status": "progress", "chunk": idx + 1, "total": len(chunks)}), flush=True
+        )
 
     audio = np.concatenate(pieces) if pieces else np.zeros(1, dtype=np.float32)
 
@@ -292,7 +322,9 @@ def _run_persistent():
             if not text and req.get("text_file"):
                 text = Path(req["text_file"]).read_text(encoding="utf-8").strip()
             wav = _synthesize(
-                model, text, req.get("output", "tts_output"),
+                model,
+                text,
+                req.get("output", "tts_output"),
                 voice_sample=req.get("voice_sample", ""),
                 speed=float(req.get("speed", 0.85)),
                 num_step=int(req.get("num_step", 40)),
@@ -302,7 +334,12 @@ def _run_persistent():
                 sentence_gap_ms=req.get("sentence_gap_ms"),
             )
             word_timestamps = _maybe_align(wav)
-            print(json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}), flush=True)
+            print(
+                json.dumps(
+                    {"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}
+                ),
+                flush=True,
+            )
         except Exception as e:
             print(json.dumps({"status": "error", "message": str(e)}), flush=True)
 
@@ -313,7 +350,9 @@ def _run_oneshot(args):
         text = Path(args.text_file).read_text(encoding="utf-8").strip()
         model = _load_model()
         wav = _synthesize(
-            model, text, args.output,
+            model,
+            text,
+            args.output,
             voice_sample=args.voice_sample,
             speed=args.speed,
             num_step=args.num_step,
@@ -322,7 +361,9 @@ def _run_oneshot(args):
             ref_text=getattr(args, "ref_text", None) or None,
         )
         word_timestamps = _maybe_align(wav)
-        print(json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}))
+        print(
+            json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps})
+        )
         sys.exit(0)
     except Exception as e:
         print(json.dumps({"status": "error", "message": str(e)}))
@@ -331,13 +372,20 @@ def _run_oneshot(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--serve", action="store_true",
-                        help="Persistent mode: load model once, serve stdin JSON requests")
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Persistent mode: load model once, serve stdin JSON requests",
+    )
     parser.add_argument("--text-file")
     parser.add_argument("--output")
     parser.add_argument("--voice-sample", default="")
-    parser.add_argument("--ref-text", dest="ref_text", default="",
-                        help="Transcript of the reference clip — supply to skip the Whisper ASR load (VRAM fix, issue #41)")
+    parser.add_argument(
+        "--ref-text",
+        dest="ref_text",
+        default="",
+        help="Transcript of the reference clip — supply to skip the Whisper ASR load (VRAM fix, issue #41)",
+    )
     parser.add_argument("--speed", type=float, default=0.85)
     parser.add_argument("--num-step", type=int, default=24)
     parser.add_argument("--guidance-scale", type=float, default=2.5)
@@ -348,8 +396,14 @@ def main():
         _run_persistent()
     else:
         if not args.text_file or not args.output:
-            print(json.dumps({"status": "error",
-                              "message": "one-shot mode requires --text-file and --output"}))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "one-shot mode requires --text-file and --output",
+                    }
+                )
+            )
             sys.exit(1)
         _run_oneshot(args)
 

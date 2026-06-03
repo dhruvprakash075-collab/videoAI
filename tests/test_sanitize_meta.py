@@ -10,12 +10,14 @@ import pytest
 
 def _sanitize(text: str) -> str:
     from core.pipeline_long import _sanitize_narration
+
     return _sanitize_narration(text)
 
 
 # ---------------------------------------------------------------------------
 # Meta-commentary removal
 # ---------------------------------------------------------------------------
+
 
 def test_removes_in_response_to_critique():
     raw = "In response to your critique, I have revised the script. The hero walked forward."
@@ -89,6 +91,7 @@ def test_removes_html_tags():
 # Devanagari must be preserved
 # ---------------------------------------------------------------------------
 
+
 def test_devanagari_preserved():
     raw = "In response to your critique, I revised this. नायक आगे बढ़ा और अंधेरे का सामना किया।"
     result = _sanitize(raw)
@@ -105,6 +108,7 @@ def test_devanagari_only_unchanged():
 # ---------------------------------------------------------------------------
 # Real fixture from the actual pipeline run
 # ---------------------------------------------------------------------------
+
 
 def test_messy_fixture_cleaned():
     fixture = Path(__file__).parent / "fixtures" / "messy_writer_output.txt"

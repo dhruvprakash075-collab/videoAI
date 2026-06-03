@@ -18,15 +18,18 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # ── LoRA hyper-parameters ────────────────────────────────────────────────────
-_LORA_RANK       = 8        # Low-rank dimension (higher = more expressive, more VRAM)
-_LORA_ALPHA      = 16       # Scaling factor (alpha/rank = effective LR scale)
-_TRAIN_STEPS     = 30       # Gradient steps — enough for face consistency in ~2 min
-_LEARNING_RATE   = 1e-4     # Adam LR
-_GRAD_ACCUM      = 1        # Gradient accumulation (effective batch = 2*1 images)
+_LORA_RANK = 8  # Low-rank dimension (higher = more expressive, more VRAM)
+_LORA_ALPHA = 16  # Scaling factor (alpha/rank = effective LR scale)
+_TRAIN_STEPS = 30  # Gradient steps — enough for face consistency in ~2 min
+_LEARNING_RATE = 1e-4  # Adam LR
+_GRAD_ACCUM = 1  # Gradient accumulation (effective batch = 2*1 images)
 
 # Target attention layers in SD 1.5 UNet (down + mid + up cross-attn q/k/v/out)
 _TARGET_MODULES = [
-    "to_q", "to_k", "to_v", "to_out.0",
+    "to_q",
+    "to_k",
+    "to_v",
+    "to_out.0",
 ]
 
 
@@ -55,9 +58,10 @@ def train_protagonist_lora(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     import uuid
-    safe_char  = char_name.lower().replace(" ", "_")
-    lora_path  = output_dir / f"protagonist_{safe_char}_{uuid.uuid4().hex[:8]}_lora.safetensors"
-    images     = image_paths[:5]   # Use at most 5 images
+
+    safe_char = char_name.lower().replace(" ", "_")
+    lora_path = output_dir / f"protagonist_{safe_char}_{uuid.uuid4().hex[:8]}_lora.safetensors"
+    images = image_paths[:5]  # Use at most 5 images
 
     log.info("=" * 60)
     log.info("[LoRA] Starting Automatic Face-Lock training")
@@ -111,6 +115,7 @@ def _verify_real_deps_or_raise() -> None:
 
 # ── REAL TRAINING ─────────────────────────────────────────────────────────────
 
+
 def _train_real(
     images: list[Path],
     lora_path: Path,
@@ -136,13 +141,14 @@ def _train_real(
     # ── 1. Load config for model path ────────────────────────────────────────
     try:
         from utils import load_config
-        cfg      = load_config()
-        img_cfg  = cfg.get("image_gen", {})
+
+        cfg = load_config()
+        img_cfg = cfg.get("image_gen", {})
         model_id = img_cfg.get("sd_model_path") or "Lykon/AnyLoRA"
-        dtype    = torch.float16 if img_cfg.get("dtype") == "float16" else torch.float32
+        dtype = torch.float16 if img_cfg.get("dtype") == "float16" else torch.float32
     except Exception:
         model_id = "Lykon/AnyLoRA"
-        dtype    = torch.float16
+        dtype = torch.float16
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log.info(f"[LoRA] Loading base model '{model_id}' for fine-tuning on {device}...")
@@ -153,9 +159,9 @@ def _train_real(
             model_id, torch_dtype=dtype, safety_checker=None
         )
         unet = pipe.unet.to(device)
-        vae  = pipe.vae.to(device)
-        tokenizer   = pipe.tokenizer
-        text_encoder= pipe.text_encoder.to(device)
+        vae = pipe.vae.to(device)
+        tokenizer = pipe.tokenizer
+        text_encoder = pipe.text_encoder.to(device)
     except Exception as e:
         # Real training failed — surface the real error. Do NOT fall back to mock:
         # a partially-trained LoRA is worse than no LoRA, and mock produces random
@@ -175,21 +181,23 @@ def _train_real(
 
     # ── 3. Attach LoRA adapter to UNet attention layers ───────────────────────
     lora_config = LoraConfig(
-        r               = _LORA_RANK,
-        lora_alpha      = _LORA_ALPHA,
-        target_modules  = _TARGET_MODULES,
-        lora_dropout    = 0.0,
-        bias            = "none",
+        r=_LORA_RANK,
+        lora_alpha=_LORA_ALPHA,
+        target_modules=_TARGET_MODULES,
+        lora_dropout=0.0,
+        bias="none",
     )
     unet = get_peft_model(unet, lora_config)
     unet.print_trainable_parameters()
 
     # ── 4. Build image dataset from protagonist PNGs ──────────────────────────
-    transform = T.Compose([
-        T.Resize((512, 512)),
-        T.ToTensor(),
-        T.Normalize([0.5], [0.5]),
-    ])
+    transform = T.Compose(
+        [
+            T.Resize((512, 512)),
+            T.ToTensor(),
+            T.Normalize([0.5], [0.5]),
+        ]
+    )
 
     pixel_tensors = []
     for img_path in images:
@@ -220,10 +228,10 @@ def _train_real(
     with torch.no_grad():
         text_ids = tokenizer(
             prompt_text,
-            padding       = "max_length",
-            max_length    = tokenizer.model_max_length,
-            truncation    = True,
-            return_tensors= "pt",
+            padding="max_length",
+            max_length=tokenizer.model_max_length,
+            truncation=True,
+            return_tensors="pt",
         ).input_ids.to(device)
         encoder_hidden_states = text_encoder(text_ids)[0]  # (1, seq, dim)
         # Expand to match batch size
@@ -236,8 +244,8 @@ def _train_real(
     # ── 7. Training loop ──────────────────────────────────────────────────────
     optimizer = AdamW(
         filter(lambda p: p.requires_grad, unet.parameters()),
-        lr = _LEARNING_RATE,
-        weight_decay = 0.001, # Bug 15: Lower weight decay to prevent forgetting
+        lr=_LEARNING_RATE,
+        weight_decay=0.001,  # Bug 15: Lower weight decay to prevent forgetting
     )
     noise_scheduler = pipe.scheduler
 
@@ -252,7 +260,7 @@ def _train_real(
             timesteps = torch.randint(0, 1000, (bsz,), device=device).long()
 
             # Add noise to latents
-            noise  = torch.randn_like(latents)
+            noise = torch.randn_like(latents)
             noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
             # Forward pass through UNet
@@ -261,7 +269,7 @@ def _train_real(
                 noise_pred = unet(
                     noisy_latents,
                     timesteps,
-                    encoder_hidden_states = encoder_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
                 ).sample
 
             # Denoising loss (predict the added noise)
@@ -283,7 +291,7 @@ def _train_real(
         optimizer.zero_grad()
 
     avg_loss = sum(losses) / len(losses) if losses else 0.0
-    elapsed  = time.time() - t_start
+    elapsed = time.time() - t_start
     log.info(f"[LoRA] Training complete! Avg loss: {avg_loss:.4f} | Time: {elapsed:.1f}s")
 
     # ── 8. Extract & save LoRA weights as .safetensors ────────────────────────
@@ -308,6 +316,7 @@ def _train_real(
         #      the "to_out.0" segment which must stay as-is.
         #   4. Map PEFT A/B weight names to diffusers lora_down/lora_up.
         import re as _re
+
         converted = {}
         for name, tensor in lora_state_dict.items():
             new_name = name.replace("base_model.model.", "lora_unet_")
@@ -315,7 +324,7 @@ def _train_real(
             # e.g. down_blocks.0.attentions.0 → down_blocks_0_attentions_0
             # but we must NOT touch "to_out.0" yet — protect it with a placeholder
             new_name = new_name.replace("to_out.0", "TO_OUT_DOT_0")
-            new_name = _re.sub(r'\.(?=\d)', '_', new_name)
+            new_name = _re.sub(r"\.(?=\d)", "_", new_name)
             # Replace remaining structural dots with underscores
             new_name = new_name.replace(".", "_")
             # Restore the diffusers-canonical "to_out.0" (dot notation)
@@ -332,7 +341,11 @@ def _train_real(
             log.warning("[LoRA] No LoRA parameters found — falling back to mock")
             return _train_mock(lora_path, char_name)
 
-        save_file(lora_state_dict, str(lora_path), metadata={"lora_alpha": str(_LORA_ALPHA), "r": str(_LORA_RANK)})
+        save_file(
+            lora_state_dict,
+            str(lora_path),
+            metadata={"lora_alpha": str(_LORA_ALPHA), "r": str(_LORA_RANK)},
+        )
         log.info(f"[LoRA] Saved {len(lora_state_dict)} tensors to {lora_path}")
         log.info(f"[LoRA] File size: {lora_path.stat().st_size / 1024:.1f} KB")
         log.info(f"[LoRA] Face-Lock COMPLETE! Protagonist LoRA saved to: {lora_path}")
@@ -349,6 +362,7 @@ def _train_real(
             log.info("[LoRA] GPU memory cleared after training")
             try:
                 from video.image_gen import image_gen
+
                 image_gen._active_lora_path = None
             except Exception as e:
                 log.debug(f"[LoRA] Could not reset _active_lora_path: {e}")
@@ -359,6 +373,7 @@ def _train_real(
 
 
 # ── MOCK TRAINING (dry-run / test mode) ──────────────────────────────────────
+
 
 def _train_mock(lora_path: Path, char_name: str) -> Path:
     """Simulate LoRA training for dry-run / test environments.
@@ -378,11 +393,11 @@ def _train_mock(lora_path: Path, char_name: str) -> Path:
     with _tqdm(total=_TRAIN_STEPS, desc="  LoRA training (sim)", unit="step") as pbar:
         for step in range(_TRAIN_STEPS):
             try:
-                time.sleep(0.02)    # 20ms per step = ~1.2s total visual simulation
+                time.sleep(0.02)  # 20ms per step = ~1.2s total visual simulation
             except KeyboardInterrupt:
                 log.info("[LoRA MOCK] Cancelled by user.")
                 raise
-            fake_loss = max(0.001, 0.8 * (0.98 ** step))
+            fake_loss = max(0.001, 0.8 * (0.98**step))
             pbar.set_postfix({"loss": f"{fake_loss:.4f}"})
             pbar.update(1)
 
@@ -396,7 +411,7 @@ def _train_mock(lora_path: Path, char_name: str) -> Path:
         ("down_blocks_0_attentions_0_transformer_blocks_0_attn1", 320),
         ("down_blocks_0_attentions_0_transformer_blocks_0_attn2", 320),
         ("down_blocks_1_attentions_0_transformer_blocks_0_attn1", 640),
-        ("mid_block_attentions_0_transformer_blocks_0_attn1",    1280),
+        ("mid_block_attentions_0_transformer_blocks_0_attn1", 1280),
     ]
     proj_suffixes = ["to_q", "to_k", "to_v", "to_out.0"]
 
@@ -404,20 +419,26 @@ def _train_mock(lora_path: Path, char_name: str) -> Path:
     for layer_name, d in attn_dims:
         is_cross = "attn2" in layer_name
         for proj in proj_suffixes:
-            key_base  = f"lora_unet_{layer_name}_{proj}"
+            key_base = f"lora_unet_{layer_name}_{proj}"
             # For cross-attention attn2, to_k and to_v project the text embeddings, which have dimension 768 in SD 1.5
             if is_cross and proj in ["to_k", "to_v"]:
                 proj_d = 768
             else:
                 proj_d = d
-            lora_dict[f"{key_base}.lora_down.weight"] = torch.zeros((r, proj_d),   dtype=torch.float16)
-            lora_dict[f"{key_base}.lora_up.weight"]   = torch.zeros((proj_d, r),   dtype=torch.float16)
+            lora_dict[f"{key_base}.lora_down.weight"] = torch.zeros(
+                (r, proj_d), dtype=torch.float16
+            )
+            lora_dict[f"{key_base}.lora_up.weight"] = torch.zeros((proj_d, r), dtype=torch.float16)
             # P2-8 fix: real diffusers LoRAs do not have .alpha keys for to_out
             # (or any projection layer) — omit them so both paths produce the
             # same key schema and load_lora_weights() works for both.
 
-    save_file(lora_dict, str(lora_path), metadata={"lora_alpha": str(_LORA_ALPHA), "r": str(_LORA_RANK)})
+    save_file(
+        lora_dict, str(lora_path), metadata={"lora_alpha": str(_LORA_ALPHA), "r": str(_LORA_RANK)}
+    )
     sz = lora_path.stat().st_size / 1024
-    log.info(f"[LoRA MOCK] Face-Lock simulation COMPLETE! Valid .safetensors written: {lora_path} ({sz:.1f} KB)")
+    log.info(
+        f"[LoRA MOCK] Face-Lock simulation COMPLETE! Valid .safetensors written: {lora_path} ({sz:.1f} KB)"
+    )
     log.info(f"[LoRA MOCK] Saved {len(lora_dict)} mock tensors to {lora_path}")
     return lora_path

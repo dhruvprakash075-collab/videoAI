@@ -5,6 +5,8 @@ Covers Requirement 10 and Correctness Properties 1, 9 (atomic, no-VRAM, round-tr
 
 import threading
 
+import pytest
+
 from config.config_schemas import DecisionRecord
 from memory.blackboard import Blackboard, get_blackboard
 
@@ -113,3 +115,55 @@ def test_read_no_model_required(tmp_root):
     # If this needed torch/diffusers/ollama it would be slow or fail; it must not.
     rec = bb.read_decision()
     assert rec is not None
+
+
+def test_read_corrupted_json(tmp_root):
+    bb = Blackboard(tmp_root)
+    # Write invalid json to file
+    bb._path.write_text("invalid json string{", encoding="utf-8")
+    assert bb.read() == {}
+
+
+def test_atomic_write_failure_cleans_tmp(tmp_root):
+    bb = Blackboard(tmp_root)
+    from unittest.mock import patch
+
+    # Force os.replace to raise an exception
+    with patch("os.replace", side_effect=OSError("Permission denied")):
+        with pytest.raises(OSError):
+            bb.write({"a": 1})
+    # tmp file should be unlinked/cleaned up
+    assert not bb._path.with_suffix(".tmp").exists()
+
+
+def test_read_decision_schema_failure(tmp_root):
+    bb = Blackboard(tmp_root)
+    bb.write({"decision_record": {"a": 1}})
+    from unittest.mock import patch
+
+    with patch("config.config_schemas.load_decision_record", side_effect=ValueError("bad schema")):
+        assert bb.read_decision() is None
+
+
+def test_clear_failure(tmp_root):
+    bb = Blackboard(tmp_root)
+    bb.write({"a": 1})
+    from unittest.mock import patch
+
+    # Force unlink to raise exception
+    with patch("pathlib.Path.unlink", side_effect=OSError("Unlink blocked")):
+        # Should catch and log warning, not crash
+        bb.clear()
+
+
+def test_null_ctx_fallback(tmp_root):
+    # Temporarily set _FILELOCK_AVAILABLE to False to force _NullCtx usage
+    from unittest.mock import patch
+
+    import memory.blackboard as mbb
+
+    with patch("memory.blackboard._FILELOCK_AVAILABLE", False):
+        bb = mbb.Blackboard(tmp_root, topic_slug="null_ctx_test")
+        assert bb._file_lock is None
+        bb.write({"a": 1})
+        assert bb.read() == {"a": 1}

@@ -99,6 +99,7 @@ def _check_ollama(config: dict) -> tuple[Status, str]:
         req = urllib.request.Request(url, headers={"User-Agent": "Video.AI-Preflight"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             import json
+
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
             models = data.get("models", [])
             return "ok", f"{host} reachable, {len(models)} model(s) installed"
@@ -119,14 +120,14 @@ def _check_director_model(config: dict) -> tuple[Status, str]:
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
             import json
+
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
             names = {m.get("name", "").split(":")[0] for m in data.get("models", [])}
             base = director.split(":")[0]
             if base in names:
                 return "ok", f"director model '{director}' installed"
             return "fail", (
-                f"director model '{director}' not found in Ollama. "
-                f"Run: ollama pull {director}"
+                f"director model '{director}' not found in Ollama. Run: ollama pull {director}"
             )
     except Exception as e:
         return "warn", f"could not verify director model: {e}"
@@ -174,9 +175,7 @@ def _check_ffmpeg() -> tuple[Status, str]:
     if not ffmpeg:
         return "fail", "ffmpeg not found in PATH (bootstrap should add the bundled binary)"
     try:
-        out = subprocess.run(
-            [ffmpeg, "-version"], capture_output=True, text=True, timeout=5
-        )
+        out = subprocess.run([ffmpeg, "-version"], capture_output=True, text=True, timeout=5)
         first_line = out.stdout.splitlines()[0] if out.stdout else "(no output)"
         return "ok", f"{ffmpeg} - {first_line}"
     except subprocess.TimeoutExpired:
@@ -188,6 +187,7 @@ def _check_ffmpeg() -> tuple[Status, str]:
 def _check_python() -> tuple[Status, str]:
     """Verify Python version is in the supported range (3.10–3.13)."""
     import sys
+
     v = sys.version_info
     if v.major != 3 or v.minor < 10 or v.minor > 13:
         return "fail", f"Python {v.major}.{v.minor}.{v.micro} not supported (need 3.10–3.13)"
@@ -254,6 +254,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         from config import load_config
+
         config = load_config()
     except Exception as e:
         log.warning("Could not load config: %s — using empty config", e)
@@ -265,4 +266,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

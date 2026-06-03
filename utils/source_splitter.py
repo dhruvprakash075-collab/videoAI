@@ -27,6 +27,7 @@ Each chunk is a :class:`SegmentChunk`:
 Pure dispatcher + small helpers. GPU / LLM only inside ``_split_by_llm``,
 which is mockable via :func:`split_source` injection (see tests).
 """
+
 from __future__ import annotations
 
 import json
@@ -50,6 +51,7 @@ class SourceSplitterError(Exception):
 @dataclass
 class SegmentChunk:
     """One per-segment slice of the source material."""
+
     text: str
     b_roll_hint: str = ""
     key_event: str = ""
@@ -117,7 +119,13 @@ def _split_by_chapter(source, n: int) -> list[SegmentChunk]:
         body_start = 0
         for i, (_level, title) in enumerate(headings):
             start = body_start
-            end = len(text) if i == len(headings) - 1 else boundaries[i + 1][0] if i + 1 < len(boundaries) else len(text)
+            end = (
+                len(text)
+                if i == len(headings) - 1
+                else boundaries[i + 1][0]
+                if i + 1 < len(boundaries)
+                else len(text)
+            )
             section_text = text[start:end].strip()
             if section_text:
                 sections.append((title, section_text))
@@ -179,7 +187,10 @@ def _rebalance(chunks: list[SegmentChunk], n: int) -> list[SegmentChunk]:
         return _index(chunks)
 
     while len(chunks) > n:
-        i = min(range(len(chunks) - 1), key=lambda k: _word_count(chunks[k].text) + _word_count(chunks[k + 1].text))
+        i = min(
+            range(len(chunks) - 1),
+            key=lambda k: _word_count(chunks[k].text) + _word_count(chunks[k + 1].text),
+        )
         a, b = chunks[i], chunks[i + 1]
         merged = SegmentChunk(
             text=(a.text + "\n\n" + b.text).strip(),
@@ -187,7 +198,7 @@ def _rebalance(chunks: list[SegmentChunk], n: int) -> list[SegmentChunk]:
             key_event=a.key_event or b.key_event,
             source_chapter=a.source_chapter or b.source_chapter,
         )
-        chunks = [*chunks[:i], merged, *chunks[i + 2:]]
+        chunks = [*chunks[:i], merged, *chunks[i + 2 :]]
 
     while len(chunks) < n:
         idx = max(range(len(chunks)), key=lambda k: _word_count(chunks[k].text))
@@ -208,7 +219,7 @@ def _rebalance(chunks: list[SegmentChunk], n: int) -> list[SegmentChunk]:
             key_event=big.key_event,
             source_chapter=big.source_chapter,
         )
-        chunks = [*chunks[:idx], left, right, *chunks[idx + 1:]]
+        chunks = [*chunks[:idx], left, right, *chunks[idx + 1 :]]
 
     if len(chunks) < n:
         chunks = chunks + [SegmentChunk(text="")] * (n - len(chunks))
@@ -243,7 +254,7 @@ def _parse_llm_chunks(raw: str, expected: int) -> list[dict] | None:
         elif ch == "]":
             depth -= 1
             if depth == 0 and start >= 0:
-                candidate = raw[start:i + 1]
+                candidate = raw[start : i + 1]
                 try:
                     data = json.loads(candidate)
                     if isinstance(data, list) and len(data) >= expected:
@@ -291,12 +302,14 @@ def _split_by_llm(source, n: int, config: dict) -> list[SegmentChunk]:
     for i, item in enumerate(parsed):
         if not isinstance(item, dict):
             return []
-        chunks.append(SegmentChunk(
-            text=str(item.get("text", "")).strip(),
-            b_roll_hint=str(item.get("b_roll_hint", "")).strip(),
-            key_event=str(item.get("key_event", "")).strip(),
-            index=i,
-        ))
+        chunks.append(
+            SegmentChunk(
+                text=str(item.get("text", "")).strip(),
+                b_roll_hint=str(item.get("b_roll_hint", "")).strip(),
+                key_event=str(item.get("key_event", "")).strip(),
+                index=i,
+            )
+        )
     return _rebalance(chunks, n) if len(chunks) != n else _index(chunks)
 
 
@@ -333,9 +346,7 @@ def split_source(source, n_segments: int, config: dict) -> list[SegmentChunk]:
     elif strategy == "by_llm":
         chunks = _split_by_llm(source, n_segments, config)
         if not chunks:
-            log.warning(
-                "[source_splitter] LLM split failed; falling back to by_word_count"
-            )
+            log.warning("[source_splitter] LLM split failed; falling back to by_word_count")
             chunks = _split_by_word_count(source.text, n_segments, target_words)
 
     if not chunks:

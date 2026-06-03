@@ -12,6 +12,7 @@ Covers:
   - generate_seo_metadata (mocked LLM): valid, breaker open, malformed, disabled,
     empty outline, source path, research enrichment, backward compat (title+tags)
 """
+
 from __future__ import annotations
 
 import json
@@ -32,6 +33,7 @@ from utils.seo_generator import (
 
 # ── SEOMetadata TypedDict ───────────────────────────────────────────────────
 
+
 class TestSEOMetadata:
     def test_all_keys_optional(self):
         m: SEOMetadata = {}
@@ -46,6 +48,7 @@ class TestSEOMetadata:
 
 # ── _slugify_tag ────────────────────────────────────────────────────────────
 
+
 class TestSlugify:
     def test_lowercase(self):
         assert _slugify_tag("Hello") == "hello"
@@ -57,7 +60,10 @@ class TestSlugify:
         assert _slugify_tag("long-form") == "long-form"
 
     def test_devanagari(self):
-        assert _slugify_tag("\u0905\u092e\u0947\u091c\u094b\u0928") == "\u0905\u092e\u0947\u091c\u094b\u0928"
+        assert (
+            _slugify_tag("\u0905\u092e\u0947\u091c\u094b\u0928")
+            == "\u0905\u092e\u0947\u091c\u094b\u0928"
+        )
 
     def test_empty(self):
         assert _slugify_tag("") == ""
@@ -68,6 +74,7 @@ class TestSlugify:
 
 
 # ── _chapter_timecode ───────────────────────────────────────────────────────
+
 
 class TestChapterTimecode:
     def test_zero(self):
@@ -84,6 +91,7 @@ class TestChapterTimecode:
 
 
 # ── _build_chapters ─────────────────────────────────────────────────────────
+
 
 class TestBuildChapters:
     def test_empty(self):
@@ -115,6 +123,7 @@ class TestBuildChapters:
 
 
 # ── _extract_tag_candidates ─────────────────────────────────────────────────
+
 
 class TestExtractTagCandidates:
     def test_topic_words(self):
@@ -157,6 +166,7 @@ class TestExtractTagCandidates:
 
 # ── _derive_hashtags ────────────────────────────────────────────────────────
 
+
 class TestDeriveHashtags:
     def test_prefix_with_hash(self):
         assert _derive_hashtags(["amazon", "river"], 2) == ["#amazon", "#river"]
@@ -170,10 +180,22 @@ class TestDeriveHashtags:
 
 # ── _fallback_metadata ──────────────────────────────────────────────────────
 
+
 class TestFallbackMetadata:
     def test_all_fields_present(self):
-        meta = _fallback_metadata("Test Topic", [{"key_event": "Part 1"}], {}, language="en", source_path=False)
-        for key in ("title", "description", "tags", "hashtags", "chapters", "language", "source_path", "generation_succeeded"):
+        meta = _fallback_metadata(
+            "Test Topic", [{"key_event": "Part 1"}], {}, language="en", source_path=False
+        )
+        for key in (
+            "title",
+            "description",
+            "tags",
+            "hashtags",
+            "chapters",
+            "language",
+            "source_path",
+            "generation_succeeded",
+        ):
             assert key in meta
 
     def test_title_is_topic(self):
@@ -204,6 +226,7 @@ class TestFallbackMetadata:
 
 # ── _parse_seo_response ─────────────────────────────────────────────────────
 
+
 class TestParseSeoResponse:
     def test_empty(self):
         assert _parse_seo_response("") is None
@@ -227,6 +250,7 @@ class TestParseSeoResponse:
 
 
 # ── _build_prompt ───────────────────────────────────────────────────────────
+
 
 class TestBuildPrompt:
     def test_contains_topic(self):
@@ -259,15 +283,22 @@ class TestBuildPrompt:
 
 # ── generate_seo_metadata (mocked LLM) ──────────────────────────────────────
 
+
 class TestGenerateSeoMetadata:
     def test_valid_llm_response(self):
-        llm = json.dumps({
-            "title": "Amazing Amazon Secrets",
-            "description": "Discover the hidden wonders...",
-            "tags": ["amazon", "river", "mystery", "documentary", "nature"],
-        })
+        llm = json.dumps(
+            {
+                "title": "Amazing Amazon Secrets",
+                "description": "Discover the hidden wonders...",
+                "tags": ["amazon", "river", "mystery", "documentary", "nature"],
+            }
+        )
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=llm) as mock_call:
-            meta = generate_seo_metadata("Amazon", [{"key_event": "e1"}, {"key_event": "e2"}], {"models": {"director": "hermes"}})
+            meta = generate_seo_metadata(
+                "Amazon",
+                [{"key_event": "e1"}, {"key_event": "e2"}],
+                {"models": {"director": "hermes"}},
+            )
         assert meta["title"] == "Amazing Amazon Secrets"
         assert meta["generation_succeeded"] is True
         assert "amazon" in meta["tags"]
@@ -292,7 +323,9 @@ class TestGenerateSeoMetadata:
         assert meta["generation_succeeded"] is False
 
     def test_disabled_uses_fallback(self):
-        meta = generate_seo_metadata("Amazon", [], {"seo": {"enabled": False}, "models": {"director": "hermes"}})
+        meta = generate_seo_metadata(
+            "Amazon", [], {"seo": {"enabled": False}, "models": {"director": "hermes"}}
+        )
         assert meta["generation_succeeded"] is False
         assert meta["title"] == "Amazon"
 
@@ -333,7 +366,13 @@ class TestGenerateSeoMetadata:
         assert "b" in meta["tags"]
 
     def test_hashtags_present(self):
-        llm = json.dumps({"title": "T", "description": "D", "tags": ["amazon", "river", "mystery", "nature", "doc"]})
+        llm = json.dumps(
+            {
+                "title": "T",
+                "description": "D",
+                "tags": ["amazon", "river", "mystery", "nature", "doc"],
+            }
+        )
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=llm):
             meta = generate_seo_metadata("Amazon", [], {})
         assert all(h.startswith("#") for h in meta["hashtags"])
@@ -341,7 +380,9 @@ class TestGenerateSeoMetadata:
     def test_title_max_chars_enforced(self):
         llm = json.dumps({"title": "x" * 200, "description": "d", "tags": ["a"]})
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=llm):
-            meta = generate_seo_metadata("Amazon", [{"key_event": "e1"}], {"seo": {"title_max_chars": 50}})
+            meta = generate_seo_metadata(
+                "Amazon", [{"key_event": "e1"}], {"seo": {"title_max_chars": 50}}
+            )
         assert len(meta["title"]) == 50
 
     def test_chapters_built_from_outline(self):
@@ -361,13 +402,16 @@ class TestGenerateSeoMetadata:
 
 # ── End-to-end smoke ────────────────────────────────────────────────────────
 
+
 class TestEndToEnd:
     def test_source_path_full_flow(self):
-        llm = json.dumps({
-            "title": "The Amazon: Hidden World",
-            "description": "An exploration of the Amazon river...",
-            "tags": ["amazon", "river", "nature", "exploration", "documentary"],
-        })
+        llm = json.dumps(
+            {
+                "title": "The Amazon: Hidden World",
+                "description": "An exploration of the Amazon river...",
+                "tags": ["amazon", "river", "nature", "exploration", "documentary"],
+            }
+        )
         source = type("Doc", (), {"language": "hi", "metadata": {"title": "Amazon Book"}})()
         research = [
             type("R", (), {"title": "Amazon Expedition 2024"})(),

@@ -1,4 +1,5 @@
 """test_music_ducking.py - Tests for D5: music auto-ducking via sidechaincompress."""
+
 import sys
 from pathlib import Path
 
@@ -25,6 +26,7 @@ def _make_music(tmp_path):
 def test_sidechaincompress_present_when_ducking_enabled(tmp_path):
     """When music.ducking=True, sidechaincompress should appear in the FFmpeg command."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     music = _make_music(tmp_path)
     output = tmp_path / "out.mp4"
@@ -34,6 +36,7 @@ def test_sidechaincompress_present_when_ducking_enabled(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         output.write_bytes(b"fake_output")
@@ -42,12 +45,15 @@ def test_sidechaincompress_present_when_ducking_enabled(tmp_path):
         concatenate_segments(segs, output, music=music, config=config)
 
     all_args = " ".join(str(a) for cmd in run_calls for a in cmd)
-    assert "sidechaincompress" in all_args, "sidechaincompress must be in FFmpeg args when ducking=True"
+    assert "sidechaincompress" in all_args, (
+        "sidechaincompress must be in FFmpeg args when ducking=True"
+    )
 
 
 def test_sidechaincompress_absent_when_ducking_disabled(tmp_path):
     """When music.ducking=False, sidechaincompress should NOT appear in the filter_complex."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     music = _make_music(tmp_path)
     output = tmp_path / "out.mp4"
@@ -57,6 +63,7 @@ def test_sidechaincompress_absent_when_ducking_disabled(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         output.write_bytes(b"fake_output")
@@ -71,13 +78,15 @@ def test_sidechaincompress_absent_when_ducking_disabled(tmp_path):
         for j, arg in enumerate(cmd):
             if str(arg) == "-filter_complex" and j + 1 < len(cmd):
                 filter_complex_args.append(str(cmd[j + 1]))
-    assert all("sidechaincompress" not in fc for fc in filter_complex_args), \
+    assert all("sidechaincompress" not in fc for fc in filter_complex_args), (
         "sidechaincompress must not appear in filter_complex when ducking=False"
+    )
 
 
 def test_duck_ratio_appears_in_command(tmp_path):
     """The configured duck_ratio should influence the compressor ratio in the command."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     music = _make_music(tmp_path)
     output = tmp_path / "out.mp4"
@@ -87,6 +96,7 @@ def test_duck_ratio_appears_in_command(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         output.write_bytes(b"fake_output")
@@ -102,6 +112,7 @@ def test_duck_ratio_appears_in_command(tmp_path):
 def test_no_music_no_ducking(tmp_path):
     """When no music file is provided, ducking code should not run."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     output = tmp_path / "out.mp4"
     config = {
@@ -110,6 +121,7 @@ def test_no_music_no_ducking(tmp_path):
     }
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         output.write_bytes(b"fake_output")

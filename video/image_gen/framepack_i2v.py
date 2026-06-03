@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 # FramePack is optional — guard the import
 try:
     import framepack as _fp_module
+
     _FRAMEPACK_AVAILABLE = True
 except ImportError:
     _FRAMEPACK_AVAILABLE = False
@@ -51,7 +52,9 @@ def image_to_video(
         Path to the generated MP4, or None on failure.
     """
     if not _FRAMEPACK_AVAILABLE:
-        log.warning("[FramePack] Not installed — skipping motion generation for %s", image_path.name)
+        log.warning(
+            "[FramePack] Not installed — skipping motion generation for %s", image_path.name
+        )
         return None
 
     if not image_path.exists():
@@ -61,8 +64,12 @@ def image_to_video(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        log.info("[FramePack] Generating %ss motion clip: %s -> %s",
-                 seconds, image_path.name, output_path.name)
+        log.info(
+            "[FramePack] Generating %ss motion clip: %s -> %s",
+            seconds,
+            image_path.name,
+            output_path.name,
+        )
 
         # FramePack API: generate(image, duration_seconds, fps, device) -> video_path
         # The exact API depends on the installed version; we wrap it defensively.

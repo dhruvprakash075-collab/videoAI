@@ -4,6 +4,7 @@
 P4-27 fix: use Path(__file__).parent instead of hardcoded C:/Video.AI;
            avoid clobbering sys.argv by calling run_long_pipeline directly.
 """
+
 import sys
 from pathlib import Path
 

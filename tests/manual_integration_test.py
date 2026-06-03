@@ -7,6 +7,7 @@ and the live Ollama server. Run directly:
 This is NOT a pytest file — it's an operator smoke test that prints a PASS/FAIL
 report for each feature so we can see what actually works on this machine.
 """
+
 import sys
 import time
 import traceback
@@ -15,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _results = []
+
 
 def check(name, fn):
     """Run a feature check; record PASS/FAIL with detail."""
@@ -34,6 +36,7 @@ def check(name, fn):
 # ── 1. Config loads + all new keys present ────────────────────────────────
 def t_config():
     from config import load_config
+
     cfg = load_config()
     perf = cfg.get("performance", {})
     ig = cfg.get("image_gen", {})
@@ -51,13 +54,15 @@ def t_config():
 def t_ollama_client():
     from config import load_config
     from utils.ollama_client import get_ollama_client, reset_ollama_client
+
     reset_ollama_client()
     cfg = load_config()
     client = get_ollama_client(cfg)
     cfg.get("models", {}).get("script-reviewer", "script-reviewer")
     # Use the fast 3B reviewer for speed
-    out = client.generate("Reply with the single word: OK", model="script-reviewer",
-                           temperature=0.0, num_predict=10)
+    out = client.generate(
+        "Reply with the single word: OK", model="script-reviewer", temperature=0.0, num_predict=10
+    )
     assert out, "empty response from live Ollama"
     return f"live generate -> {out[:40]!r}"
 
@@ -66,6 +71,7 @@ def t_ollama_client():
 def t_breaker():
     from config import load_config
     from utils.ollama_client import OllamaClient
+
     cfg = dict(load_config())
     cfg["ollama"] = dict(cfg.get("ollama", {}))
     cfg["ollama"]["breaker_fails"] = 1
@@ -85,26 +91,32 @@ def t_breaker():
 def t_world_state_llm():
     from config import load_config
     from utils.specialized_models import extract_world_state
+
     cfg = load_config()
-    script = ("Arjun entered the ancient temple. The sacred fire could never be "
-              "extinguished. Who had lit it a thousand years ago?")
+    script = (
+        "Arjun entered the ancient temple. The sacred fire could never be "
+        "extinguished. Who had lit it a thousand years ago?"
+    )
     result = extract_world_state(script, cfg)
     if result is None:
         return "LLM returned unparseable JSON (regex fallback would handle it) — acceptable"
     assert isinstance(result.get("characters"), list)
-    return f"chars={result.get('characters')} facts={len(result.get('facts',[]))}"
+    return f"chars={result.get('characters')} facts={len(result.get('facts', []))}"
 
 
 # ── 5. B3 WorldState.update full path (LLM on) with persistence ───────────
 def t_world_state_update(tmp):
     from config import load_config
     from memory.memory import WorldState
+
     cfg = dict(load_config())
     cfg.setdefault("memory", {})["llm_world_state"] = True
     ws = WorldState("integration_test_topic", tmp)
-    ws.update("Meera discovered the cursed sword. It must never be drawn.",
-              {"seg": 1, "mood": "mysterious", "title": "T", "key_event": "found sword"},
-              config=cfg)
+    ws.update(
+        "Meera discovered the cursed sword. It must never be drawn.",
+        {"seg": 1, "mood": "mysterious", "title": "T", "key_event": "found sword"},
+        config=cfg,
+    )
     block = ws.to_prompt_block()
     assert "World State" in block
     return f"world block built ({len(block)} chars)"
@@ -114,14 +126,17 @@ def t_world_state_update(tmp):
 def t_token_budget():
     from config import load_config
     from utils.scene_director import enrich_prompts
+
     cfg = load_config()
     # Long character description to force budgeting
     cfg = dict(cfg)
     cfg["characters"] = {
-        "hero": {"name": "The Hero",
-                 "description": "young adult, warm brown eyes, short black hair, "
-                                "determined expression, dark grey coat, athletic build, "
-                                "original character, intricate silver armor, glowing runes"}
+        "hero": {
+            "name": "The Hero",
+            "description": "young adult, warm brown eyes, short black hair, "
+            "determined expression, dark grey coat, athletic build, "
+            "original character, intricate silver armor, glowing runes",
+        }
     }
     plan = {"char_presence": [{"hero": 0.9}]}
     result, _neg = enrich_prompts("hero stands on a cliff at dawn", "The hero stood.", cfg, plan)
@@ -134,6 +149,7 @@ def t_token_budget():
 # ── 7. B2 degradation ledger + reset ──────────────────────────────────────
 def t_degradation():
     from agents.director_agent import UIState
+
     UIState.reset_run("test")
     assert UIState.degradations == []
     UIState.add_degradation(3, "sfx_skip", "no files")
@@ -151,6 +167,7 @@ def t_loudnorm_cmd():
     from unittest.mock import patch
 
     from video.renderer.assembler import concatenate_segments
+
     tmp = Path(tempfile.mkdtemp())
     segs = [tmp / "s0.mp4", tmp / "s1.mp4"]
     for s in segs:
@@ -158,8 +175,14 @@ def t_loudnorm_cmd():
     out = tmp / "out.mp4"
     cfg = {"audio_fx": {"program_loudnorm": True, "target_lufs": -14}}
     calls = []
-    fake_stderr = '{"input_i":"-18","input_tp":"-1","input_lra":"7","input_thresh":"-28","target_offset":"0"}'
-    class _P: stderr = fake_stderr; returncode = 0
+    fake_stderr = (
+        '{"input_i":"-18","input_tp":"-1","input_lra":"7","input_thresh":"-28","target_offset":"0"}'
+    )
+
+    class _P:
+        stderr = fake_stderr
+        returncode = 0
+
     def fake_run(cmd, timeout=300):
         calls.append(cmd)
         for a in cmd:
@@ -167,8 +190,11 @@ def t_loudnorm_cmd():
                 Path(a).write_bytes(b"x")
         if str(out) in [str(x) for x in cmd]:
             out.write_bytes(b"x")
-    with patch("video.renderer.assembler._run", side_effect=fake_run), \
-         patch("subprocess.run", return_value=_P()):
+
+    with (
+        patch("video.renderer.assembler._run", side_effect=fake_run),
+        patch("subprocess.run", return_value=_P()),
+    ):
         concatenate_segments(segs, out, config=cfg)
     allargs = " ".join(str(a) for c in calls for a in c)
     assert "linear=true" in allargs, "2-pass linear loudnorm not applied"
@@ -181,14 +207,20 @@ def t_ducking_cmd():
     from unittest.mock import patch
 
     from video.renderer.assembler import concatenate_segments
+
     tmp = Path(tempfile.mkdtemp())
-    segs = [tmp / "s0.mp4"]; segs[0].write_bytes(b"x")
-    music = tmp / "m.mp3"; music.write_bytes(b"x")
+    segs = [tmp / "s0.mp4"]
+    segs[0].write_bytes(b"x")
+    music = tmp / "m.mp3"
+    music.write_bytes(b"x")
     out = tmp / "out.mp4"
     cfg = {"music": {"ducking": True, "duck_ratio": 0.4}, "audio_fx": {"program_loudnorm": False}}
     calls = []
+
     def fake_run(cmd, timeout=300):
-        calls.append(cmd); out.write_bytes(b"x")
+        calls.append(cmd)
+        out.write_bytes(b"x")
+
     with patch("video.renderer.assembler._run", side_effect=fake_run):
         concatenate_segments(segs, out, music=music, config=cfg)
     allargs = " ".join(str(a) for c in calls for a in c)
@@ -199,6 +231,7 @@ def t_ducking_cmd():
 # ── 10. A6 --yes auto-accept ──────────────────────────────────────────────
 def t_autoaccept():
     from agents.director_agent import DirectorAgent, UIState
+
     UIState.auto_accept = True
     UIState.is_ui_mode = False
     agent = DirectorAgent(llm_config={})
@@ -221,14 +254,16 @@ def t_batch_parse(tmp):
 # ── 12. Director real translate to Devanagari (live, the heaviest LLM) ────
 def t_translate():
     from audio.audio_proxy import translate_hinglish
+
     out = translate_hinglish("The hero walked into the dark forest.", seg=1)
     # Either Devanagari (success) or original English (fallback) — both are valid
-    deva = sum(1 for c in out if "\u0900" <= c <= "\u097F")
+    deva = sum(1 for c in out if "\u0900" <= c <= "\u097f")
     return f"translate returned {len(out)} chars, {deva} Devanagari"
 
 
 if __name__ == "__main__":
     import tempfile
+
     print("=" * 70)
     print("  Video.AI — MAXIMUM FEATURE INTEGRATION TEST (live Ollama)")
     print("=" * 70)

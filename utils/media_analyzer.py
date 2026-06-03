@@ -25,17 +25,22 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+
 def log_info(msg: str):
     print(f"{BLUE}[INFO]{RESET} {msg}")
+
 
 def log_success(msg: str):
     print(f"{GREEN}[OK] {msg}{RESET}")
 
+
 def log_warn(msg: str):
     print(f"{YELLOW}[WARN] {msg}{RESET}")
 
+
 def log_error(msg: str):
     print(f"{RED}[ERROR] {msg}{RESET}")
+
 
 def check_ffprobe() -> bool:
     try:
@@ -44,7 +49,9 @@ def check_ffprobe() -> bool:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
+
 # ── Audio Quality Analytics ────────────────────────────────────────────────
+
 
 def analyze_audio_wave(path: Path) -> dict[str, Any]:
     """Inspect raw WAV structure, bit rate, sample rate, peak volume, and clipping."""
@@ -97,10 +104,11 @@ def analyze_audio_wave(path: Path) -> dict[str, Any]:
             "peak_db": peak_db,
             "rms_db": rms_db,
             "clipping_pct": clip_pct,
-            "format": "PCM WAV"
+            "format": "PCM WAV",
         }
     except Exception as e:
         return {"error": f"Failed to analyze WAV file: {e}"}
+
 
 def analyze_audio(path: Path):
     print(f"\n{BOLD}{CYAN}=== Audio Health Analysis: {path.name} ==={RESET}")
@@ -114,7 +122,9 @@ def analyze_audio(path: Path):
         return
 
     log_success("WAV physical file parameters extracted.")
-    print(f"  - Channels:       {info['channels']} ({'Mono' if info['channels'] == 1 else 'Stereo'})")
+    print(
+        f"  - Channels:       {info['channels']} ({'Mono' if info['channels'] == 1 else 'Stereo'})"
+    )
     print(f"  - Sample Width:   {info['sample_width'] * 8} bits")
     print(f"  - Sample Rate:    {info['sample_rate']} Hz")
     print(f"  - Duration:       {info['duration']:.3f} seconds")
@@ -131,7 +141,9 @@ def analyze_audio(path: Path):
     print(f"\n{BOLD}Audio Dynamic Range Metrics:{RESET}")
     print(f"  - Peak Volume:    {BOLD}{info['peak_db']:.2f} dBFS{RESET}")
     print(f"  - Average RMS:    {BOLD}{info['rms_db']:.2f} dBFS{RESET}")
-    print(f"  - Clipping Level: {info['clipping_pct']:.4f}% ({info['clipping_pct'] * 100:.0f} clip occurrences per million)")
+    print(
+        f"  - Clipping Level: {info['clipping_pct']:.4f}% ({info['clipping_pct'] * 100:.0f} clip occurrences per million)"
+    )
 
     # Audio_FX normalizes to -14dBFS RMS and protects peak at -1.0dBFS
     if info["peak_db"] > -0.5:
@@ -142,20 +154,38 @@ def analyze_audio(path: Path):
         log_info("Audio peak is well attenuated. No risk of hardware distortion.")
 
     if abs(info["rms_db"] - (-14.0)) <= 2.5:
-        log_success("Average loudness conforms perfectly to target podcast standard (-14.0 ± 2 dBFS RMS).")
+        log_success(
+            "Average loudness conforms perfectly to target podcast standard (-14.0 ± 2 dBFS RMS)."
+        )
     else:
-        log_warn(f"Narration loudness is outside typical podcast standards (RMS is {info['rms_db']:.1f} dBFS).")
+        log_warn(
+            f"Narration loudness is outside typical podcast standards (RMS is {info['rms_db']:.1f} dBFS)."
+        )
+
 
 def run_ffprobe_audio(path: Path):
     if not check_ffprobe():
         return
     res = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:stream=sample_rate,channels", "-of", "json", str(path)],
-        capture_output=True, text=True, check=True
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration,bit_rate:stream=sample_rate,channels",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     print(res.stdout)
 
+
 # ── Video Quality & Subtitle Sync Analytics ────────────────────────────────
+
 
 def analyze_video(path: Path):
     print(f"\n{BOLD}{CYAN}=== Video Health Analysis: {path.name} ==={RESET}")
@@ -165,15 +195,26 @@ def analyze_video(path: Path):
 
     try:
         res = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration,size,bit_rate:stream=width,height,avg_frame_rate,codec_name,codec_type", "-of", "json", str(path)],
-            capture_output=True, text=True, check=True
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration,size,bit_rate:stream=width,height,avg_frame_rate,codec_name,codec_type",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         data = json.loads(res.stdout)
         format_info = data.get("format", {})
         streams = data.get("streams", [])
 
         duration = float(format_info.get("duration", 0.0))
-        size_mb = float(format_info.get("size", 0.0)) / (1024 ** 2)
+        size_mb = float(format_info.get("size", 0.0)) / (1024**2)
         bitrate_kb = float(format_info.get("bit_rate", 0.0)) / 1024
 
         log_success("Video stream parameters extracted.")
@@ -194,9 +235,12 @@ def analyze_video(path: Path):
             fps = 0.0
             if "/" in fps_str:
                 n, d = map(float, fps_str.split("/"))
-                if d > 0: fps = n / d
+                if d > 0:
+                    fps = n / d
 
-            print(f"  - Resolution:     {BOLD}{w}x{h}{RESET} ({'Horizontal 1080p' if w == 1920 else 'Vertical TikTok' if w == 1080 else 'SD/Low-Res'})")
+            print(
+                f"  - Resolution:     {BOLD}{w}x{h}{RESET} ({'Horizontal 1080p' if w == 1920 else 'Vertical TikTok' if w == 1080 else 'SD/Low-Res'})"
+            )
             print(f"  - Video Codec:    {codec}")
             print(f"  - Framerate:      {fps:.2f} fps")
 
@@ -214,13 +258,17 @@ def analyze_video(path: Path):
             log_error("No active video stream found in the media container!")
 
         if astream:
-            log_success(f"Audio track present: {astream.get('codec_name', 'unknown')} ({int(astream.get('sample_rate', 0))}Hz)")
+            log_success(
+                f"Audio track present: {astream.get('codec_name', 'unknown')} ({int(astream.get('sample_rate', 0))}Hz)"
+            )
             # Sync validation: compare video duration to audio duration
             try:
                 audio_dur = float(astream.get("duration", duration))
                 diff = abs(duration - audio_dur)
                 if diff > 0.2:
-                    log_warn(f"AUDIO-VIDEO DRIFT DETECTED: Video duration is {duration:.2f}s but Audio is {audio_dur:.2f}s (Diff: {diff:.2f}s). Subtitles may drift out of sync!")
+                    log_warn(
+                        f"AUDIO-VIDEO DRIFT DETECTED: Video duration is {duration:.2f}s but Audio is {audio_dur:.2f}s (Diff: {diff:.2f}s). Subtitles may drift out of sync!"
+                    )
                 else:
                     log_success("Audio-Video stream tracks are perfectly aligned and synced.")
             except Exception:
@@ -231,7 +279,9 @@ def analyze_video(path: Path):
     except Exception as e:
         log_error(f"Failed to diagnose video file: {e}")
 
+
 # ── Main Flow ──────────────────────────────────────────────────────────────
+
 
 def main():
     if len(sys.argv) < 2:
@@ -251,6 +301,7 @@ def main():
     else:
         log_warn(f"Unknown suffix '{suffix}'. Run standard ffprobe diagnostics:")
         run_ffprobe_audio(path)
+
 
 if __name__ == "__main__":
     main()

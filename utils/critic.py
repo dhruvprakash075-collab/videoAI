@@ -22,6 +22,7 @@ The critic ONLY scores. Rewriting is the writer's job — when the score is
 below threshold, the graph routes back to ``write_script_node`` which
 incorporates :attr:`SegmentState.critic_feedback` into its prompt.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,6 +41,7 @@ TOTAL_MAX = DIMENSION_MAX * len(DIMENSIONS)
 @dataclass
 class CriticScore:
     """Per-dimension scores (0-20 each) + free-form feedback."""
+
     hook: int = 0
     emotional_arc: int = 0
     pacing: int = 0
@@ -50,13 +52,7 @@ class CriticScore:
 
     @property
     def total(self) -> int:
-        return (
-            self.hook
-            + self.emotional_arc
-            + self.pacing
-            + self.retention
-            + self.tts_friendliness
-        )
+        return self.hook + self.emotional_arc + self.pacing + self.retention + self.tts_friendliness
 
     @property
     def is_empty(self) -> bool:
@@ -186,7 +182,7 @@ def parse_critic_json(raw: str) -> CriticScore | None:
         elif ch == "}":
             depth -= 1
             if depth == 0 and start >= 0:
-                candidate = raw[start:i + 1]
+                candidate = raw[start : i + 1]
                 try:
                     data = json.loads(candidate)
                     if isinstance(data, dict):

@@ -8,8 +8,15 @@ from playwright.sync_api import sync_playwright
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Log into YouTube Studio to save authentication state.")
-    parser.add_argument("--profile-dir", type=str, default="chrome_profile", help="Directory to save the profile in.")
+    parser = argparse.ArgumentParser(
+        description="Log into YouTube Studio to save authentication state."
+    )
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default="chrome_profile",
+        help="Directory to save the profile in.",
+    )
     args = parser.parse_args()
 
     profile_path = Path(args.profile_dir).resolve()
@@ -22,7 +29,7 @@ def main():
         browser = p.chromium.launch_persistent_context(
             user_data_dir=str(profile_path),
             headless=False,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=["--disable-blink-features=AutomationControlled"],
         )
 
         page = browser.new_page()
@@ -33,6 +40,7 @@ def main():
             page.wait_for_timeout(0)  # Wait indefinitely until closed
 
     print("\nSession saved! The Video.AI pipeline can now auto-upload to this account.")
+
 
 if __name__ == "__main__":
     main()

@@ -44,7 +44,7 @@ tts:
     volume: "+0%"
 
   omnivoice:
-    speed: 0.85
+    speed: 0.5
     num_step: 16            # was 24. Diffusion denoising steps — 16 is ~1.5x faster than 24 with minimal quality loss on narration. Lower (12) = faster but noticeably less crisp.
     guidance_scale: 2.5
     # ref_text: transcript of character_voices/narration_voice.wav. Fill this in to
@@ -67,7 +67,7 @@ tts:
 
 # ── Visual Style ──────────────────────────────────────────────────
 visual:
-  num_scenes: 6
+  num_scenes: 4
   style: "Arcane-inspired semi-realistic 2D painterly animation, cinematic lighting, volumetric shadows, detailed faces, atmospheric fog"
   environment_frame_ratio: 0.4   # at least 40% of frames are wide world/environment shots (no dominant character)
 
@@ -107,7 +107,7 @@ image_gen:
   guidance_scale: 6.0            # sweet spot for DPM++ 2M at 12 steps; 7.0 oversaturates at low steps
   negative_prompt: "photorealistic, real life, 3d, 3d render, render, photograph, photography, real-world textures, digital clay, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
   lock_seed: true                # A2: derive stable base seed from topic hash for visual consistency
-  preview_steps: 8               # A4: use this many steps in dry_run/preview_mode (faster iteration)
+  preview_steps: 12              # A4: use this many steps in dry_run/preview_mode (faster iteration)
   oom_recovery: true             # D1: enable OOM auto-recovery ladder (full→reduced steps→lower res→cpu→black frame)
   oom_min_resolution: "640x360"  # D1: minimum resolution to try before CPU fallback
   token_budget:                  # B4: CLIP 77-token budget allocation
@@ -150,6 +150,11 @@ subtitles:
   font: "Nirmala UI"       # Devanagari-capable (ships with Windows 10/11); use "Noto Sans Devanagari" as cross-platform fallback
   size: 22                 # smaller, cleaner (was 38 — too big)
   color: "&H00FFFFFF&"     # white (was &H00FFFF& yellow)
+  language: "en"
+
+# ── Narrator ─────────────────────────────────────────────────────
+narrator:
+  include_character_descriptions: false
 
 # ── Script Settings ──────────────────────────────────────────────
 script:
@@ -157,8 +162,8 @@ script:
   min_words: 20
   max_words: 600           # raised from 400 so CRA's naturally longer, richer narration passes validation (no slow correction loops)
   dynamic_image_count: true
-  default_images_per_segment: 6
-  max_images_per_segment: 10    # HARD CAP: never generate more than this per segment (was uncapped → 33 images)
+  default_images_per_segment: 4
+  max_images_per_segment: 8     # HARD CAP: never generate more than this per segment (was uncapped → 33 images)
   word_count_tolerance: 0.6     # wide band (±60%): accept CRA's natural length on first pass instead of looping corrections
   word_count_max_retries: 1     # allow 1 LLM rewrite attempt if local trim can't fix word count
   writer_max_tokens: 1024       # W1: max tokens for writer LLM (150-400 word script ≈ 600 tokens; 1024 is generous)

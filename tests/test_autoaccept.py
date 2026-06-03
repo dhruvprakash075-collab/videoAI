@@ -1,4 +1,5 @@
 """test_autoaccept.py - Tests for A6: --yes auto-accept flag."""
+
 import sys
 from pathlib import Path
 
@@ -32,8 +33,20 @@ def test_consult_fields_returns_all_defaults_when_auto_accept():
     UIState.is_ui_mode = False
     agent = DirectorAgent(llm_config={})
     fields = [
-        {"key": "duration", "label": "Duration", "current": "10", "options": ["10", "20", "30"], "impact": 1},
-        {"key": "style", "label": "Style", "current": "anime", "options": ["anime", "realistic"], "impact": 2},
+        {
+            "key": "duration",
+            "label": "Duration",
+            "current": "10",
+            "options": ["10", "20", "30"],
+            "impact": 1,
+        },
+        {
+            "key": "style",
+            "label": "Style",
+            "current": "anime",
+            "options": ["anime", "realistic"],
+            "impact": 2,
+        },
     ]
     result = agent.consult_fields(fields)
     assert result["duration"] == "10"

@@ -24,9 +24,11 @@ _active_lora_path: Path | None = None  # tracks currently loaded LoRA
 _oom_events: list = []
 _oom_events_lock = threading.Lock()
 
+
 def _record_oom_event(event: dict) -> None:
     with _oom_events_lock:
         _oom_events.append(event)
+
 
 def get_oom_report() -> list:
     """Return a list of OOM events that occurred during this session.
@@ -50,15 +52,19 @@ def unload_sd_pipeline() -> None:
     if _sd_pipe is not None:
         try:
             import torch
+
             if hasattr(_sd_pipe, "unload_lora_weights"):
                 try:
                     _sd_pipe.unload_lora_weights()
                 except Exception as _lora_e:
-                    log.warning(f"[LoRA] Failed to unload weights during pipeline teardown: {_lora_e}")
+                    log.warning(
+                        f"[LoRA] Failed to unload weights during pipeline teardown: {_lora_e}"
+                    )
             del _sd_pipe
             _sd_pipe = None
             _active_lora_path = None
             import gc
+
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -69,9 +75,13 @@ def unload_sd_pipeline() -> None:
         log.debug("[image_gen] unload_sd_pipeline called but pipeline is already unloaded")
 
 
-def generate_images(prompts, output_dir: Path, config: dict,
-                    lora_paths: dict[str, Path] | None = None,
-                    char_presence: list[dict[str, float]] | None = None) -> list[Path]:
+def generate_images(
+    prompts,
+    output_dir: Path,
+    config: dict,
+    lora_paths: dict[str, Path] | None = None,
+    char_presence: list[dict[str, float]] | None = None,
+) -> list[Path]:
     """Generate images from prompts.
 
     Args:
@@ -97,20 +107,32 @@ def generate_images(prompts, output_dir: Path, config: dict,
         prompt_list = [p.strip() for p in prompts.split(";") if p.strip()]
     else:
         prompt_list = [str(prompts).strip()]
-    if backend == "replicate": return _replicate(prompt_list, output_dir, cfg)
-    if backend == "pexels":    return _pexels(prompt_list, output_dir, cfg)
-    return _stable_diffusion(prompt_list, output_dir, cfg,
-                             neg_prompt_override=neg_prompt_override,
-                             lora_paths=lora_paths,
-                             char_presence=char_presence)
+    if backend == "replicate":
+        return _replicate(prompt_list, output_dir, cfg)
+    if backend == "pexels":
+        return _pexels(prompt_list, output_dir, cfg)
+    return _stable_diffusion(
+        prompt_list,
+        output_dir,
+        cfg,
+        neg_prompt_override=neg_prompt_override,
+        lora_paths=lora_paths,
+        char_presence=char_presence,
+    )
 
 
 # ── CACHE HELPERS ──────────────────────────────────────────────────────────
 
-def _prompt_cache_key(prompt: str, cfg: dict, neg_prompt: str = "",
-                      lora_state: str = "", seed: int = 0,
-                      lora_fingerprint: str = "",
-                      throttled_steps: int | None = None) -> str:
+
+def _prompt_cache_key(
+    prompt: str,
+    cfg: dict,
+    neg_prompt: str = "",
+    lora_state: str = "",
+    seed: int = 0,
+    lora_fingerprint: str = "",
+    throttled_steps: int | None = None,
+) -> str:
     """Return an 8-char hex MD5 hash of prompt + generation parameters.
 
     B20 fix: use actual config values as defaults, not mismatched hardcoded ones.
@@ -126,33 +148,40 @@ def _prompt_cache_key(prompt: str, cfg: dict, neg_prompt: str = "",
     elif not isinstance(prompt, str):
         prompt = str(prompt)
     # Use real config defaults (matching what _stable_diffusion actually uses)
-    steps          = cfg.get("steps", 12)
-    width          = cfg.get("width", 768)
-    height         = cfg.get("height", 432)
+    steps = cfg.get("steps", 12)
+    width = cfg.get("width", 768)
+    height = cfg.get("height", 432)
     guidance_scale = cfg.get("guidance_scale", 6.0)
-    model_id       = cfg.get("sd_model_path") or cfg.get("sd_model", "anyLoRA")
+    model_id = cfg.get("sd_model_path") or cfg.get("sd_model", "anyLoRA")
     # Acceleration state — switching modes must invalidate cached PNGs
-    _accel         = cfg.get("acceleration") or {}
-    accel_id       = (_accel.get("type") or "none").lower()
-    accel_steps    = _accel.get("steps", 6) if accel_id != "none" else ""
-    accel_gs       = _accel.get("guidance_scale", 1.5) if accel_id != "none" else ""
+    _accel = cfg.get("acceleration") or {}
+    accel_id = (_accel.get("type") or "none").lower()
+    accel_steps = _accel.get("steps", 6) if accel_id != "none" else ""
+    accel_gs = _accel.get("guidance_scale", 1.5) if accel_id != "none" else ""
     # P4-2 fix: use the actual throttled steps when provided (VRAM guard may reduce
     # steps below the config value; a throttled image must not be served as a
     # full-quality cache hit).
     effective_steps = throttled_steps if throttled_steps is not None else steps
-    raw = (f"{prompt}|steps={effective_steps}|w={width}|h={height}"
-           f"|gs={guidance_scale}|neg={neg_prompt}|lora={lora_state}|model={model_id}"
-           f"|accel={accel_id}|asteps={accel_steps}|ags={accel_gs}"
-           f"|seed={seed}|lora_fp={lora_fingerprint}")
+    raw = (
+        f"{prompt}|steps={effective_steps}|w={width}|h={height}"
+        f"|gs={guidance_scale}|neg={neg_prompt}|lora={lora_state}|model={model_id}"
+        f"|accel={accel_id}|asteps={accel_steps}|ags={accel_gs}"
+        f"|seed={seed}|lora_fp={lora_fingerprint}"
+    )
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
 
 
 # ── STABLE DIFFUSION ───────────────────────────────────────────────────────
 
-def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
-                       neg_prompt_override: str | None = None,
-                       lora_paths: dict[str, Path] | None = None,
-                       char_presence: list[dict[str, float]] | None = None) -> list[Path]:
+
+def _stable_diffusion(
+    prompts: list[str],
+    out: Path,
+    cfg: dict,
+    neg_prompt_override: str | None = None,
+    lora_paths: dict[str, Path] | None = None,
+    char_presence: list[dict[str, float]] | None = None,
+) -> list[Path]:
     """Run Stable Diffusion inference.
 
     Args:
@@ -169,6 +198,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
         from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
     except ImportError as e:
         import sys as _sys
+
         if _sys.platform == "win32":
             raise ImportError("pip install diffusers torch") from e
         else:
@@ -192,7 +222,9 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
             except Exception as e:
                 log.warning(f"Could not enable TF32: {e}")
 
-            _sd_pipe = StableDiffusionPipeline.from_pretrained(model, torch_dtype=dtype, safety_checker=None)
+            _sd_pipe = StableDiffusionPipeline.from_pretrained(
+                model, torch_dtype=dtype, safety_checker=None
+            )
 
             # Inject DPM-Solver++ scheduler for 2x speedup at same quality
             try:
@@ -225,26 +257,38 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                         try:
                             _sd_pipe.fuse_lora(lora_scale=float(_accel.get("lora_scale", 1.0)))
                             _sd_pipe.unload_lora_weights()  # clear slot; fused delta persists in weights
-                            log.info(f"[ACCEL] Fused {_accel_type} LoRA into base weights: {_accel_lora}")
+                            log.info(
+                                f"[ACCEL] Fused {_accel_type} LoRA into base weights: {_accel_lora}"
+                            )
                         except Exception as _fe:
-                            log.warning(f"[ACCEL] fuse_lora failed ({_fe}); character LoRAs may interfere")
+                            log.warning(
+                                f"[ACCEL] fuse_lora failed ({_fe}); character LoRAs may interfere"
+                            )
                     elif _accel_lora:
-                        log.warning(f"[ACCEL] LoRA path not found: {_accel_lora} — using step/guidance overrides only")
+                        log.warning(
+                            f"[ACCEL] LoRA path not found: {_accel_lora} — using step/guidance overrides only"
+                        )
                     # LCM needs its own scheduler
                     if _accel_type == "lcm":
                         try:
                             from diffusers import LCMScheduler
+
                             _sd_pipe.scheduler = LCMScheduler.from_config(_sd_pipe.scheduler.config)
                             log.info("[ACCEL] Switched to LCMScheduler")
                         except Exception as _le:
                             log.warning(f"[ACCEL] Could not set LCM scheduler: {_le}")
-                    log.info(f"[ACCEL] Acceleration mode '{_accel_type}' active "
-                             f"(steps/guidance overridden per config)")
+                    log.info(
+                        f"[ACCEL] Acceleration mode '{_accel_type}' active "
+                        f"(steps/guidance overridden per config)"
+                    )
                 except Exception as _ae:
                     log.warning(f"[ACCEL] Could not enable acceleration '{_accel_type}': {_ae}")
 
-            if cfg.get("enable_xformers") and hasattr(_sd_pipe, "enable_xformers_memory_efficient_attention"):
+            if cfg.get("enable_xformers") and hasattr(
+                _sd_pipe, "enable_xformers_memory_efficient_attention"
+            ):
                 import sys as _sys
+
                 if _sys.platform == "win32":
                     # xformers requires triton which is not available on Windows
                     log.info("Windows detected — skipping xformers (triton unavailable)")
@@ -252,15 +296,21 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                 else:
                     try:
                         import triton  # noqa: F401
+
                         _sd_pipe.enable_xformers_memory_efficient_attention()
                         log.info("xformers memory-efficient attention enabled")
                     except ImportError:
-                        log.info("Triton not available — skipping xformers (using attention slicing instead)")
+                        log.info(
+                            "Triton not available — skipping xformers (using attention slicing instead)"
+                        )
                         cfg["enable_xformers"] = False
                     except Exception as xe:
-                        log.warning(f"xformers enable failed ({xe}), falling back to attention slicing")
+                        log.warning(
+                            f"xformers enable failed ({xe}), falling back to attention slicing"
+                        )
                         cfg["enable_xformers"] = False
-            if cfg.get("attention_slicing"): _sd_pipe.enable_attention_slicing()
+            if cfg.get("attention_slicing"):
+                _sd_pipe.enable_attention_slicing()
 
             # NHWC channels_last memory format — ~10% faster convolutions on Ada GPUs
             if cfg.get("channels_last") and torch.cuda.is_available():
@@ -312,9 +362,12 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
 
                 # torch.compile uses triton which is not available on Windows
                 import sys as _sys
+
                 if _sys.platform != "win32":
                     try:
-                        _sd_pipe.unet = torch.compile(_sd_pipe.unet, mode="reduce-overhead", fullgraph=True)
+                        _sd_pipe.unet = torch.compile(
+                            _sd_pipe.unet, mode="reduce-overhead", fullgraph=True
+                        )
                         log.info("Enabled torch.compile for UNet speedup")
                     except Exception as e:
                         log.info(f"torch.compile not available ({e}); using eager mode")
@@ -331,7 +384,9 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
         try:
             _sd_pipe.unload_lora_weights()
         except Exception as _lora_e:
-            log.warning(f"[LoRA] Failed to unload previous adapters — wrong character face may persist: {_lora_e}")
+            log.warning(
+                f"[LoRA] Failed to unload previous adapters — wrong character face may persist: {_lora_e}"
+            )
 
         loaded_adapters = set()
         if lora_paths:
@@ -346,12 +401,14 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                 else:
                     log.warning(f"[LoRA] LoRA file not found for {c_key}: {path}")
 
-    images     = []
+    images = []
     cache_hits = 0
-    fresh_gen  = 0
+    fresh_gen = 0
     _pipe_oomed_to_cpu = False
     # Use dynamic negative prompt if provided, else fall back to config value
-    neg_prompt = neg_prompt_override if neg_prompt_override is not None else cfg.get("negative_prompt", "")
+    neg_prompt = (
+        neg_prompt_override if neg_prompt_override is not None else cfg.get("negative_prompt", "")
+    )
     if neg_prompt_override is not None:
         log.info(f"SD: using dynamic negative prompt ({len(neg_prompt.split(','))} tokens)")
 
@@ -364,6 +421,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
         import json as _json
 
         from memory.project_store import PROJECTS_ROOT
+
         if PROJECTS_ROOT.exists():
             for _proj_dir in PROJECTS_ROOT.iterdir():
                 _proj_file = _proj_dir / "project.json"
@@ -438,17 +496,25 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                         if dominant_char in _seed_map:
                             _seed = _seed_map[dominant_char]
                         else:
-                            _seed = int(hashlib.md5(dominant_char.encode()).hexdigest()[:8], 16) % (2**32)
+                            _seed = int(hashlib.md5(dominant_char.encode()).hexdigest()[:8], 16) % (
+                                2**32
+                            )
                         # P3-3 fix: only perturb seed per-frame when a LoRA is active
-                        _char_has_lora = (loaded_adapters and dominant_char in loaded_adapters)
+                        _char_has_lora = loaded_adapters and dominant_char in loaded_adapters
                         if _char_has_lora:
                             _seed = (_seed + i * 7919) % (2**32)  # 7919 = prime, good spread
-                            log.debug(f"[Seed] Frame {i+1}: char={dominant_char} (LoRA active), seed={_seed}")
+                            log.debug(
+                                f"[Seed] Frame {i + 1}: char={dominant_char} (LoRA active), seed={_seed}"
+                            )
                         else:
-                            log.debug(f"[Seed] Frame {i+1}: char={dominant_char} (no LoRA), seed={_seed} (constant)")
+                            log.debug(
+                                f"[Seed] Frame {i + 1}: char={dominant_char} (no LoRA), seed={_seed} (constant)"
+                            )
                     else:
-                        _seed = int(hashlib.md5(f"env_{i}_{prompt[:40]}".encode()).hexdigest()[:8], 16) % (2**32)
-                        log.debug(f"[Seed] Frame {i+1}: environment, seed={_seed}")
+                        _seed = int(
+                            hashlib.md5(f"env_{i}_{prompt[:40]}".encode()).hexdigest()[:8], 16
+                        ) % (2**32)
+                        log.debug(f"[Seed] Frame {i + 1}: environment, seed={_seed}")
             except Exception as _seed_err:
                 log.debug(f"[Seed] Could not resolve seed early: {_seed_err}")
 
@@ -462,7 +528,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                 log.debug(f"[A4] steps={throttled_steps} (preview)")
             else:
                 throttled_steps = cfg.get("steps", 12)
-            _accel_cfg    = cfg.get("acceleration") or {}
+            _accel_cfg = cfg.get("acceleration") or {}
             _accel_active = (_accel_cfg.get("type") or "none").lower() != "none"
             if _accel_active:
                 throttled_steps = int(_accel_cfg.get("steps", 6))
@@ -472,37 +538,45 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
             try:
                 if torch.cuda.is_available():
                     free_vram, _total_vram = torch.cuda.mem_get_info()
-                    free_vram_gb = free_vram / (1024 ** 3)
+                    free_vram_gb = free_vram / (1024**3)
 
                     if free_vram_gb < 1.5:
-                        log.info(f"VRAM Guard: Free VRAM low ({free_vram_gb:.2f} GB) — clearing cache")
+                        log.info(
+                            f"VRAM Guard: Free VRAM low ({free_vram_gb:.2f} GB) — clearing cache"
+                        )
                         torch.cuda.empty_cache()
                         torch.cuda.synchronize()
                         free_vram, _total_vram = torch.cuda.mem_get_info()
-                        free_vram_gb = free_vram / (1024 ** 3)
+                        free_vram_gb = free_vram / (1024**3)
 
                     if free_vram_gb < 1.2:
                         throttled_steps = max(8, int(throttled_steps * 0.6))
-                        log.warning(f"VRAM Guard WARNING: Free VRAM critical ({free_vram_gb:.2f} GB) — Throttling SD steps to {throttled_steps} to prevent OOM!")
+                        log.warning(
+                            f"VRAM Guard WARNING: Free VRAM critical ({free_vram_gb:.2f} GB) — Throttling SD steps to {throttled_steps} to prevent OOM!"
+                        )
             except Exception as e:
                 log.debug(f"Could not run VRAM Guard check: {e}")
 
             # Include frame index in the cache key so two frames with identical
             # prompt text never collide into the same cached PNG (duplicate-image fix).
-            cache_key = _prompt_cache_key(f"{prompt}|frame={i}", cfg, neg_prompt=frame_neg_prompt,
-                                          lora_state=lora_state, seed=_seed,
-                                          lora_fingerprint=_lora_fingerprint,
-                                          throttled_steps=throttled_steps)
+            cache_key = _prompt_cache_key(
+                f"{prompt}|frame={i}",
+                cfg,
+                neg_prompt=frame_neg_prompt,
+                lora_state=lora_state,
+                seed=_seed,
+                lora_fingerprint=_lora_fingerprint,
+                throttled_steps=throttled_steps,
+            )
 
             # ── 1. Check cache-keyed filename (new format) ─────────────────
-            cached_path = out / f"scene_{i+1:02d}_{cache_key}.png"
+            cached_path = out / f"scene_{i + 1:02d}_{cache_key}.png"
             if cached_path.exists():
                 log.info(f"Cache hit (new): {cached_path.name} — skipping SD")
                 images.append(cached_path)
                 cache_hits += 1
                 pbar.update(1)
                 continue
-
 
             # ── 3. Generate fresh image ────────────────────────────────────
             # Dynamically set active adapters for this specific frame
@@ -517,13 +591,15 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                 if active_names:
                     try:
                         _sd_pipe.set_adapters(active_names, adapter_weights=active_weights)
-                        log.debug(f"[LoRA] Active adapters for frame {i+1}: {dict(zip(active_names, active_weights, strict=False))}")
+                        log.debug(
+                            f"[LoRA] Active adapters for frame {i + 1}: {dict(zip(active_names, active_weights, strict=False))}"
+                        )
                     except Exception as e:
-                        log.warning(f"[LoRA] Failed to set adapters for frame {i+1}: {e}")
+                        log.warning(f"[LoRA] Failed to set adapters for frame {i + 1}: {e}")
                 else:
                     try:
                         _sd_pipe.set_adapters([])
-                        log.debug(f"[LoRA] Adapters disabled for environmental frame {i+1}")
+                        log.debug(f"[LoRA] Adapters disabled for environmental frame {i + 1}")
                     except Exception:
                         pass
 
@@ -538,7 +614,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
             try:
                 if torch.cuda.is_available() and _seed is not None:
                     _generator = torch.Generator(device="cuda").manual_seed(_seed)
-                    log.debug(f"[Seed] Frame {i+1}: generator set, seed={_seed}")
+                    log.debug(f"[Seed] Frame {i + 1}: generator set, seed={_seed}")
             except Exception as _seed_err:
                 log.debug(f"[Seed] Could not set per-frame seed: {_seed_err}")
                 _generator = None
@@ -549,7 +625,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
             _estimated_tokens = int(len(prompt.split()) * 1.3)
             if _estimated_tokens > 77:
                 log.warning(
-                    f"[CLIP] Frame {i+1}: prompt estimated at ~{_estimated_tokens} tokens "
+                    f"[CLIP] Frame {i + 1}: prompt estimated at ~{_estimated_tokens} tokens "
                     f"(>{77}) — diffusers will truncate at 77 tokens; "
                     f"scene/style tail may be dropped. Consider shortening the prompt."
                 )
@@ -569,7 +645,9 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                         generator=_generator,
                     ).images[0]
             except torch.cuda.OutOfMemoryError:
-                log.warning(f"[OOM] Tier 1 CUDA OOM on image {i+1} — clearing cache and retrying at 60% steps")
+                log.warning(
+                    f"[OOM] Tier 1 CUDA OOM on image {i + 1} — clearing cache and retrying at 60% steps"
+                )
                 torch.cuda.empty_cache()
 
                 # Tier 2: Reduced steps on CUDA
@@ -585,9 +663,15 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                         generator=_generator,
                     ).images[0]
                     log.info(f"[OOM] Tier 2 recovered at {reduced_steps} steps")
-                    _record_oom_event({"image_index": i + 1, "tier_failed": 1,
-                                          "fallback_tier": 2, "steps_used": reduced_steps,
-                                          "oom_fallback": False})
+                    _record_oom_event(
+                        {
+                            "image_index": i + 1,
+                            "tier_failed": 1,
+                            "fallback_tier": 2,
+                            "steps_used": reduced_steps,
+                            "oom_fallback": False,
+                        }
+                    )
                 except torch.cuda.OutOfMemoryError:
                     log.warning("[OOM] Tier 2 CUDA OOM — falling back to CPU inference (4 steps)")
                     torch.cuda.empty_cache()
@@ -610,14 +694,29 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
                         ).images[0]
                         log.warning("[OOM] Tier 3 CPU fallback succeeded (4 steps, lower quality)")
                         oom_fallback = True
-                        _record_oom_event({"image_index": i + 1, "tier_failed": 2,
-                                              "fallback_tier": 3, "steps_used": 4,
-                                              "oom_fallback": True})
+                        _record_oom_event(
+                            {
+                                "image_index": i + 1,
+                                "tier_failed": 2,
+                                "fallback_tier": 3,
+                                "steps_used": 4,
+                                "oom_fallback": True,
+                            }
+                        )
                     except Exception as cpu_err:
-                        log.exception(f"[OOM] All 3 tiers failed for image {i+1}: {cpu_err} — skipping")
-                        _record_oom_event({"image_index": i + 1, "tier_failed": 3,
-                                               "fallback_tier": None, "steps_used": 0,
-                                               "oom_fallback": True, "skipped": True})
+                        log.exception(
+                            f"[OOM] All 3 tiers failed for image {i + 1}: {cpu_err} — skipping"
+                        )
+                        _record_oom_event(
+                            {
+                                "image_index": i + 1,
+                                "tier_failed": 3,
+                                "fallback_tier": None,
+                                "steps_used": 0,
+                                "oom_fallback": True,
+                                "skipped": True,
+                            }
+                        )
                         pbar.update(1)
                         continue
             except RuntimeError as rte:
@@ -650,14 +749,12 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
             images.append(cached_path)
             fresh_gen += 1
             if oom_fallback:
-                log.info(f"[OOM] Image {i+1} saved (CPU fallback): {cached_path.name}")
+                log.info(f"[OOM] Image {i + 1} saved (CPU fallback): {cached_path.name}")
             pbar.update(1)
 
     # ── 5. Cache-vs-generated summary ─────────────────────────────────────
     total = cache_hits + fresh_gen
-    log.info(
-        f"SD: {total} images total — {cache_hits} from cache, {fresh_gen} generated fresh"
-    )
+    log.info(f"SD: {total} images total — {cache_hits} from cache, {fresh_gen} generated fresh")
     print(
         f"[image_gen] SD summary: {total} images | "
         f"{cache_hits} cached (skipped) | {fresh_gen} generated fresh"
@@ -665,6 +762,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
 
     try:
         import torch as _t
+
         if _t.cuda.is_available():
             _t.cuda.empty_cache()
     except Exception as e:
@@ -674,6 +772,7 @@ def _stable_diffusion(prompts: list[str], out: Path, cfg: dict,
 
 
 # ── UPSCALER (R12.9 / B3) ─────────────────────────────────────────────────
+
 
 def _maybe_upscale(img, cfg: dict):
     """Optionally upscale a PIL image using the configured upscaler.
@@ -710,8 +809,14 @@ def _maybe_upscale(img, cfg: dict):
             upsampler = RealESRGANer(
                 scale=scale,
                 model_path=model_path,
-                model=RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64,
-                              num_block=23, num_grow_ch=32, scale=scale),
+                model=RRDBNet(
+                    num_in_ch=3,
+                    num_out_ch=3,
+                    num_feat=64,
+                    num_block=23,
+                    num_grow_ch=32,
+                    scale=scale,
+                ),
                 tile=512,  # tiled for 6GB VRAM
                 tile_pad=10,
                 pre_pad=0,
@@ -720,6 +825,7 @@ def _maybe_upscale(img, cfg: dict):
             img_np = np.array(img)
             out_np, _ = upsampler.enhance(img_np, outscale=scale)
             from PIL import Image as _PILImage
+
             upscaled = _PILImage.fromarray(out_np)
             # Crop/resize to exact target if needed
             if upscaled.size != (target_w, target_h):
@@ -732,6 +838,7 @@ def _maybe_upscale(img, cfg: dict):
     # Lanczos fallback — always available, decent quality
     try:
         from PIL import Image as _PILImage
+
         resized = img.resize((target_w, target_h), _PILImage.LANCZOS)
         log.debug(f"[Upscale] Lanczos: {img.size} → {resized.size}")
         return resized
@@ -742,26 +849,36 @@ def _maybe_upscale(img, cfg: dict):
 
 # ── REPLICATE ──────────────────────────────────────────────────────────────
 
+
 def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     try:
         import replicate
     except ImportError as e:
         raise ImportError("pip install replicate") from e
 
-    model   = cfg.get("replicate_model", "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf")
-    images  = []
+    model = cfg.get(
+        "replicate_model",
+        "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
+    )
+    images = []
     with tqdm(total=len(prompts), desc="  Replicate", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
-            output = replicate.run(model, input={
-                "prompt": prompt,
-                "width":  cfg.get("width",  1024),
-                "height": cfg.get("height", 576),
-                "num_inference_steps": cfg.get("steps", 25),
-                "guidance_scale":      cfg.get("guidance_scale", 7.5),
-            })
+            output = replicate.run(
+                model,
+                input={
+                    "prompt": prompt,
+                    "width": cfg.get("width", 1024),
+                    "height": cfg.get("height", 576),
+                    "num_inference_steps": cfg.get("steps", 25),
+                    "guidance_scale": cfg.get("guidance_scale", 7.5),
+                },
+            )
             url = output[0] if isinstance(output, list) else output
-            p   = out / f"scene_{i+1:02d}.png"
-            with urllib.request.urlopen(url, timeout=30) as response, open(str(p), 'wb') as out_file:
+            p = out / f"scene_{i + 1:02d}.png"
+            with (
+                urllib.request.urlopen(url, timeout=30) as response,
+                open(str(p), "wb") as out_file,
+            ):
                 out_file.write(response.read())
             images.append(p)
             pbar.update(1)
@@ -772,6 +889,7 @@ def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
 
 # ── PEXELS ─────────────────────────────────────────────────────────────────
 
+
 def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     api_key = cfg.get("pexels_api_key") or os.environ.get("PEXELS_API_KEY", "")
     if not api_key:
@@ -780,21 +898,24 @@ def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     images = []
     with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
-            query   = urllib.parse.quote_plus(prompt[:100])
-            url     = f"https://api.pexels.com/v1/search?query={query}&per_page=1&orientation=landscape"
-            req     = urllib.request.Request(url, headers={"Authorization": api_key})
+            query = urllib.parse.quote_plus(prompt[:100])
+            url = f"https://api.pexels.com/v1/search?query={query}&per_page=1&orientation=landscape"
+            req = urllib.request.Request(url, headers={"Authorization": api_key})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read())
 
             photos = data.get("photos", [])
             if not photos:
-                log.warning(f"Pexels: no results for prompt {i+1}, skipping")
+                log.warning(f"Pexels: no results for prompt {i + 1}, skipping")
                 pbar.update(1)
                 continue
 
             img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["original"]
-            p       = out / f"scene_{i+1:02d}.png"
-            with urllib.request.urlopen(img_url, timeout=30) as response, open(str(p), 'wb') as out_file:
+            p = out / f"scene_{i + 1:02d}.png"
+            with (
+                urllib.request.urlopen(img_url, timeout=30) as response,
+                open(str(p), "wb") as out_file,
+            ):
                 out_file.write(response.read())
             images.append(p)
             pbar.update(1)

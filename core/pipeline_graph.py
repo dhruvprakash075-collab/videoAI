@@ -7,8 +7,10 @@ from langgraph.graph import END, StateGraph
 
 log = logging.getLogger(__name__)
 
+
 class SegmentState(TypedDict, total=False):
     """The typed state passed between nodes in the LangGraph."""
+
     i: int
     plan: dict
     context: str
@@ -42,6 +44,7 @@ class SegmentState(TypedDict, total=False):
     # Control signals
     aborted: bool
     skip: bool
+
 
 class SegmentGraphBuilder:
     def __init__(self, ctx: Any):
@@ -86,10 +89,14 @@ class SegmentGraphBuilder:
             rewrites = state.get("rewrites_attempted", 0)
             max_rewrites = self.ctx.config.get("script", {}).get("critic_max_rewrites", 2)
             if rewrites < max_rewrites:
-                log.info(f"  Seg {state['i']}: Critic rejected script. Routing back to writer (attempt {rewrites+1}/{max_rewrites}).")
+                log.info(
+                    f"  Seg {state['i']}: Critic rejected script. Routing back to writer (attempt {rewrites + 1}/{max_rewrites})."
+                )
                 return "write_script_node"
             else:
-                log.warning(f"  Seg {state['i']}: Max rewrites reached. Proceeding with unapproved script.")
+                log.warning(
+                    f"  Seg {state['i']}: Max rewrites reached. Proceeding with unapproved script."
+                )
                 return "translate_node"
         return "translate_node"
 
@@ -111,8 +118,8 @@ class SegmentGraphBuilder:
             {
                 "write_script_node": "write_script_node",
                 "translate_node": "translate_node",
-                END: END
-            }
+                END: END,
+            },
         )
 
         builder.add_edge("write_script_node", "critic_node")

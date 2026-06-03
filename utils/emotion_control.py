@@ -11,33 +11,37 @@ B8 fix: inject_emotion now accepts a lang parameter so it is applied
 B9 fix: get_mood_rate() is now wired into tts_generate via the pipeline.
 B10 fix: Devanagari-aware sentence boundaries (।, ?, !) added.
 """
+
 import re as _re
 
 # ── Devanagari detection ──────────────────────────────────────────────────────
+
 
 def _is_devanagari(text: str) -> bool:
     """Return True if the text is predominantly Devanagari script."""
     if not text:
         return False
-    deva_chars = len(_re.findall(r'[\u0900-\u097F]', text))
-    total_letters = len(_re.findall(r'[a-zA-Z\u0900-\u097F]', text))
+    deva_chars = len(_re.findall(r"[\u0900-\u097F]", text))
+    total_letters = len(_re.findall(r"[a-zA-Z\u0900-\u097F]", text))
     return total_letters > 0 and (deva_chars / total_letters) > 0.5
 
 
 # ── Latin (English) helpers ───────────────────────────────────────────────────
 
+
 def _safe_ellipsis_latin(text: str) -> str:
     """Replace sentence-ending periods with ellipsis (Latin text only)."""
-    text = _re.sub(r'(?<=[a-zA-Z])\.(?=\s)', '...', text)
+    text = _re.sub(r"(?<=[a-zA-Z])\.(?=\s)", "...", text)
     return text
 
 
 # ── Devanagari helpers ────────────────────────────────────────────────────────
 
+
 def _safe_ellipsis_deva(text: str) -> str:
     """Add pause markers after Devanagari sentence boundaries (।)."""
     # Replace । followed by space with ...  (pause signal for TTS)
-    text = text.replace('। ', '... ')
+    text = text.replace("। ", "... ")
     return text
 
 
@@ -45,14 +49,14 @@ def _deva_inject(text: str, mood: str) -> str:
     """Apply mood-appropriate Devanagari punctuation shaping."""
     if mood in ("mysterious", "horror"):
         text = _safe_ellipsis_deva(text)
-        text = text.replace('? ', '?... ')
+        text = text.replace("? ", "?... ")
     elif mood == "action":
-        text = text.replace('। ', '! ')
+        text = text.replace("। ", "! ")
     elif mood in ("dramatic", "epic"):
         text = _safe_ellipsis_deva(text)
     elif mood == "intimate":
         text = _safe_ellipsis_deva(text)
-        text = text.replace('! ', '। ')  # soften exclamations
+        text = text.replace("! ", "। ")  # soften exclamations
     # calm: no change
     return text
 
@@ -69,9 +73,9 @@ _MOOD_MARKERS = {
     },
     "horror": {
         "prefix": "",
-        "inject_latin": lambda s: _safe_ellipsis_latin(s)
-                                    .replace("! ", "!... ")
-                                    .replace("? ", "?... "),
+        "inject_latin": lambda s: (
+            _safe_ellipsis_latin(s).replace("! ", "!... ").replace("? ", "?... ")
+        ),
         "suffix_latin": "...",
         "suffix_deva": "...",
         "rate": 0.85,
@@ -132,10 +136,7 @@ def inject_emotion(script: str, mood: str = "mysterious", lang: str = "auto") ->
     markers = _MOOD_MARKERS.get(mood, _MOOD_MARKERS["mysterious"])
 
     # Determine script type
-    use_deva = (
-        lang == "hi"
-        or (lang == "auto" and _is_devanagari(script))
-    )
+    use_deva = lang == "hi" or (lang == "auto" and _is_devanagari(script))
 
     try:
         if use_deva:

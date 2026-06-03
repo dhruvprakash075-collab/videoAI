@@ -1,4 +1,5 @@
 """test_seed_resolution.py - Tests for A2: seed_map built once before frame loop."""
+
 import json
 import sys
 from pathlib import Path
@@ -6,18 +7,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-
 def test_seed_map_built_from_project_files(tmp_path):
     """seed_map should be populated from project.json files in PROJECTS_ROOT."""
     # Create a fake project directory with a visual lock
     proj_dir = tmp_path / "my_project"
     proj_dir.mkdir()
-    (proj_dir / "project.json").write_text(json.dumps({
-        "visual_locks": {
-            "protagonist": {"seed": 42, "description": "tall hero"},
-            "mentor": {"seed": 99, "description": "wise elder"},
-        }
-    }), encoding="utf-8")
+    (proj_dir / "project.json").write_text(
+        json.dumps(
+            {
+                "visual_locks": {
+                    "protagonist": {"seed": 42, "description": "tall hero"},
+                    "mentor": {"seed": 99, "description": "wise elder"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     seed_map = {}
     import memory.project_store as _ps
@@ -58,6 +63,7 @@ def test_seed_map_lookup_avoids_repeated_scan(tmp_path):
 def test_seed_map_empty_when_no_projects(tmp_path):
     """When PROJECTS_ROOT is empty, seed_map should be empty (no crash)."""
     import memory.project_store as _ps
+
     original = _ps.PROJECTS_ROOT
     _ps.PROJECTS_ROOT = tmp_path  # empty dir
     try:

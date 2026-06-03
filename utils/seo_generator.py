@@ -17,6 +17,7 @@ breaker-open / network error / malformed JSON, with
 **never** raises — it is called from post-production after the video is
 rendered and must not fail the upload.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,6 +32,7 @@ class SEOMetadata(TypedDict, total=False):
     """YouTube SEO metadata. All keys are optional; dict access is preserved
     for backward compat with the original 2-field shape.
     """
+
     title: str
     description: str
     tags: list[str]
@@ -41,13 +43,63 @@ class SEOMetadata(TypedDict, total=False):
     generation_succeeded: bool
 
 
-_STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
-    "have", "in", "is", "it", "its", "of", "on", "or", "that", "the", "this",
-    "to", "was", "were", "will", "with", "you", "your", "our", "their", "they",
-    "we", "us", "i", "he", "she", "his", "her", "but", "not", "what", "when",
-    "where", "who", "which", "why", "how", "all", "any", "some", "no", "yes",
-})
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+        "you",
+        "your",
+        "our",
+        "their",
+        "they",
+        "we",
+        "us",
+        "i",
+        "he",
+        "she",
+        "his",
+        "her",
+        "but",
+        "not",
+        "what",
+        "when",
+        "where",
+        "who",
+        "which",
+        "why",
+        "how",
+        "all",
+        "any",
+        "some",
+        "no",
+        "yes",
+    }
+)
 
 
 def _slugify_tag(word: str, max_len: int = 30) -> str:
@@ -62,9 +114,9 @@ def _slugify_tag(word: str, max_len: int = 30) -> str:
     s = word.lower().strip()
     try:
         import unicodedata
+
         s = "".join(
-            c for c in s
-            if unicodedata.category(c).startswith(("L", "M", "Nd", "Zs")) or c in "-_"
+            c for c in s if unicodedata.category(c).startswith(("L", "M", "Nd", "Zs")) or c in "-_"
         )
     except Exception:
         s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
@@ -98,12 +150,7 @@ def _build_chapters(outline: list, max_count: int) -> list[dict]:
     chapters = []
     for i in range(n):
         seg = outline[i] or {}
-        title = (
-            seg.get("key_event")
-            or seg.get("summary")
-            or seg.get("title")
-            or f"Part {i + 1}"
-        )
+        title = seg.get("key_event") or seg.get("summary") or seg.get("title") or f"Part {i + 1}"
         chapters.append({"time": _chapter_timecode(i, n), "title": str(title)[:100]})
     return chapters
 
@@ -123,10 +170,13 @@ def _extract_tag_candidates(
     seen: set[str] = set()
     out: list[str] = []
 
-    for raw in [topic, *(seg.get("key_event", "") for seg in outline),
-                *(seg.get("summary", "") for seg in outline),
-                *(seg.get("title", "") for seg in outline),
-                *(research_titles or [])]:
+    for raw in [
+        topic,
+        *(seg.get("key_event", "") for seg in outline),
+        *(seg.get("summary", "") for seg in outline),
+        *(seg.get("title", "") for seg in outline),
+        *(research_titles or []),
+    ]:
         if not raw:
             continue
         for word in re.split(r"[\s,;.!?\u0964]+", str(raw)):
@@ -168,9 +218,8 @@ def _fallback_metadata(
         f"{topic}\n\n"
         f"This documentary explores {topic} in depth. "
         f"Watch the full video to learn everything you need to know.\n\n"
-        f"Chapters:\n" + "\n".join(
-            f"{c['time']} - {c['title']}" for c in _build_chapters(outline, chap_max)
-        )
+        f"Chapters:\n"
+        + "\n".join(f"{c['time']} - {c['title']}" for c in _build_chapters(outline, chap_max))
     )[:desc_max]
     return SEOMetadata(
         title=title,
@@ -207,7 +256,7 @@ def _parse_seo_response(raw: str) -> dict | None:
         elif ch == "}":
             depth -= 1
             if depth == 0 and start >= 0:
-                candidate = raw[start:i + 1]
+                candidate = raw[start : i + 1]
                 try:
                     data = json.loads(candidate)
                     if isinstance(data, dict):
@@ -230,12 +279,14 @@ def _build_prompt(
     desc_paras = int(seo_cfg.get("description_paragraphs", 2))
     tag_n = int(seo_cfg.get("tags_count", 15))
 
-    events = [f"  Part {i+1}: {seg.get('key_event', '')}" for i, seg in enumerate(outline) if seg]
+    events = [f"  Part {i + 1}: {seg.get('key_event', '')}" for i, seg in enumerate(outline) if seg]
     outline_block = "\n".join(events) if events else "  (no outline available)"
 
     research_block = ""
     if research_titles:
-        research_block = "\nRelated research headlines:\n" + "\n".join(f"  - {t}" for t in research_titles[:5])
+        research_block = "\nRelated research headlines:\n" + "\n".join(
+            f"  - {t}" for t in research_titles[:5]
+        )
 
     source_block = ""
     if source_path:
@@ -287,6 +338,7 @@ def generate_seo_metadata(
     """
     if config is None:
         from config import load_config
+
         config = load_config()
 
     seo_cfg = config.get("seo") or {}
@@ -296,17 +348,22 @@ def generate_seo_metadata(
 
     source_path = source_document is not None
     language = getattr(source_document, "language", None) or "en"
-    research_titles = [getattr(it, "title", "") for it in (research_items or []) if getattr(it, "title", "")]
+    research_titles = [
+        getattr(it, "title", "") for it in (research_items or []) if getattr(it, "title", "")
+    ]
 
     if not outline and not research_titles and not source_path:
         log.info("[SEO] Empty outline + no research + no source; using fallback")
-        return _fallback_metadata(topic, outline, config, language=language, source_path=source_path)
+        return _fallback_metadata(
+            topic, outline, config, language=language, source_path=source_path
+        )
 
     prompt = _build_prompt(topic, outline, config, language, source_path, research_titles)
     model = (config.get("models") or {}).get("director", "hermes-director")
 
     try:
         from utils.crewai_breaker import guarded_ollama_call
+
         raw = guarded_ollama_call(
             prompt, model=model, format_json=True, temperature=0.7, num_predict=512
         )

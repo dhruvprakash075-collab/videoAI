@@ -21,6 +21,7 @@ This module NEVER calls pre-production. It receives an already-resolved config
 and outline, and runs each segment independently. process_segment() is the hot
 path; _process_segment_with_budget() wraps it in a retry budget.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -61,6 +62,7 @@ def get_director_abort() -> bool:
 
 # ── VRAM management (shared with orchestrator) ────────────────────────────
 
+
 def evict_ollama_models(config: dict, reason: str = "") -> None:
     """Force-evict ALL Ollama models from VRAM (keep_alive=0) before a GPU task.
 
@@ -76,6 +78,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
     try:
         import json as _js
         import urllib.request as _ur
+
         host = config.get("ollama", {}).get("host", "http://localhost:11434")
         models_cfg = config.get("models", {})
         seen = set()
@@ -84,11 +87,14 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
             if _mdl and _mdl not in seen:
                 seen.add(_mdl)
                 with contextlib.suppress(Exception):
-                    _ur.urlopen(_ur.Request(
-                        f"{host}/api/generate",
-                        data=_js.dumps({"model": _mdl, "keep_alive": 0}).encode(),
-                        headers={"Content-Type": "application/json"}
-                    ), timeout=3)
+                    _ur.urlopen(
+                        _ur.Request(
+                            f"{host}/api/generate",
+                            data=_js.dumps({"model": _mdl, "keep_alive": 0}).encode(),
+                            headers={"Content-Type": "application/json"},
+                        ),
+                        timeout=3,
+                    )
         log.debug(f"  Ollama VRAM released{(' before ' + reason) if reason else ''}")
     except Exception as e:
         log.debug(f"Ollama VRAM release failed: {e}")
@@ -96,6 +102,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
         import gc
 
         import torch
+
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -104,22 +111,25 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
 
     try:
         import torch
+
         if not torch.cuda.is_available():
             return
         perf = config.get("performance", {})
         wait_s = float(perf.get("vram_evict_wait_s", 15))
         threshold_gb = float(perf.get("vram_sd_threshold_gb", 4.5))
-        threshold_bytes = threshold_gb * (1024 ** 3)
+        threshold_bytes = threshold_gb * (1024**3)
         deadline = time.time() + wait_s
         while time.time() < deadline:
             free, _total = torch.cuda.mem_get_info()
-            free_gb = free / (1024 ** 3)
+            free_gb = free / (1024**3)
             if free >= threshold_bytes:
-                log.info(f"[VRAM] Free: {free_gb:.2f} GB — threshold met ({threshold_gb} GB), SD can load")
+                log.info(
+                    f"[VRAM] Free: {free_gb:.2f} GB — threshold met ({threshold_gb} GB), SD can load"
+                )
                 return
             time.sleep(0.5)
         free, _total = torch.cuda.mem_get_info()
-        free_gb = free / (1024 ** 3)
+        free_gb = free / (1024**3)
         if free < threshold_bytes:
             log.warning(
                 f"[VRAM] WARNING: VRAM still low after {wait_s:.0f}s wait "
@@ -129,6 +139,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
             try:
                 import json as _js2
                 import urllib.request as _ur2
+
                 host2 = config.get("ollama", {}).get("host", "http://localhost:11434")
                 with _ur2.urlopen(f"{host2}/api/ps", timeout=3) as _r:
                     ps_data = _js2.loads(_r.read().decode())
@@ -136,11 +147,14 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                     _name = _m.get("name", "")
                     if _name:
                         with contextlib.suppress(Exception):
-                            _ur2.urlopen(_ur2.Request(
-                                f"{host2}/api/generate",
-                                data=_js2.dumps({"model": _name, "keep_alive": 0}).encode(),
-                                headers={"Content-Type": "application/json"}
-                            ), timeout=3)
+                            _ur2.urlopen(
+                                _ur2.Request(
+                                    f"{host2}/api/generate",
+                                    data=_js2.dumps({"model": _name, "keep_alive": 0}).encode(),
+                                    headers={"Content-Type": "application/json"},
+                                ),
+                                timeout=3,
+                            )
                 torch.cuda.empty_cache()
             except Exception as _he:
                 log.debug(f"[VRAM] Harder evict failed: {_he}")
@@ -155,18 +169,22 @@ def log_vram_usage(label: str = "") -> None:
     """Log current CUDA VRAM usage (free / total GB). Safe to call if torch isn't available."""
     try:
         import torch
+
         if torch.cuda.is_available():
             free, total = torch.cuda.mem_get_info()
             used = total - free
-            free_gb = free / (1024 ** 3)
-            used_gb = used / (1024 ** 3)
-            total_gb = total / (1024 ** 3)
+            free_gb = free / (1024**3)
+            used_gb = used / (1024**3)
+            total_gb = total / (1024**3)
             pct = (used / total) * 100 if total > 0 else 0
             tag = f"[{label}] " if label else ""
             vram_str = f"{used_gb:.1f}/{total_gb:.1f}GB ({pct:.0f}%)"
-            log.info(f"{tag}VRAM: {used_gb:.2f}GB / {total_gb:.2f}GB used ({pct:.0f}%) — {free_gb:.2f}GB free")
+            log.info(
+                f"{tag}VRAM: {used_gb:.2f}GB / {total_gb:.2f}GB used ({pct:.0f}%) — {free_gb:.2f}GB free"
+            )
             try:
                 from agents.director_agent import UIState
+
                 UIState.vram_text = vram_str
             except Exception:
                 pass
@@ -179,15 +197,18 @@ def log_vram_usage(label: str = "") -> None:
 def aggressive_vram_cleanup(global_scheduler) -> None:
     """Aggressive VRAM + GC cleanup. Called after every segment via finally block."""
     import gc
+
     gc.collect()
     if global_scheduler.active_heavy_count > 0:
         return
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             import time as _t
+
             _t.sleep(0.3)
     except ImportError:
         pass
@@ -196,6 +217,7 @@ def aggressive_vram_cleanup(global_scheduler) -> None:
 
 
 # ── Director Mode approval gate ───────────────────────────────────────────
+
 
 def _director_approval(script: str, prompts: str, seg_num: int, config: dict) -> str:
     """Director Mode: pause after script generation for user review.
@@ -251,17 +273,25 @@ def _director_approval(script: str, prompts: str, seg_num: int, config: dict) ->
         print(sep)
         print("\n--- GENERATED SCRIPT ---")
         print(script)
-        print(f"\n--- IMAGE PROMPTS ({len([p for p in prompts.split(';') if p.strip()])} total) ---")
+        print(
+            f"\n--- IMAGE PROMPTS ({len([p for p in prompts.split(';') if p.strip()])} total) ---"
+        )
         for idx, p in enumerate([pp.strip() for pp in prompts.split(";") if pp.strip()], 1):
             print(f"  [{idx}] {p[:120]}..." if len(p) > 120 else f"  [{idx}] {p}")
         print()
 
         while True:
-            choice = input("[Director] Accept (ENTER) | Edit (e) | Retry (r) | ? Question | q Quit: ").strip().lower()
+            choice = (
+                input("[Director] Accept (ENTER) | Edit (e) | Retry (r) | ? Question | q Quit: ")
+                .strip()
+                .lower()
+            )
             if not choice:
                 return script
             if choice == "e":
-                print("\n--- EDITOR: Paste your revised script below. Type '---DONE---' on its own line when finished. ---\n")
+                print(
+                    "\n--- EDITOR: Paste your revised script below. Type '---DONE---' on its own line when finished. ---\n"
+                )
                 lines = []
                 while True:
                     line = input()
@@ -270,25 +300,35 @@ def _director_approval(script: str, prompts: str, seg_num: int, config: dict) ->
                     lines.append(line)
                 edited = "\n".join(lines).strip()
                 if not edited:
-                    print("[Director] Edited script is empty. Please provide a valid script or choose another option.")
+                    print(
+                        "[Director] Edited script is empty. Please provide a valid script or choose another option."
+                    )
                     continue
                 return edited
             if choice == "r":
                 return "__RETRY__"
             if choice == "?":
-                print("\nAsk a question about the current segment. The Director will provide guidance.\n")
+                print(
+                    "\nAsk a question about the current segment. The Director will provide guidance.\n"
+                )
                 question = input("Your question: ").strip()
                 if not question:
                     print("[Director] No question entered. Returning to menu.")
                     continue
-                print(f"\n[Director AI] Noted your question: \"{question}\"")
-                print("The writer will take this into account when regenerating (next pipeline run).\n")
+                print(f'\n[Director AI] Noted your question: "{question}"')
+                print(
+                    "The writer will take this into account when regenerating (next pipeline run).\n"
+                )
                 return "__RETRY__"
             if choice == "q":
-                print("\n[Director Mode] Aborting entire pipeline... (remaining segments will skip)")
+                print(
+                    "\n[Director Mode] Aborting entire pipeline... (remaining segments will skip)"
+                )
                 set_director_abort(True)
                 return "__QUIT__"
-            print("Invalid choice. Press ENTER to accept, 'e' to edit, 'r' to retry, '?' to ask a question, or 'q' to quit.")
+            print(
+                "Invalid choice. Press ENTER to accept, 'e' to edit, 'r' to retry, '?' to ask a question, or 'q' to quit."
+            )
 
 
 def _preview_gate(mp4_path, config: dict) -> None:
@@ -332,6 +372,7 @@ def _preview_gate(mp4_path, config: dict) -> None:
 
     try:
         import sys as _sys
+
         if not _sys.stdin.isatty():
             log.info("[PREVIEW] Non-interactive stdin — auto-approving")
             return
@@ -347,6 +388,7 @@ def _preview_gate(mp4_path, config: dict) -> None:
 
 
 # ── Main per-segment processor ────────────────────────────────────────────
+
 
 def make_process_segment(
     *,
@@ -400,13 +442,12 @@ def make_process_segment(
     with contextlib.suppress(ImportError):
         pass
 
-
     from core.pipeline_graph import SegmentGraphBuilder, SegmentState
 
     def write_script_node(state: SegmentState) -> dict:
-        i = state['i']
-        plan = state['plan']
-        context = state['context']
+        i = state["i"]
+        plan = state["plan"]
+        context = state["context"]
         key = f"{topic}_seg{i:02d}"
         ck = cp_mgr.get(key) if resume else None
 
@@ -417,7 +458,9 @@ def make_process_segment(
 
         if state.get("source_chunk"):
             chunk = state["source_chunk"]
-            log.debug(f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)")
+            log.debug(
+                f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
+            )
             return {"script": chunk.text}
 
         log.debug(f"  Seg {i}: generating script (LIGHT)")
@@ -431,10 +474,16 @@ def make_process_segment(
         persona = config.get("narrator_persona", "")
 
         from utils.story_planner import build_segment_prompt
+
+        _include_char_desc = config.get("narrator", {}).get("include_character_descriptions", False)
         prompt = build_segment_prompt(
-            plan, context, n_segs, seg_words,
+            plan,
+            context,
+            n_segs,
+            seg_words,
             world_state_block="",
             narrator_persona=persona,
+            include_character_descriptions=_include_char_desc,
         )
         feedback = state.get("critic_feedback") or ""
         if feedback:
@@ -455,20 +504,28 @@ def make_process_segment(
             _script_from_structured = None
             try:
                 from utils.crewai_breaker import guarded_ollama_call
+
                 _raw_json = guarded_ollama_call(
-                    _structured_prompt, model=_writer_model, format_json=True,
+                    _structured_prompt,
+                    model=_writer_model,
+                    format_json=True,
                     temperature=0.7,
                     num_predict=config.get("script", {}).get("writer_max_tokens", 1024),
                 )
                 if _raw_json:
                     import json as _json_w
+
                     _parsed = _json_w.loads(_raw_json)
                     _narration = _parsed.get("narration", "").strip()
                     if _narration:
                         _script_from_structured = _narration
-                        log.debug(f"  Seg {i}: structured Ollama writer OK ({len(_narration)} chars)")
+                        log.debug(
+                            f"  Seg {i}: structured Ollama writer OK ({len(_narration)} chars)"
+                        )
             except Exception as _w2_e:
-                log.warning(f"  Seg {i}: structured writer failed ({_w2_e}) — falling back to CrewAI")
+                log.warning(
+                    f"  Seg {i}: structured writer failed ({_w2_e}) — falling back to CrewAI"
+                )
 
             if _script_from_structured:
                 script = _script_from_structured
@@ -476,10 +533,19 @@ def make_process_segment(
                 log.debug(f"  Seg {i}: using CrewAI writer fallback")
                 from crewai import Crew, Task
                 from crewai.process import Process
+
                 crew = Crew(
                     agents=[writer],
-                    tasks=[Task(description=prompt, agent=writer, expected_output=f"Script for segment {i}")],
-                    process=Process.sequential, cache=True, verbose=False,
+                    tasks=[
+                        Task(
+                            description=prompt,
+                            agent=writer,
+                            expected_output=f"Script for segment {i}",
+                        )
+                    ],
+                    process=Process.sequential,
+                    cache=True,
+                    verbose=False,
                 )
                 with _crewai_lock:
                     result = crew.kickoff()
@@ -488,22 +554,28 @@ def make_process_segment(
         return {"script": script}
 
     def critic_node(state: SegmentState) -> dict:
-        i = state['i']
-        _plan = state['plan']
-        _context = state['context']
-        script = state['script']
-        rewrites = state.get('rewrites_attempted', 0)
+        i = state["i"]
+        _plan = state["plan"]
+        _context = state["context"]
+        script = state["script"]
+        rewrites = state.get("rewrites_attempted", 0)
 
         from utils import validate_script
+
         if not validate_script(script, config):
             log.warning(f"  Seg {i}: script validation failed")
-            return {"critic_approved": False, "critic_feedback": "Validation failed", "rewrites_attempted": rewrites + 1}
+            return {
+                "critic_approved": False,
+                "critic_feedback": "Validation failed",
+                "rewrites_attempted": rewrites + 1,
+            }
 
         if state.get("source_chunk"):
             log.debug(f"  Seg {i}: source-path — critic auto-approves verbatim source")
             return {"critic_approved": True, "critic_feedback": ""}
 
         from utils.critic import is_approved, score_script
+
         threshold = int(config.get("critic", {}).get("threshold", 60))
 
         score = score_script(script, config)
@@ -515,7 +587,9 @@ def make_process_segment(
             log.info(f"  Seg {i}: critic approved ({score.total}/100)")
             return {"critic_approved": True, "critic_feedback": ""}
 
-        log.info(f"  Seg {i}: critic scored {score.total}/100 (threshold {threshold}) — rejecting for rewrite")
+        log.info(
+            f"  Seg {i}: critic scored {score.total}/100 (threshold {threshold}) — rejecting for rewrite"
+        )
         return {
             "critic_approved": False,
             "critic_feedback": "; ".join(score.issues + score.suggestions),
@@ -523,9 +597,9 @@ def make_process_segment(
         }
 
     def translate_node(state: SegmentState) -> dict:
-        i = state['i']
-        plan = state['plan']
-        script = state['script']
+        i = state["i"]
+        plan = state["plan"]
+        script = state["script"]
         key = f"{topic}_seg{i:02d}"
 
         # Word count enforcement
@@ -536,7 +610,8 @@ def make_process_segment(
 
         if _actual_wc > _wc_hi:
             import re as _re_wc
-            _sentences = _re_wc.split(r'(?<=[.!?\u0964])\s+', script)
+
+            _sentences = _re_wc.split(r"(?<=[.!?\u0964])\s+", script)
             _trimmed_parts = []
             _running_wc = 0
             for _sent in _sentences:
@@ -559,7 +634,9 @@ def make_process_segment(
             try:
                 with global_scheduler.task("heavy", f"Seg{i}:translate"):
                     with crewai_lock:
-                        devanagari_script = director_agent_instance.translate_to_devanagari(script, plan, state['context'])
+                        devanagari_script = director_agent_instance.translate_to_devanagari(
+                            script, plan, state["context"]
+                        )
                 log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e})")
@@ -570,15 +647,18 @@ def make_process_segment(
         return {"devanagari_script": devanagari_script, "script_for_tts": script}
 
     def tts_node(state: SegmentState) -> dict:
-        i = state['i']
-        plan = state['plan']
-        script = state['script_for_tts']
-        dev_script = state.get('devanagari_script')
+        i = state["i"]
+        plan = state["plan"]
+        script = state["script_for_tts"]
+        dev_script = state.get("devanagari_script")
         key = f"{topic}_seg{i:02d}"
         ck = cp_mgr.get(key) if resume else None
 
         if ck and "audio" in ck and Path(ck["audio"]["data"]).exists():
-            return {"audio_path": ck["audio"]["data"], "word_timestamps_json": ck["audio"].get("word_timestamps")}
+            return {
+                "audio_path": ck["audio"]["data"],
+                "word_timestamps_json": ck["audio"].get("word_timestamps"),
+            }
 
         if dry_run:
             return {"audio_path": None, "word_timestamps_json": None}
@@ -592,32 +672,53 @@ def make_process_segment(
             script_for_tts = inject_emotion(script, mood, lang="en")
 
         from utils.emotion_control import get_mood_rate
+
         _tts_speed = get_mood_rate(mood)
 
         evict_ollama_models(config, reason="TTS")
         import torch
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         from audio.audio_proxy import rvc_convert, tts_generate
+
         with global_scheduler.task("heavy", f"Seg{i}:Coqui-XTTS"):
-            tts_out = tts_generate(script_for_tts, lang=audio_lang, slow=tts_cfg.get("slow", False), output_dir=out_base / "audio", speed=_tts_speed)
+            tts_out = tts_generate(
+                script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
+            )
             audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
             word_timestamps = tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
 
             if not skip_rvc and config.get("rvc", {}).get("enabled", False):
                 audio_path = rvc_convert(audio_path, out_base / "audio")
 
-        cp_mgr.save(key, "audio", {"data": str(audio_path), "word_timestamps": str(word_timestamps) if word_timestamps else None})
-        return {"audio_path": str(audio_path), "word_timestamps_json": str(word_timestamps) if word_timestamps else None}
+        cp_mgr.save(
+            key,
+            "audio",
+            {
+                "data": str(audio_path),
+                "word_timestamps": str(word_timestamps) if word_timestamps else None,
+            },
+        )
+        return {
+            "audio_path": str(audio_path),
+            "word_timestamps_json": str(word_timestamps) if word_timestamps else None,
+        }
 
     def image_node(state: SegmentState) -> dict:
-        i = state['i']
-        plan = state['plan']
-        script = state.get('script', '')
+        i = state["i"]
+        plan = state["plan"]
+        script = state.get("script", "")
         key = f"{topic}_seg{i:02d}"
         ck = cp_mgr.get(key) if resume else None
 
-        if ck and "images" in ck and ck["images"]["data"] and all(Path(p).exists() for p in ck["images"]["data"]):
+        if (
+            ck
+            and "images" in ck
+            and ck["images"]["data"]
+            and all(Path(p).exists() for p in ck["images"]["data"])
+        ):
             return {"images": ck["images"]["data"]}
 
         if dry_run or not generate_images:
@@ -625,6 +726,7 @@ def make_process_segment(
 
         _visual_style = config.get("visual", {}).get("style", "")
         from utils.scene_director import enrich_prompts
+
         enrich_result = enrich_prompts(build_prompts(script, plan, config), script, config, plan)
 
         enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
@@ -636,27 +738,35 @@ def make_process_segment(
         evict_ollama_models(config, reason="StableDiffusion")
 
         with global_scheduler.task("heavy", f"Seg{i}:StableDiffusion"):
-            images = generate_images(enriched_prompts, out_base / "images", seg_config, lora_paths=trained_loras, char_presence=plan.get("char_presence"))
+            images = generate_images(
+                enriched_prompts,
+                out_base / "images",
+                seg_config,
+                lora_paths=trained_loras,
+                char_presence=plan.get("char_presence"),
+            )
 
         img_paths = [str(p) for p in images] if images else []
         cp_mgr.save(key, "images", {"data": img_paths})
         return {"images": img_paths}
 
     def render_node(state: SegmentState) -> dict:
-        i = state['i']
-        plan = state['plan']
-        script = state.get('script', '')
-        audio_path = state.get('audio_path')
-        images = state.get('images', [])
-        word_timestamps_json = state.get('word_timestamps_json')
+        i = state["i"]
+        plan = state["plan"]
+        script = state.get("script", "")
+        audio_path = state.get("audio_path")
+        images = state.get("images", [])
+        word_timestamps_json = state.get("word_timestamps_json")
         key = f"{topic}_seg{i:02d}"
 
         if dry_run:
             mp4_path = out_base / f"segment_{i:02d}.mp4"
-            with mp4s_lock: mp4s[i - 1] = mp4_path
+            with mp4s_lock:
+                mp4s[i - 1] = mp4_path
             return {"mp4_path": str(mp4_path)}
 
         from video.renderer.renderer import render_with_assets
+
         with global_scheduler.task("light", f"Seg{i}:Hyperframes-render"):
             comp_dir = out_base / "compositions"
             os.makedirs(str(comp_dir), exist_ok=True)
@@ -666,14 +776,15 @@ def make_process_segment(
                 audio_path=Path(audio_path) if audio_path else None,
                 image_paths=[Path(p) for p in images],
                 script=script,
-                subtitle_script=state.get('devanagari_script') or script,
+                subtitle_script=state.get("devanagari_script") or script,
                 word_timestamps_json=Path(word_timestamps_json) if word_timestamps_json else None,
                 style=config.get("visual", {}).get("style", ""),
                 is_final=not (dry_run or preview_mode),
             )
 
         cp_mgr.save(key, "video", {"data": str(mp4_path)})
-        with mp4s_lock: mp4s[i - 1] = mp4_path
+        with mp4s_lock:
+            mp4s[i - 1] = mp4_path
 
         summary = plan.get("summary", script[:100])
         mem.save(topic, i, script, summary)
@@ -683,12 +794,24 @@ def make_process_segment(
     class LocalGraphContext:
         def __init__(self):
             self.config = config
-        def do_write_script(self, state): return write_script_node(state)
-        def do_critic(self, state): return critic_node(state)
-        def do_translate(self, state): return translate_node(state)
-        def do_tts(self, state): return tts_node(state)
-        def do_image_gen(self, state): return image_node(state)
-        def do_render(self, state): return render_node(state)
+
+        def do_write_script(self, state):
+            return write_script_node(state)
+
+        def do_critic(self, state):
+            return critic_node(state)
+
+        def do_translate(self, state):
+            return translate_node(state)
+
+        def do_tts(self, state):
+            return tts_node(state)
+
+        def do_image_gen(self, state):
+            return image_node(state)
+
+        def do_render(self, state):
+            return render_node(state)
 
     builder = SegmentGraphBuilder(LocalGraphContext())
     graph = builder.build()
@@ -703,10 +826,24 @@ def make_process_segment(
             ws_block = world_state.to_prompt_block()
             raw_entries = []
             if ctx_mgr:
-                raw_entries = [{"segment": s["segment"], "summary": s["summary"], "script": s.get("script", "")} for s in (mem._load_all().get(topic, {}).get("segments", []))] if hasattr(mem, "_load_all") else []
-                context = ctx_mgr.build_context_for_prompt(memory_entries=raw_entries, world_state_block=ws_block, agent=None)
+                raw_entries = (
+                    [
+                        {
+                            "segment": s["segment"],
+                            "summary": s["summary"],
+                            "script": s.get("script", ""),
+                        }
+                        for s in (mem._load_all().get(topic, {}).get("segments", []))
+                    ]
+                    if hasattr(mem, "_load_all")
+                    else []
+                )
+                context = ctx_mgr.build_context_for_prompt(
+                    memory_entries=raw_entries, world_state_block=ws_block, agent=None
+                )
             else:
                 from memory import build_context
+
                 context = f"{ws_block}\n{build_context(mem.load(topic))}"
 
             initial_state = {
@@ -732,16 +869,21 @@ def make_process_segment(
                 completed_segs_counter_holder[0] += 1
                 try:
                     from agents.director_agent import UIState as _UIState
+
                     _UIState.set_progress(current=completed_segs_counter_holder[0])
-                except Exception: pass
+                except Exception:
+                    pass
             aggressive_vram_cleanup(global_scheduler)
             log_vram_usage(f"Seg {i} After Cleanup")
+
     return process_segment
 
 
-def build_retry_wrapper(process_segment, max_retries: int, segment_idx: int,
-                        retry_counts: dict) -> callable:
+def build_retry_wrapper(
+    process_segment, max_retries: int, segment_idx: int, retry_counts: dict
+) -> callable:
     """Wrap process_segment with the A7 per-segment retry budget."""
+
     def _with_budget(i: int) -> None:
         retry_counts.setdefault(i, 0)
         while retry_counts[i] <= max_retries:
@@ -757,11 +899,15 @@ def build_retry_wrapper(process_segment, max_retries: int, segment_idx: int,
                     )
                     try:
                         from agents.director_agent import UIState as _UIS
-                        _UIS.add_degradation(i, "segment_skip", f"retry budget exhausted: {str(_e)[:100]}")
+
+                        _UIS.add_degradation(
+                            i, "segment_skip", f"retry budget exhausted: {str(_e)[:100]}"
+                        )
                     except Exception:
                         pass
                     return
                 log.warning(
                     f"Segment {i}: attempt {retry_counts[i]}/{max_retries} failed ({_e}), retrying..."
                 )
+
     return _with_budget

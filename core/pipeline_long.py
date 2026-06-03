@@ -16,6 +16,7 @@ All heavy lifting is in:
 Backwards-compat re-exports keep test imports stable:
   from core.pipeline_long import _sanitize_narration, _evict_ollama_models, ...
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,10 +33,11 @@ from pathlib import Path
 from typing import Any
 
 # ── Bootstrap: PYTHONPATH + telemetry suppression (matches old behavior) ──
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
     from utils.compatibility import apply_all_patches
+
     apply_all_patches()
 except ImportError:
     pass
@@ -54,6 +56,7 @@ if sys.platform == "win32":
 os.environ.setdefault("TORCHDYNAMO_SUPPRESS_ERRORS", "1")
 try:
     import torch as _torch
+
     _torch._dynamo.config.suppress_errors = True
 except Exception:
     pass
@@ -62,7 +65,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # ── Concurrency scheduler (reused everywhere) ────────────────────────────
-concurrency_path = os.path.join(os.path.dirname(__file__), '..', 'utils', 'concurrency.py')
+concurrency_path = os.path.join(os.path.dirname(__file__), "..", "utils", "concurrency.py")
 _spec = importlib.util.spec_from_file_location("concurrency", concurrency_path)
 if _spec is None or _spec.loader is None:
     raise ImportError(f"Could not load concurrency module from {concurrency_path}")
@@ -108,6 +111,7 @@ _director_aborted = get_director_abort
 
 # ── Public Director abort control (TUI calls these) ─────────────────────
 
+
 def _director_set_abort(val: bool = True) -> None:
     """Set the Director Mode abort flag (thread-safe)."""
     set_director_abort(val)
@@ -124,17 +128,23 @@ def request_cancel() -> None:
 
 # ── Main pipeline entry point ────────────────────────────────────────────
 
-def run_long_pipeline(topic: str, project_name: str | None = None,
-                      resume: bool = True, skip_rvc: bool = False,
-                      dry_run: bool = False, duration_min: int | None = None,
-                      director_mode: bool = False,
-                      series_mode: bool = False,
-                      content_text: str | None = None,
-                      preview_mode: bool = False,
-                      words_per_segment: int | None = None,
-                      images_per_segment: int | None = None,
-                      segment_count: int | None = None,
-                      source_chunks: list | None = None) -> dict:
+
+def run_long_pipeline(
+    topic: str,
+    project_name: str | None = None,
+    resume: bool = True,
+    skip_rvc: bool = False,
+    dry_run: bool = False,
+    duration_min: int | None = None,
+    director_mode: bool = False,
+    series_mode: bool = False,
+    content_text: str | None = None,
+    preview_mode: bool = False,
+    words_per_segment: int | None = None,
+    images_per_segment: int | None = None,
+    segment_count: int | None = None,
+    source_chunks: list | None = None,
+) -> dict:
     """Main pipeline: story outline → script → TTS → images → video.
 
     Thin orchestrator: delegates to pre_production / segment_runner / post_production.
@@ -159,18 +169,35 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
 
     # ── Assemble CLI structural locks (only include explicitly-set flags) ──
     _cli_flags: dict[str, Any] = {}
-    if duration_min is not None and isinstance(duration_min, (int, float)) and not isinstance(duration_min, bool):
+    if (
+        duration_min is not None
+        and isinstance(duration_min, (int, float))
+        and not isinstance(duration_min, bool)
+    ):
         _cli_flags["total_duration_min"] = duration_min
-    if words_per_segment is not None and isinstance(words_per_segment, int) and not isinstance(words_per_segment, bool):
+    if (
+        words_per_segment is not None
+        and isinstance(words_per_segment, int)
+        and not isinstance(words_per_segment, bool)
+    ):
         _cli_flags["words_per_segment"] = words_per_segment
-    if images_per_segment is not None and isinstance(images_per_segment, int) and not isinstance(images_per_segment, bool):
+    if (
+        images_per_segment is not None
+        and isinstance(images_per_segment, int)
+        and not isinstance(images_per_segment, bool)
+    ):
         _cli_flags["images_per_segment"] = images_per_segment
-    if segment_count is not None and isinstance(segment_count, int) and not isinstance(segment_count, bool):
+    if (
+        segment_count is not None
+        and isinstance(segment_count, int)
+        and not isinstance(segment_count, bool)
+    ):
         _cli_flags["segment_count"] = segment_count
 
     # ── Pre-Production ──
     config_overlay = run_pre_production(
-        topic, config,
+        topic,
+        config,
         skip_consultation=series_mode,
         content_text=content_text,
         project_name=project_name,
@@ -181,6 +208,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
 
     # Normalize TTS engine
     from audio.audio_proxy import normalize_tts_engine as _normalize_tts_engine
+
     _raw_tts_engine = config.get("tts", {}).get("engine", "omnivoice")
     _normalized_engine = _normalize_tts_engine(_raw_tts_engine)
     if _normalized_engine != _raw_tts_engine:
@@ -199,6 +227,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
     _seed_director_memory(topic, config_overlay, config)
 
     from agents.director_agent import DirectorAgent
+
     director_agent_instance = DirectorAgent(config)
     writer_agent = create_writer(config)
     try:
@@ -207,9 +236,15 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
         log.debug(f"Memory-to-WorldState sync failed: {e}")
 
     from memory import StoryMemory
-    mem = StoryMemory(Path(config["memory"].get("memory_file",
-                                                "studio_checkpoints/story_memory.json")))
-    if duration_min is not None and isinstance(duration_min, (int, float)) and not isinstance(duration_min, bool):
+
+    mem = StoryMemory(
+        Path(config["memory"].get("memory_file", "studio_checkpoints/story_memory.json"))
+    )
+    if (
+        duration_min is not None
+        and isinstance(duration_min, (int, float))
+        and not isinstance(duration_min, bool)
+    ):
         config["video"]["total_duration_min"] = duration_min
 
     total = config["video"]["total_duration_min"]
@@ -221,6 +256,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
     _rec = None
     try:
         from memory.blackboard import get_blackboard
+
         _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
         _rec = _bb.read_decision()
     except Exception as _e:
@@ -228,7 +264,9 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
 
     if _rec is not None:
         n_segs = int(_rec.segment_count.value or 1)
-        words_per_seg = int(_rec.words_per_segment.value or config.get("script", {}).get("words_per_segment", 130))
+        words_per_seg = int(
+            _rec.words_per_segment.value or config.get("script", {}).get("words_per_segment", 130)
+        )
         _seg_count_locked = bool(_rec.segment_count.locked)
         log.info(
             f"[PIPELINE] Using DecisionRecord — "
@@ -267,6 +305,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
 
     # WorldState init
     from memory import WorldState
+
     ck_dir = Path(config.get("checkpoint", {}).get("dir", "studio_checkpoints"))
     world_state = WorldState(topic=topic, checkpoint_dir=ck_dir)
     if not resume:
@@ -309,17 +348,23 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
     if len(outline) != n_segs:
         if _seg_count_locked:
             if len(outline) > n_segs:
-                log.warning(f"Outline produced {len(outline)} segments but segment_count is "
-                            f"LOCKED to {n_segs} — truncating outline to honor the lock.")
+                log.warning(
+                    f"Outline produced {len(outline)} segments but segment_count is "
+                    f"LOCKED to {n_segs} — truncating outline to honor the lock."
+                )
                 outline = outline[:n_segs]
             else:
-                log.warning(f"Outline produced only {len(outline)} segments but segment_count is "
-                            f"LOCKED to {n_segs} — using the {len(outline)} planned segment(s) "
-                            f"(Director could not expand). Adjusting to {len(outline)}.")
+                log.warning(
+                    f"Outline produced only {len(outline)} segments but segment_count is "
+                    f"LOCKED to {n_segs} — using the {len(outline)} planned segment(s) "
+                    f"(Director could not expand). Adjusting to {len(outline)}."
+                )
                 n_segs = len(outline)
                 mp4s = [None] * n_segs
         else:
-            log.warning(f"Outline length ({len(outline)}) differs from requested ({n_segs}). Adjusting pipeline length.")
+            log.warning(
+                f"Outline length ({len(outline)}) differs from requested ({n_segs}). Adjusting pipeline length."
+            )
             n_segs = len(outline)
             mp4s = [None] * n_segs
     log.info(f"│  Total:       ~{format_time_hms(est_total_s):<25}│")
@@ -327,6 +372,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
 
     try:
         from agents.director_agent import UIState as _UIState
+
         _UIState.set_progress(total=n_segs)
     except Exception:
         pass
@@ -350,12 +396,17 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
             continue
         n_frames = len(cp_list)
         n_env_needed = max(1, int(n_frames * _env_ratio))
-        env_indices = [j for j, frame in enumerate(cp_list)
-                       if isinstance(frame, dict) and (max(frame.values()) if frame else 0) <= 0.2]
+        env_indices = [
+            j
+            for j, frame in enumerate(cp_list)
+            if isinstance(frame, dict) and (max(frame.values()) if frame else 0) <= 0.2
+        ]
         if len(env_indices) < n_env_needed:
             sorted_by_weight = sorted(
                 range(n_frames),
-                key=lambda j: max(cp_list[j].values()) if isinstance(cp_list[j], dict) and cp_list[j] else 0,
+                key=lambda j: (
+                    max(cp_list[j].values()) if isinstance(cp_list[j], dict) and cp_list[j] else 0
+                ),
             )
             for j in sorted_by_weight:
                 if len(env_indices) >= n_env_needed:
@@ -383,12 +434,16 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
             mood = seg.get("mood", "neutral")
             words = seg.get("target_word_count", words_per_seg)
             images = seg.get("num_images", config["script"].get("default_images_per_segment", 6))
-            log.info(f"  [{seg_num:2d}] {title[:40]:40s} | {mood:12s} | {words:>4d} words | {images:>2d} images")
+            log.info(
+                f"  [{seg_num:2d}] {title[:40]:40s} | {mood:12s} | {words:>4d} words | {images:>2d} images"
+            )
 
         log.info("-" * 60)
-        log.info(f"  Total segments: {n_segs} | "
-                 f"Estimated total: {est_total_s:.0f}s (~{est_total_s/60:.1f} min) | "
-                 f"Estimated render: {format_time_hms(n_segs * 3.5 * 60) if not dry_run else '0s'}")
+        log.info(
+            f"  Total segments: {n_segs} | "
+            f"Estimated total: {est_total_s:.0f}s (~{est_total_s / 60:.1f} min) | "
+            f"Estimated render: {format_time_hms(n_segs * 3.5 * 60) if not dry_run else '0s'}"
+        )
         log.info("=" * 60)
 
     # ── Build process_segment closure (once, inside the executor block) ──
@@ -436,7 +491,10 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
             source_chunks=source_chunks,
         )
         _process_segment_with_budget = build_retry_wrapper(
-            process_segment, _max_seg_retries, 0, _seg_retry_counts,
+            process_segment,
+            _max_seg_retries,
+            0,
+            _seg_retry_counts,
         )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -444,12 +502,16 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
             _lookahead = int(config.get("performance", {}).get("lookahead_segments", 1))
 
             if _staged:
-                log.info(f"[C1] Staged loop enabled (lookahead={_lookahead}). "
-                         f"Running segments in batches with one evict per batch.")
+                log.info(
+                    f"[C1] Staged loop enabled (lookahead={_lookahead}). "
+                    f"Running segments in batches with one evict per batch."
+                )
                 _seg_indices = list(range(1, n_segs + 1))
                 _batch_size = max(1, _lookahead)
-                _batches = [_seg_indices[k:k + _batch_size]
-                            for k in range(0, len(_seg_indices), _batch_size)]
+                _batches = [
+                    _seg_indices[k : k + _batch_size]
+                    for k in range(0, len(_seg_indices), _batch_size)
+                ]
 
                 for _batch in _batches:
                     if get_director_abort():
@@ -458,8 +520,7 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
                     evict_ollama_models(config, reason="C1 staged batch")
 
                     _batch_futures = {
-                        executor.submit(_process_segment_with_budget, _bi): _bi
-                        for _bi in _batch
+                        executor.submit(_process_segment_with_budget, _bi): _bi for _bi in _batch
                     }
                     for _bf in concurrent.futures.as_completed(_batch_futures):
                         _bseg = _batch_futures[_bf]
@@ -468,7 +529,10 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
                         except Exception as _be:
                             log.error(f"Segment {_bseg} execution failed: {_be}", exc_info=True)
             else:
-                futures = {executor.submit(_process_segment_with_budget, idx): idx for idx in range(1, n_segs + 1)}
+                futures = {
+                    executor.submit(_process_segment_with_budget, idx): idx
+                    for idx in range(1, n_segs + 1)
+                }
                 for future in concurrent.futures.as_completed(futures):
                     seg_idx = futures[future]
                     try:
@@ -484,8 +548,10 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
         return {"status": "error", "reason": "no segments"}
 
     if len(mp4s) != n_segs:
-        log.warning(f"ENDURANCE MODE: Only {len(mp4s)}/{n_segs} segments generated successfully. "
-                    f"Concatenating available segments to salvage the run.")
+        log.warning(
+            f"ENDURANCE MODE: Only {len(mp4s)}/{n_segs} segments generated successfully. "
+            f"Concatenating available segments to salvage the run."
+        )
 
     wall_time_s = time.time() - _run_start
     from core.post_production import finalize_dry_run, finalize_production
@@ -498,17 +564,20 @@ def run_long_pipeline(topic: str, project_name: str | None = None,
         # B16: stop persistent TTS workers so models are released
         try:
             from audio.audio_proxy import shutdown_omnivoice_worker
+
             shutdown_omnivoice_worker()
         except Exception as _sw_err:
             log.debug(f"OmniVoice worker shutdown skipped: {_sw_err}")
         try:
             from audio.audio_proxy import shutdown_f5_worker
+
             shutdown_f5_worker()
         except Exception as _f5_sw_err:
             log.debug(f"F5 worker shutdown skipped: {_f5_sw_err}")
 
 
 # ── Async variant (kept for compat) ──────────────────────────────────────
+
 
 def run_long_pipeline_async(topic: str, config: dict, **kwargs):
     """Runs pre-production and returns config overlay."""
@@ -523,35 +592,45 @@ def run_long_pipeline_async(topic: str, config: dict, **kwargs):
 # ── CLI entry point ──────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate multi-segment lore video with AI"
-    )
+    parser = argparse.ArgumentParser(description="Generate multi-segment lore video with AI")
     parser.add_argument("--topic", help="Video topic/title", default="")
-    parser.add_argument("--file", help="Path to text or markdown file containing the story topic", default="")
-    parser.add_argument("--duration", type=float, dest="duration",
-                        help="Override total duration (minutes)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Preview without generating video")
-    parser.add_argument("--no-resume", action="store_true",
-                        help="Start fresh (ignore checkpoints)")
-    parser.add_argument("--skip-rvc", action="store_true",
-                        help="Skip RVC voice conversion")
-    parser.add_argument("--project", default=None,
-                        help="Name of the project series to load from projects/ directory")
-    parser.add_argument("--series", action="store_true",
-                        help="Resume series without re-consultation (reuses previous config)")
-    parser.add_argument("--director-mode", action="store_true",
-                        help="Pause after each script generation for human review")
+    parser.add_argument(
+        "--file", help="Path to text or markdown file containing the story topic", default=""
+    )
+    parser.add_argument(
+        "--duration", type=float, dest="duration", help="Override total duration (minutes)"
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Preview without generating video")
+    parser.add_argument("--no-resume", action="store_true", help="Start fresh (ignore checkpoints)")
+    parser.add_argument("--skip-rvc", action="store_true", help="Skip RVC voice conversion")
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="Name of the project series to load from projects/ directory",
+    )
+    parser.add_argument(
+        "--series",
+        action="store_true",
+        help="Resume series without re-consultation (reuses previous config)",
+    )
+    parser.add_argument(
+        "--director-mode",
+        action="store_true",
+        help="Pause after each script generation for human review",
+    )
 
     args = parser.parse_args()
 
     if args.file:
         from pathlib import Path
+
         file_path = Path(args.file)
         full_content = file_path.read_text(encoding="utf-8").strip()
         topic_text = file_path.stem.replace("_", " ").replace("-", " ")
         content_text = full_content
-        print(f"[FILE] Loaded: {file_path.name} ({len(content_text)} chars, ~{len(content_text.split())} words)")
+        print(
+            f"[FILE] Loaded: {file_path.name} ({len(content_text)} chars, ~{len(content_text.split())} words)"
+        )
     else:
         topic_text = args.topic
         content_text = None
@@ -600,6 +679,7 @@ if __name__ == "__main__":
         print("\n[FAILED] Pipeline interrupted by user")
         try:
             from video.image_gen.image_gen import unload_sd_pipeline
+
             if unload_sd_pipeline is not None:
                 unload_sd_pipeline()
                 log.info("Gracefully released GPU Image Generation models.")

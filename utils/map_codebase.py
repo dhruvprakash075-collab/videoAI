@@ -32,9 +32,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8", 
 
 # Tree branch characters
 T_BRANCH = "├──" if USE_UNICODE else "|--"
-V_LINE   = "│"   if USE_UNICODE else "|"
+V_LINE = "│" if USE_UNICODE else "|"
 L_BRANCH = "└──" if USE_UNICODE else "\\--"
-INDENT   = "  "
+INDENT = "  "
 
 # ANSI colors
 GREEN = "\033[92m"
@@ -43,6 +43,7 @@ BLUE = "\033[94m"
 CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
 
 class ProjectMapper:
     def __init__(self, root_dir: Path):
@@ -63,7 +64,7 @@ class ProjectMapper:
             "docstring": ast.get_docstring(tree) or "",
             "classes": [],
             "functions": [],
-            "imports": []
+            "imports": [],
         }
 
         # Traverse the AST nodes
@@ -74,7 +75,7 @@ class ProjectMapper:
                     "name": node.name,
                     "docstring": ast.get_docstring(node) or "",
                     "methods": [],
-                    "bases": [ast.unparse(b) for b in node.bases]
+                    "bases": [ast.unparse(b) for b in node.bases],
                 }
                 for sub_node in node.body:
                     if isinstance(sub_node, ast.FunctionDef):
@@ -83,7 +84,7 @@ class ProjectMapper:
                         method_info = {
                             "name": sub_node.name,
                             "args": args,
-                            "docstring": ast.get_docstring(sub_node) or ""
+                            "docstring": ast.get_docstring(sub_node) or "",
                         }
                         class_info["methods"].append(method_info)
                 file_info["classes"].append(class_info)
@@ -94,7 +95,7 @@ class ProjectMapper:
                 func_info = {
                     "name": node.name,
                     "args": args,
-                    "docstring": ast.get_docstring(node) or ""
+                    "docstring": ast.get_docstring(node) or "",
                 }
                 file_info["functions"].append(func_info)
 
@@ -152,24 +153,37 @@ class ProjectMapper:
                     # Print classes
                     for c in info.get("classes", []):
                         bases_str = f"({', '.join(c['bases'])})" if c["bases"] else ""
-                        print(f"  {V_LINE}   {T_BRANCH} Class: {BOLD}{CYAN}{c['name']}{RESET}{bases_str}")
+                        print(
+                            f"  {V_LINE}   {T_BRANCH} Class: {BOLD}{CYAN}{c['name']}{RESET}{bases_str}"
+                        )
                         for m in c.get("methods", []):
                             args_str = ", ".join(m["args"])
-                            print(f"  {V_LINE}   {V_LINE}   {T_BRANCH} method: {m['name']}({args_str})")
+                            print(
+                                f"  {V_LINE}   {V_LINE}   {T_BRANCH} method: {m['name']}({args_str})"
+                            )
 
                     # Print functions
                     for fn in info.get("functions", []):
                         args_str = ", ".join(fn["args"])
-                        print(f"  {V_LINE}   {T_BRANCH} function: {BOLD}{fn['name']}{RESET}({args_str})")
+                        print(
+                            f"  {V_LINE}   {T_BRANCH} function: {BOLD}{fn['name']}{RESET}({args_str})"
+                        )
 
                     # Print structural imports (Video.AI internal ones)
-                    internal_imports = [imp for imp in info.get("imports", []) if imp.startswith(("utils", "core", "audio", "video", "memory", "agents"))]
+                    internal_imports = [
+                        imp
+                        for imp in info.get("imports", [])
+                        if imp.startswith(("utils", "core", "audio", "video", "memory", "agents"))
+                    ]
                     if internal_imports:
-                        print(f"  {V_LINE}   {L_BRANCH} Internal Deps: {', '.join(internal_imports[:5])}{'...' if len(internal_imports) > 5 else ''}")
+                        print(
+                            f"  {V_LINE}   {L_BRANCH} Internal Deps: {', '.join(internal_imports[:5])}{'...' if len(internal_imports) > 5 else ''}"
+                        )
         except Exception as e:
             # Absolute fallback if printing ANSI or character symbols fails
             print(f"Failed to print tree structurally ({e}). Standard raw JSON output below:")
             print(json.dumps(self.map_data, indent=2))
+
 
 def main():
     parser = argparse.ArgumentParser(description="Map project files to AST model.")
@@ -210,6 +224,7 @@ def main():
         print(json.dumps(mapper.map_data, indent=2))
     else:
         mapper.render_tree()
+
 
 if __name__ == "__main__":
     main()

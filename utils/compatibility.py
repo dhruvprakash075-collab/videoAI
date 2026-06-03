@@ -46,6 +46,7 @@ def check_dependencies():
 
     try:
         import torch
+
         if not torch.cuda.is_available():
             log.warning("CUDA not available — image generation will be slow")
     except ImportError:
@@ -73,8 +74,9 @@ def apply_all_patches():
 
     missing = check_dependencies()
     if missing:
-        log.warning(f"Missing packages: {', '.join(missing)}. "
-                    f"Install with: pip install {' '.join(missing)}")
+        log.warning(
+            f"Missing packages: {', '.join(missing)}. Install with: pip install {' '.join(missing)}"
+        )
 
     sys._video_ai_compat_applied = True
     log.info("Compatibility layer initialized")

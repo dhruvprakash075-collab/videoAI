@@ -7,6 +7,7 @@ Runs faster-whisper (CPU int8) on a WAV file and writes word timestamps to
 Called from TTS workers so the renderer never needs to run Whisper as a
 fallback for word timing.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,6 +29,7 @@ def _get_alignment_model(model_name: str, device: str, compute_type: str):
     with _alignment_lock:
         if _alignment_model is None or _alignment_model_name != model_name:
             from faster_whisper import WhisperModel
+
             _alignment_model = WhisperModel(model_name, device=device, compute_type=compute_type)
             _alignment_model_name = model_name
     return _alignment_model
@@ -50,7 +52,9 @@ def align_audio(
 
     json_path = wav_path.with_suffix(".words.json")
     try:
-        model = _get_alignment_model(model_name=model_name, device=device, compute_type=compute_type)
+        model = _get_alignment_model(
+            model_name=model_name, device=device, compute_type=compute_type
+        )
         segments_gen, _info = model.transcribe(
             str(wav_path),
             beam_size=1,

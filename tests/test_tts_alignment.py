@@ -5,6 +5,7 @@ Two test layers:
 2. assembler._write_srt() tests (Phase 0.5.5 originally) - the renderer-side
    consumer; verifies the word_timestamps_json path is honored
 """
+
 import json
 from contextlib import suppress
 from pathlib import Path
@@ -41,12 +42,14 @@ def test_align_audio_writes_words_json_next_to_wav(tmp_path):
 def test_align_audio_returns_none_if_wav_missing(tmp_path):
     """align_audio() must NOT raise when the WAV is missing - returns None."""
     from audio.tts_alignment import align_audio
+
     assert align_audio(tmp_path / "nope.wav") is None
 
 
 def test_align_audio_returns_none_on_whisper_failure(tmp_path):
     """align_audio() must NOT raise when faster-whisper fails - returns None."""
     from audio.tts_alignment import align_audio
+
     wav = tmp_path / "x.wav"
     wav.write_bytes(b"x")
 
@@ -87,9 +90,13 @@ def test_tts_worker_source_contains_word_timestamps_key():
     """Regression: the TTS worker's success JSON must include the word_timestamps
     key (value may be null), so audio_proxy.py:898 doesn't fall through to Whisper."""
     src = Path("audio/omnivoice_worker.py").read_text(encoding="utf-8")
-    assert '"word_timestamps"' in src, "omnivoice_worker.py must emit 'word_timestamps' key in success JSON"
+    assert '"word_timestamps"' in src, (
+        "omnivoice_worker.py must emit 'word_timestamps' key in success JSON"
+    )
     src2 = Path("audio/f5_worker.py").read_text(encoding="utf-8")
-    assert '"word_timestamps"' in src2, "f5_worker.py must emit 'word_timestamps' key in success JSON"
+    assert '"word_timestamps"' in src2, (
+        "f5_worker.py must emit 'word_timestamps' key in success JSON"
+    )
 
 
 def test_assembler_uses_word_timestamps_json_without_whisper(tmp_path, monkeypatch):
@@ -103,7 +110,9 @@ def test_assembler_uses_word_timestamps_json_without_whisper(tmp_path, monkeypat
     srt_path = tmp_path / "seg.srt"
 
     def _boom(*args, **kwargs):
-        raise AssertionError("Whisper fallback should not be invoked when word_timestamps_json exists")
+        raise AssertionError(
+            "Whisper fallback should not be invoked when word_timestamps_json exists"
+        )
 
     monkeypatch.setattr(assembler, "_get_whisper_model", _boom)
 
@@ -152,7 +161,9 @@ def test_assembler_regression_warning_emits_when_word_json_missing(tmp_path, mon
     words_json = tmp_path / "missing.words.json"  # doesn't exist
 
     def _boom(*args, **kwargs):
-        raise AssertionError("Whisper should not be reached in this test; it will boom to stop execution")
+        raise AssertionError(
+            "Whisper should not be reached in this test; it will boom to stop execution"
+        )
 
     monkeypatch.setattr(assembler, "_get_whisper_model", _boom)
 
@@ -202,18 +213,27 @@ def test_assembler_does_not_warn_when_word_json_present(tmp_path, monkeypatch, c
     assert not any("REGRESSION: Whisper fallback fired" in rec.message for rec in caplog.records)
 
 
-def test_proxy_to_renderer_chain_no_regression_warning_when_word_json_exists(tmp_path, monkeypatch, caplog):
+def test_proxy_to_renderer_chain_no_regression_warning_when_word_json_exists(
+    tmp_path, monkeypatch, caplog
+):
     dummy_audio = tmp_path / "seg.wav"
     dummy_audio.write_bytes(b"")
 
     words_json = tmp_path / "seg.words.json"
-    words_json.write_text(json.dumps([
-        {"word": "A", "start": 0.0, "end": 0.4},
-        {"word": "B", "start": 0.4, "end": 0.8},
-    ]), encoding="utf-8")
+    words_json.write_text(
+        json.dumps(
+            [
+                {"word": "A", "start": 0.0, "end": 0.4},
+                {"word": "B", "start": 0.4, "end": 0.8},
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     def _boom(*args, **kwargs):
-        raise AssertionError("Whisper should not be invoked when chain supplies word_timestamps JSON")
+        raise AssertionError(
+            "Whisper should not be invoked when chain supplies word_timestamps JSON"
+        )
 
     monkeypatch.setattr(assembler, "_get_whisper_model", _boom)
 
@@ -244,7 +264,9 @@ def test_proxy_to_renderer_chain_warns_when_word_json_missing(tmp_path, monkeypa
     words_json = tmp_path / "does_not_exist.words.json"
 
     def _boom(*args, **kwargs):
-        raise AssertionError("Whisper should not be called before regression warning; this will stop execution")
+        raise AssertionError(
+            "Whisper should not be called before regression warning; this will stop execution"
+        )
 
     monkeypatch.setattr(assembler, "_get_whisper_model", _boom)
 

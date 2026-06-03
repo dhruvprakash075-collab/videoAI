@@ -17,19 +17,34 @@ class SegmentPlan(BaseModel):
     summary: str = Field(..., description="2-3 sentence summary of the segment")
     key_event: str = Field(..., description="The main event in this segment")
     mood: str = Field(..., description="One of: mysterious, horror, action, dramatic, calm, epic")
-    num_images: int = Field(..., description="How many unique images are needed to visually cover this segment (integer, 4-12)")
-    char_presence: list[dict[str, float]] = Field(..., description="A list of dictionaries. Each dictionary represents a frame and maps character IDs to their visual weight (0.0 to 1.0). The list length MUST match num_images.")
-    target_word_count: int = Field(..., description="Target word count for this segment script (e.g., 200-300 for slow lore, 80-150 for fast action)")
-    segment_duration: float = Field(..., description="How many seconds this segment should last (e.g., 45.0 for fast, 90.0 for slow). Based on word count and pacing.")
+    num_images: int = Field(
+        ...,
+        description="How many unique images are needed to visually cover this segment (integer, 4-12)",
+    )
+    char_presence: list[dict[str, float]] = Field(
+        ...,
+        description="A list of dictionaries. Each dictionary represents a frame and maps character IDs to their visual weight (0.0 to 1.0). The list length MUST match num_images.",
+    )
+    target_word_count: int = Field(
+        ...,
+        description="Target word count for this segment script (e.g., 200-300 for slow lore, 80-150 for fast action)",
+    )
+    segment_duration: float = Field(
+        ...,
+        description="How many seconds this segment should last (e.g., 45.0 for fast, 90.0 for slow). Based on word count and pacing.",
+    )
+
 
 class StoryOutline(BaseModel):
-    segments: list[SegmentPlan] = Field(..., description="List of segment plans in chronological order")
+    segments: list[SegmentPlan] = Field(
+        ..., description="List of segment plans in chronological order"
+    )
+
 
 log = logging.getLogger(__name__)
 
 
-def plan_story(topic: str, n_segments: int, config: dict,
-               agent) -> list[dict]:
+def plan_story(topic: str, n_segments: int, config: dict, agent) -> list[dict]:
     """Generate a story outline spanning n_segments.
 
     For long videos (>30 segments), plans in batches to avoid LLM token limits.
@@ -65,12 +80,21 @@ def plan_story(topic: str, n_segments: int, config: dict,
 
         all_outline.extend(batch)
 
-    log.info(f"Story plan complete: {len(all_outline)} segments in {(n_segments + BATCH_SIZE - 1) // BATCH_SIZE} batches")
+    log.info(
+        f"Story plan complete: {len(all_outline)} segments in {(n_segments + BATCH_SIZE - 1) // BATCH_SIZE} batches"
+    )
     return all_outline
 
 
-def _plan_batch(topic: str, batch_start: int, batch_size: int, total_segs: int,
-                config: dict, agent, prev_context: str = "") -> list[dict]:
+def _plan_batch(
+    topic: str,
+    batch_start: int,
+    batch_size: int,
+    total_segs: int,
+    config: dict,
+    agent,
+    prev_context: str = "",
+) -> list[dict]:
     """Plan a single batch of segments."""
     style = config.get("visual", {}).get("style", "Gothic Horror")
 
@@ -79,7 +103,11 @@ def _plan_batch(topic: str, batch_start: int, batch_size: int, total_segs: int,
     lore_rules = "\n".join(f"- {r}" for r in world_lore.get("rules", []))
     plot_threads = "\n".join(f"- {t}" for t in config.get("active_plot_threads", []))
 
-    lore_section = f"World Lore: {lore_desc}\nUnbreakable Rules:\n{lore_rules}\n" if lore_desc or lore_rules else ""
+    lore_section = (
+        f"World Lore: {lore_desc}\nUnbreakable Rules:\n{lore_rules}\n"
+        if lore_desc or lore_rules
+        else ""
+    )
     plot_section = f"Active Plot Threads to include:\n{plot_threads}\n" if plot_threads else ""
     context_section = f"\n{prev_context}\n" if prev_context else ""
 
@@ -121,16 +149,18 @@ def _plan_batch(topic: str, batch_start: int, batch_size: int, total_segs: int,
     try:
         crew = Crew(
             agents=[agent],
-            tasks=[Task(
-                description=prompt,
-                agent=agent,
-                expected_output=f"A structured StoryOutline containing exactly {batch_size} segment plans",
-                output_json=StoryOutline,
-                cache=True,  # Cache LLM results to avoid redundant calls
-            )],
+            tasks=[
+                Task(
+                    description=prompt,
+                    agent=agent,
+                    expected_output=f"A structured StoryOutline containing exactly {batch_size} segment plans",
+                    output_json=StoryOutline,
+                    cache=True,  # Cache LLM results to avoid redundant calls
+                )
+            ],
             process=Process.sequential,
-            cache=True,      # Crew-level caching
-            verbose=False,   # Reduce logging overhead
+            cache=True,  # Crew-level caching
+            verbose=False,  # Reduce logging overhead
         )
         # Task 2: route through circuit-breaker-protected kickoff so a hung
         # outline LLM call fails fast instead of blocking the whole pipeline.
@@ -167,12 +197,16 @@ def _plan_batch(topic: str, batch_start: int, batch_size: int, total_segs: int,
         # so the count is exactly batch_size (honors a locked segment_count).
         if isinstance(outline, list):
             if len(outline) > batch_size:
-                log.info(f"Outline returned {len(outline)} segments; trimming to requested {batch_size}")
+                log.info(
+                    f"Outline returned {len(outline)} segments; trimming to requested {batch_size}"
+                )
                 outline = outline[:batch_size]
             elif len(outline) < batch_size:
-                log.info(f"Outline returned {len(outline)} segments; padding to requested {batch_size}")
+                log.info(
+                    f"Outline returned {len(outline)} segments; padding to requested {batch_size}"
+                )
                 _defaults = _default_outline(topic, batch_size)
-                outline = outline + _defaults[len(outline):batch_size]
+                outline = outline + _defaults[len(outline) : batch_size]
 
         return outline
     except Exception as e:
@@ -180,10 +214,15 @@ def _plan_batch(topic: str, batch_start: int, batch_size: int, total_segs: int,
         return _default_outline(topic, batch_size)
 
 
-def build_segment_prompt(plan: dict, context: str, total_segs: int,
-                         words_per_seg: int,
-                         world_state_block: str = "",
-                         narrator_persona: str = "") -> str:
+def build_segment_prompt(
+    plan: dict,
+    context: str,
+    total_segs: int,
+    words_per_seg: int,
+    world_state_block: str = "",
+    narrator_persona: str = "",
+    include_character_descriptions: bool = False,
+) -> str:
     """Build a prompt for writing a single segment's script.
 
     Args:
@@ -193,12 +232,30 @@ def build_segment_prompt(plan: dict, context: str, total_segs: int,
         words_per_seg: Target word count per segment
         world_state_block: Optional world-state constraint block from WorldState.to_prompt_block()
         narrator_persona: The persona/voice the writer should adopt.
+        include_character_descriptions: If False, suppress in-narration visual
+            descriptions of characters (e.g. "the young man with brown eyes
+            walked..." -> "he walked..."). 2026-06-02: default False per the
+            operator's preference — visual descriptions slow narration, and the
+            image-gen pipeline already injects character descriptions for visual
+            consistency, so duplicating them in audio is redundant.
 
     Returns:
         Prompt string for the CrewAI agent
     """
     world_section = f"\n{world_state_block}\n" if world_state_block else ""
-    persona_section = f"\nNARRATOR PERSONA (Adopt this voice strictly):\n{narrator_persona}\n" if narrator_persona else ""
+    persona_section = (
+        f"\nNARRATOR PERSONA (Adopt this voice strictly):\n{narrator_persona}\n"
+        if narrator_persona
+        else ""
+    )
+
+    char_desc_rule = (
+        "Do NOT insert character visual descriptions (hair, eyes, clothing) into the narration. "
+        "Use simple pronouns (he/she/they) and let the image pipeline handle visual consistency. "
+        if not include_character_descriptions
+        else "When a named character first appears in this segment, briefly anchor their visual identity "
+        "(hair, eyes, clothing) in one short clause so listeners can attach the image to the name. "
+    )
 
     return (
         f"Write segment {plan.get('seg', 1)}/{total_segs} of a lore video.\n\n"
@@ -212,6 +269,7 @@ def build_segment_prompt(plan: dict, context: str, total_segs: int,
         f"Write EXACTLY {words_per_seg} words. "
         "Structure: Hook (1 sentence) -> Escalation (2-3 sentences) "
         "-> Insight (1 sentence).\n"
+        f"{char_desc_rule}\n"
         "CRITICAL: Make the narration highly emotional and dramatic! Use expressive punctuation like ellipses (...) for dramatic pauses, exclamation marks (!), and rhetorical questions (?). This forces the voice synthesizer to read it with intense emotion instead of sounding flat.\n"
         "OUTPUT FORMAT: Output the narration script using [narration] ... [/narration] blocks.\n"
         "Each block should contain precisely the words to be spoken. Wrap section headers in [section] tags.\n"
@@ -256,7 +314,7 @@ def _parse_outline(raw: str, expected: int) -> list[dict]:
             elif ch == "]":
                 depth -= 1
                 if depth == 0 and start >= 0:
-                    candidate = raw[start:i+1]
+                    candidate = raw[start : i + 1]
                     try:
                         data = json.loads(candidate)
                         if isinstance(data, list) and abs(len(data) - expected) <= 2:

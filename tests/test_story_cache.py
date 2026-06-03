@@ -1,11 +1,11 @@
 """test_story_cache.py - Tests for A5: invented story caching."""
+
 import hashlib
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 
 
 def _topic_hash(topic: str) -> str:

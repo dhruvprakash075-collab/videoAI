@@ -15,6 +15,7 @@ string type for paste.
 
 Pure functions - no LLM calls, no GPU.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +37,7 @@ class SourceLoaderError(Exception):
 @dataclass
 class SourceDocument:
     """Uniform output of load_source()."""
+
     text: str
     word_count: int
     language: str
@@ -51,7 +53,7 @@ def _detect_language(text: str) -> str:
     total_alpha = sum(1 for c in text if c.isalpha())
     if total_alpha == 0:
         return "unknown"
-    deva = sum(1 for c in text if "\u0900" <= c <= "\u097F")
+    deva = sum(1 for c in text if "\u0900" <= c <= "\u097f")
     ratio = deva / total_alpha
     if ratio >= 0.5:
         return "hi"
@@ -137,8 +139,7 @@ def _load_pdf(path: Path) -> SourceDocument:
         from pypdf import PdfReader
     except ImportError as e:
         raise SourceLoaderError(
-            "pypdf is required to load .pdf files. "
-            "Install with: pip install pypdf>=4.0"
+            "pypdf is required to load .pdf files. Install with: pip install pypdf>=4.0"
         ) from e
 
     reader = PdfReader(str(path))
@@ -211,12 +212,12 @@ def _load_docx(path: Path) -> SourceDocument:
 
 def _load_url(url: str, config: dict | None) -> SourceDocument:
     import requests
+
     try:
         import trafilatura
     except ImportError as e:
         raise SourceLoaderError(
-            "trafilatura is required to load URLs. "
-            "Install with: pip install trafilatura>=1.6"
+            "trafilatura is required to load URLs. Install with: pip install trafilatura>=1.6"
         ) from e
 
     cfg_source = (config or {}).get("source", {})
@@ -235,12 +236,13 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     text = _normalize_text(extracted)
     if not text.strip():
         raise SourceLoaderError(
-            f"URL '{url}' yielded no main-content text. "
-            "Site may be JS-rendered or paywalled."
+            f"URL '{url}' yielded no main-content text. Site may be JS-rendered or paywalled."
         )
     metadata: dict[str, Any] = {
         "url": url,
-        "fetch_date": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "fetch_date": __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .isoformat(),
         "status_code": resp.status_code,
         "raw_html_size": len(raw_html),
         "extracted_size": len(text),
@@ -274,8 +276,7 @@ def _is_url(s: str) -> bool:
 def _validate_extension(path: Path, allowed: tuple[str, ...]) -> None:
     if path.suffix.lower() not in allowed:
         raise SourceLoaderError(
-            f"Unsupported file extension '{path.suffix}'. "
-            f"Allowed: {', '.join(allowed)}"
+            f"Unsupported file extension '{path.suffix}'. Allowed: {', '.join(allowed)}"
         )
 
 

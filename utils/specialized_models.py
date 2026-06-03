@@ -2,7 +2,10 @@
 specialized_models.py - Fast specialized models for pipeline optimization.
 
 Uses small, purpose-built models for specific tasks:
-- script-reviewer (Qwen2.5-3B): Fast script quality review
+- reviewer (Qwen2.5-0.5B, default; was script-reviewer Qwen2.5-3B): Fast JSON extraction
+  for world-state facts/characters/threads. The 3B reviewer model was removed in
+  Phase 0 and was returning 404s; default now points to the installed qwen2.5:0.5b
+  (397MB, fast, fits 6GB alongside SD). Override via ``models.reviewer`` in config.
 - image-engineer (Replete-LLM-V2.5-Qwen-7B): Detailed image prompt generation
 
 These models run via Ollama and are much faster than using the Director/Writer models.
@@ -10,7 +13,7 @@ These models run via Ollama and are much faster than using the Director/Writer m
 B1 fix: ``_call_ollama`` now routes through ``utils.ollama_client.OllamaClient``,
 which gives the per-model circuit breaker, exponential-backoff retry, and
 shared ``keep_alive`` handling for free. The function signature is preserved
-so existing test patches (``patch("utils.specialized_models._call_ollama", ...)``)
+so existing test patches (``patch("utils.specialized_models._call_ollama", ...)`)
 keep working.
 """
 
@@ -20,13 +23,16 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Model names in Ollama
-SCRIPT_REVIEWER_MODEL = "script-reviewer"
+# Model names in Ollama. The 2026-06-02 fix changed the default from the
+# removed "script-reviewer" to the installed "qwen2.5:0.5b" (small, fast, JSON-capable).
+# Override per-deployment via ``models.reviewer`` in config.yaml.
+SCRIPT_REVIEWER_MODEL = "qwen2.5:0.5b"
 IMAGE_ENGINEER_MODEL = "image-engineer"
 
 
-def _call_ollama(prompt: str, model: str, format_json: bool = False,
-                 temperature: float = 0.3, timeout: int = 60) -> str | None:
+def _call_ollama(
+    prompt: str, model: str, format_json: bool = False, temperature: float = 0.3, timeout: int = 60
+) -> str | None:
     """Call Ollama via the shared ``OllamaClient`` (B1 breaker + retry).
 
     The ``timeout`` argument is retained for backward compatibility with
@@ -37,6 +43,7 @@ def _call_ollama(prompt: str, model: str, format_json: bool = False,
     try:
         from config import load_config
         from utils.ollama_client import get_ollama_client
+
         config = load_config()
         client = get_ollama_client(config)
         text = client.generate(
@@ -52,8 +59,9 @@ def _call_ollama(prompt: str, model: str, format_json: bool = False,
         return None
 
 
-def review_script_fast(script: str, plan: dict, context: str = "",
-                       characters: dict | None = None) -> dict:
+def review_script_fast(
+    script: str, plan: dict, context: str = "", characters: dict | None = None
+) -> dict:
     """
     Fast script review using script-reviewer model (Qwen2.5-3B).
 
@@ -113,7 +121,9 @@ OUTPUT ONLY VALID JSON:
 
     if not response:
         # Reviewer unavailable — do NOT fabricate approval
-        log.warning("[script-reviewer] No response — reviewer unavailable, manual review recommended")
+        log.warning(
+            "[script-reviewer] No response — reviewer unavailable, manual review recommended"
+        )
         return {
             "approved": False,
             "review_unavailable": True,
@@ -156,7 +166,7 @@ OUTPUT ONLY VALID JSON:
                 elif ch == "}":
                     depth -= 1
                     if depth == 0 and start >= 0:
-                        candidate = response[start:i + 1]
+                        candidate = response[start : i + 1]
                         try:
                             result = json.loads(candidate)
                             if isinstance(result, dict):
@@ -167,7 +177,9 @@ OUTPUT ONLY VALID JSON:
                                 result.setdefault("suggestions", [])
                                 result.setdefault("rewrite_needed", False)
                                 result.setdefault("rewrite_instructions", "")
-                                result.setdefault("feedback", "Reviewer unavailable — manual review recommended")
+                                result.setdefault(
+                                    "feedback", "Reviewer unavailable — manual review recommended"
+                                )
                                 return result
                         except json.JSONDecodeError:
                             start = -1
@@ -188,8 +200,9 @@ OUTPUT ONLY VALID JSON:
         }
 
 
-def generate_image_prompt(script: str, plan: dict, characters: dict | None = None,
-                          visual_style: str = "") -> str:
+def generate_image_prompt(
+    script: str, plan: dict, characters: dict | None = None, visual_style: str = ""
+) -> str:
     """
     Generate detailed Stable Diffusion prompt using image-engineer model (7B).
 
@@ -251,15 +264,16 @@ Generate prompt now:"""
     # in the first 50 chars — this incorrectly truncated prompts that contain a
     # colon as part of the scene description (e.g. "Medium shot: cloaked figure...").
     # Only strip when the prefix is a known LLM output label keyword.
-    _known_label = re.match(r'^(?:prompt|output|result|answer)\s*:', response, re.IGNORECASE)
+    _known_label = re.match(r"^(?:prompt|output|result|answer)\s*:", response, re.IGNORECASE)
     if _known_label:
-        response = response[_known_label.end():].strip()
+        response = response[_known_label.end() :].strip()
 
     return response
 
 
-def generate_image_prompts_batch(scripts: list[str], plans: list[dict],
-                                  characters: dict | None = None, visual_style: str = "") -> list[str]:
+def generate_image_prompts_batch(
+    scripts: list[str], plans: list[dict], characters: dict | None = None, visual_style: str = ""
+) -> list[str]:
     """
     Generate image prompts for multiple scripts in batch.
 
@@ -325,7 +339,7 @@ Rules:
             elif ch == "}":
                 depth -= 1
                 if depth == 0 and start >= 0:
-                    candidate = response[start:i + 1]
+                    candidate = response[start : i + 1]
                     try:
                         result = json.loads(candidate)
                         if isinstance(result, dict):
@@ -333,13 +347,19 @@ Rules:
                             return {
                                 "characters": [str(c) for c in result.get("characters", []) if c],
                                 "facts": [str(f) for f in result.get("facts", []) if f],
-                                "open_threads": [str(t) for t in result.get("open_threads", []) if t],
-                                "resolved_threads": [str(t) for t in result.get("resolved_threads", []) if t],
+                                "open_threads": [
+                                    str(t) for t in result.get("open_threads", []) if t
+                                ],
+                                "resolved_threads": [
+                                    str(t) for t in result.get("resolved_threads", []) if t
+                                ],
                             }
                     except json.JSONDecodeError:
                         start = -1
                         depth = 0
-        log.warning(f"[B3] extract_world_state: could not parse JSON from response: {response[:100]}")
+        log.warning(
+            f"[B3] extract_world_state: could not parse JSON from response: {response[:100]}"
+        )
         return None
     except Exception as e:
         log.warning(f"[B3] extract_world_state failed: {e}")

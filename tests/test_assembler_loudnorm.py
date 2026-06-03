@@ -1,4 +1,5 @@
 """test_assembler_loudnorm.py - Tests for A3: 2-pass loudnorm in concatenate_segments."""
+
 import sys
 from pathlib import Path
 
@@ -19,11 +20,13 @@ def _make_segments(tmp_path, n=2):
 def test_loudnorm_disabled_no_extra_ffmpeg_call(tmp_path):
     """When program_loudnorm is false, only one ffmpeg call (the concat)."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     output = tmp_path / "out.mp4"
     config = {"audio_fx": {"program_loudnorm": False}}
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         output.write_bytes(b"fake_output")
@@ -37,13 +40,15 @@ def test_loudnorm_disabled_no_extra_ffmpeg_call(tmp_path):
     cmd = run_calls[0]
     for j, arg in enumerate(cmd):
         if str(arg) in ("-af", "-filter_complex"):
-            assert "loudnorm" not in str(cmd[j + 1]), \
+            assert "loudnorm" not in str(cmd[j + 1]), (
                 "loudnorm should not appear in filter arg when program_loudnorm=False"
+            )
 
 
 def test_loudnorm_enabled_two_pass_present(tmp_path):
     """When program_loudnorm is true, the apply pass must include linear=true."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     output = tmp_path / "out.mp4"
     config = {"audio_fx": {"program_loudnorm": True, "target_lufs": -14}}
@@ -55,6 +60,7 @@ def test_loudnorm_enabled_two_pass_present(tmp_path):
     )
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         # Create the temp file so the loudnorm branch finds it
@@ -68,8 +74,10 @@ def test_loudnorm_enabled_two_pass_present(tmp_path):
     fake_proc.stderr = _fake_stderr
     fake_proc.returncode = 0
 
-    with patch("video.renderer.assembler._run", side_effect=fake_run), \
-         patch("subprocess.run", return_value=fake_proc):
+    with (
+        patch("video.renderer.assembler._run", side_effect=fake_run),
+        patch("subprocess.run", return_value=fake_proc),
+    ):
         concatenate_segments(segs, output, config=config)
 
     # At least 2 _run calls: concat + loudnorm apply
@@ -82,6 +90,7 @@ def test_loudnorm_enabled_two_pass_present(tmp_path):
 def test_loudnorm_target_lufs_used(tmp_path):
     """The target LUFS value from config must appear in the loudnorm filter."""
     from video.renderer.assembler import concatenate_segments
+
     segs = _make_segments(tmp_path)
     output = tmp_path / "out.mp4"
     config = {"audio_fx": {"program_loudnorm": True, "target_lufs": -16}}
@@ -92,6 +101,7 @@ def test_loudnorm_target_lufs_used(tmp_path):
     )
 
     run_calls = []
+
     def fake_run(cmd, timeout=300):
         run_calls.append(cmd)
         for arg in cmd:
@@ -104,8 +114,10 @@ def test_loudnorm_target_lufs_used(tmp_path):
     fake_proc.stderr = _fake_stderr
     fake_proc.returncode = 0
 
-    with patch("video.renderer.assembler._run", side_effect=fake_run), \
-         patch("subprocess.run", return_value=fake_proc):
+    with (
+        patch("video.renderer.assembler._run", side_effect=fake_run),
+        patch("subprocess.run", return_value=fake_proc),
+    ):
         concatenate_segments(segs, output, config=config)
 
     all_args = " ".join(str(a) for cmd in run_calls for a in cmd)

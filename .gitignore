@@ -25,11 +25,7 @@ logs/
 cache/
 hf_cache/
 temp_srt_files/
-tts_audiobook/output/
 sfx/
-
-# ── Archived side projects (kept on disk, not in git) ────────────
-_archive/tts_audiobook/
 
 # ── Voice samples (personal audio — PII) ─────────────────────────
 character_voices/*.wav

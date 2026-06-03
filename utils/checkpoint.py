@@ -16,11 +16,15 @@ log = logging.getLogger(__name__)
 class CheckpointManager:
     _lock = threading.RLock()
 
-    def __init__(self, checkpoint_dir: Path = Path("studio_checkpoints"),
-                 enabled: bool = True, max_age_hours: float = 0):
-        self.dir           = checkpoint_dir
-        self.enabled       = enabled
-        self.max_age_hours = max_age_hours   # 0 = never expire
+    def __init__(
+        self,
+        checkpoint_dir: Path = Path("studio_checkpoints"),
+        enabled: bool = True,
+        max_age_hours: float = 0,
+    ):
+        self.dir = checkpoint_dir
+        self.enabled = enabled
+        self.max_age_hours = max_age_hours  # 0 = never expire
         if enabled:
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,13 +91,16 @@ class CheckpointManager:
         if not self.enabled:
             return
         with CheckpointManager._lock:
-            body = self._read_raw(topic)   # must use _read_raw, NOT get() (TTL bypass)
+            body = self._read_raw(topic)  # must use _read_raw, NOT get() (TTL bypass)
             body[step] = {**data, "ts": datetime.now().isoformat()}
             p = self._path(topic)
             tmp = p.with_suffix(p.suffix + ".tmp")
             # Atomic write: write to temp file then replace
             # Bug 48: Use custom encoder to serialize Path and other objects gracefully
-            tmp.write_text(json.dumps(body, indent=2, ensure_ascii=False, cls=self._CustomEncoder), encoding="utf-8")
+            tmp.write_text(
+                json.dumps(body, indent=2, ensure_ascii=False, cls=self._CustomEncoder),
+                encoding="utf-8",
+            )
 
             # Bug 7: Retry loop for Windows Defender PermissionError
             for attempt in range(5):
@@ -129,9 +136,8 @@ class CheckpointManager:
             for sibling in p.parent.glob(f"{stem}.*"):
                 if sibling == p:
                     continue
-                _is_cleanable = (
-                    sibling.suffix in (".bak", ".tmp")
-                    or sibling.name.startswith(f"{stem}.corrupt.")
+                _is_cleanable = sibling.suffix in (".bak", ".tmp") or sibling.name.startswith(
+                    f"{p.name}.corrupt."
                 )
                 if _is_cleanable:
                     try:

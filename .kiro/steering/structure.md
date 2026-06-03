@@ -11,7 +11,7 @@
 
 ```
 agents/        CrewAI agent definitions (director_agent.py — 2619 lines, god module;
-               executive_agent.py — effectively dead)
+               director_agent.ui_state + llm_client re-exports)
 audio/         TTS, RVC, SFX/mastering (audio_proxy.py, audio_fx.py, tts/, fx/)
 config/        config.yaml + loaders/validators (config.py, config_schema(s).py)
 core/          Pipeline orchestration:
@@ -26,11 +26,7 @@ utils/         Cross-cutting helpers (see below)
 video/         Image generation + rendering (image_gen/, renderer/)
 projects/      Per-series config overrides ({name}.yaml)
 prompts.yaml   LLM prompt templates
-styles.yaml    Visual style presets (resolved by style_resolver.py)
-_archive/      Moved-but-not-deleted items (see _archive/README.md):
-                 tts_audiobook/   — sibling project (219 files)
-                 pipeline_env/    — unused venv (180MB)
-                 rvc_env/         — opt-in RVC venv (680MB)
+styles.yaml    Visual style presets
 ```
 
 ## Generated / runtime directories (do not treat as source)

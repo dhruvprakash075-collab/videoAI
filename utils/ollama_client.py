@@ -30,17 +30,17 @@ log = logging.getLogger(__name__)
 class _BreakerState:
     """Per-model circuit breaker state (thread-safe)."""
 
-    CLOSED    = "closed"
-    OPEN      = "open"
+    CLOSED = "closed"
+    OPEN = "open"
     HALF_OPEN = "half_open"
 
     def __init__(self, fails_threshold: int, cooldown_s: float):
-        self._lock          = threading.Lock()
-        self._state         = self.CLOSED
-        self._fail_count    = 0
-        self._open_until    = 0.0
-        self._fails_thresh  = fails_threshold
-        self._cooldown_s    = cooldown_s
+        self._lock = threading.Lock()
+        self._state = self.CLOSED
+        self._fail_count = 0
+        self._open_until = 0.0
+        self._fails_thresh = fails_threshold
+        self._cooldown_s = cooldown_s
 
     def allow_request(self) -> bool:
         """Return True if the request should be attempted."""
@@ -105,8 +105,9 @@ class OllamaClient:
 
     def __init__(self, config: dict):
         import os as _os
-        self._config   = config
-        _ollama        = config.get("ollama", {})
+
+        self._config = config
+        _ollama = config.get("ollama", {})
 
         # Check standard environment variables first to allow external server settings
         _env_host = _os.environ.get("OLLAMA_HOST") or _os.environ.get("OLLAMA_BASE_URL")
@@ -114,10 +115,10 @@ class OllamaClient:
             self._host = _env_host.rstrip("/")
         else:
             self._host = _ollama.get("host", "http://localhost:11434").rstrip("/")
-        self._timeout  = int(_ollama.get("request_timeout", 240))
+        self._timeout = int(_ollama.get("request_timeout", 240))
         self._keep_alive = _ollama.get("keep_alive", "3m")
-        _fails         = int(_ollama.get("breaker_fails", 3))
-        _cooldown      = float(_ollama.get("breaker_cooldown_s", 30))
+        _fails = int(_ollama.get("breaker_fails", 3))
+        _cooldown = float(_ollama.get("breaker_cooldown_s", 30))
         self._breakers: dict[str, _BreakerState] = {}
         self._breaker_defaults = (_fails, _cooldown)
         self._lock = threading.Lock()
@@ -135,8 +136,7 @@ class OllamaClient:
         for attempt in range(1, 4):
             try:
                 req = urllib.request.Request(
-                    url, data=data,
-                    headers={"Content-Type": "application/json"}
+                    url, data=data, headers={"Content-Type": "application/json"}
                 )
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     return json.loads(resp.read().decode("utf-8"))
@@ -145,13 +145,17 @@ class OllamaClient:
                 # Check for timeout specifically to prevent infinite nested retry hangs (e.g., 3 * 240s)
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
-                    log.warning(f"[OllamaClient] Request timed out after {timeout}s. Skipping retries to prevent blocking the pipeline.")
+                    log.warning(
+                        f"[OllamaClient] Request timed out after {timeout}s. Skipping retries to prevent blocking the pipeline."
+                    )
                     break
 
                 # Transient error — retry with backoff
                 if attempt < 3:
-                    delay = 2.0 ** attempt
-                    log.info(f"[OllamaClient] attempt {attempt}/3 failed ({e}), retry in {delay:.0f}s")
+                    delay = 2.0**attempt
+                    log.info(
+                        f"[OllamaClient] attempt {attempt}/3 failed ({e}), retry in {delay:.0f}s"
+                    )
                     time.sleep(delay)
             except Exception:
                 # Non-transient (e.g. JSON decode) — don't retry
@@ -161,15 +165,22 @@ class OllamaClient:
     def _clean_response(self, text: str) -> str:
         """Strip <think>…</think> reasoning blocks from the response."""
         import re
+
         if "<think>" in text:
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             if "<think>" in text:
-                text = text[:text.index("<think>")].strip()
+                text = text[: text.index("<think>")].strip()
         return text.strip()
 
-    def generate(self, prompt: str, model: str, format_json: bool = False,
-                 seed: int | None = None, temperature: float = 0.3,
-                 num_predict: int = 4096) -> str:
+    def generate(
+        self,
+        prompt: str,
+        model: str,
+        format_json: bool = False,
+        seed: int | None = None,
+        temperature: float = 0.3,
+        num_predict: int = 4096,
+    ) -> str:
         """Call /api/generate. Returns the response text or "" on breaker-open."""
         breaker = self._breaker(model)
         if not breaker.allow_request():
@@ -186,7 +197,7 @@ class OllamaClient:
         if format_json:
             payload["format"] = "json"
         if seed is not None:
-            payload["options"]["seed"] = int(seed) % (2 ** 32)
+            payload["options"]["seed"] = int(seed) % (2**32)
             payload["options"]["temperature"] = 0.0
 
         try:
@@ -204,9 +215,14 @@ class OllamaClient:
             log.exception(f"[OllamaClient] generate failed ({model}): {e}")
             return ""
 
-    def chat(self, messages: list[dict], model: str,
-             system_msg: str = "", temperature: float = 0.3,
-             num_predict: int = 4096) -> str:
+    def chat(
+        self,
+        messages: list[dict],
+        model: str,
+        system_msg: str = "",
+        temperature: float = 0.3,
+        num_predict: int = 4096,
+    ) -> str:
         """Call /api/chat. Returns the assistant message text or "" on failure."""
         breaker = self._breaker(model)
         if not breaker.allow_request():
@@ -228,9 +244,7 @@ class OllamaClient:
 
         try:
             res = self._post(f"{self._host}/api/chat", payload, self._timeout)
-            text = self._clean_response(
-                (res.get("message", {}).get("content") or "").strip()
-            )
+            text = self._clean_response((res.get("message", {}).get("content") or "").strip())
             breaker.record_success()
             log.debug(f"[OllamaClient] chat ok ({model}, {len(text)} chars)")
             return text
@@ -246,16 +260,22 @@ class OllamaClient:
             log.warning(f"[OllamaClient] Breaker OPEN for '{model}' — failing fast")
             return ""
 
-        payload = json.dumps({
-            "model": model, "prompt": prompt, "format": "json", "stream": True,
-            "options": {"temperature": 0.0},
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": model,
+                "prompt": prompt,
+                "format": "json",
+                "stream": True,
+                "options": {"temperature": 0.0},
+            }
+        ).encode("utf-8")
 
         full = []
         try:
             req = urllib.request.Request(
-                f"{self._host}/api/generate", data=payload,
-                headers={"Content-Type": "application/json"}
+                f"{self._host}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=300) as resp:
                 for raw_line in resp:

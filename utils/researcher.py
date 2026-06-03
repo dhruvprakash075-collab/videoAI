@@ -29,6 +29,7 @@ The function is a pure dispatcher + small per-source helpers. All HTTP is
 mockable via ``patch("requests.get", ...)`` or ``patch.dict(sys.modules, ...)``
 in tests.
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,6 +51,7 @@ class ResearchError(Exception):
 @dataclass
 class ResearchItem:
     """One piece of research output, normalized across sources."""
+
     title: str
     text: str
     url: str
@@ -132,13 +134,15 @@ def _fetch_wikipedia_rest(query: str, config: dict) -> list[ResearchItem]:
             page_url = data.get("content_urls", {}).get("desktop", {}).get("page", url)
             if not text:
                 continue
-            items.append(ResearchItem(
-                title=title,
-                text=text,
-                url=page_url or url,
-                source_type="wikipedia",
-                relevance_score=_score(text, query),
-            ))
+            items.append(
+                ResearchItem(
+                    title=title,
+                    text=text,
+                    url=page_url or url,
+                    source_type="wikipedia",
+                    relevance_score=_score(text, query),
+                )
+            )
         except Exception as e:
             log.debug(f"[researcher] Wikipedia summary failed for {title!r}: {e}")
 
@@ -194,13 +198,15 @@ def _fetch_wikimedia_rest(query: str, config: dict) -> list[ResearchItem]:
         url = urls[i] if i < len(urls) else ""
         if not title or not url:
             continue
-        items.append(ResearchItem(
-            title=title,
-            text=title,
-            url=url,
-            source_type="wikimedia",
-            relevance_score=_score(title, query),
-        ))
+        items.append(
+            ResearchItem(
+                title=title,
+                text=title,
+                url=url,
+                source_type="wikimedia",
+                relevance_score=_score(title, query),
+            )
+        )
     return items
 
 
@@ -227,7 +233,9 @@ def _fetch_rss(query: str, config: dict) -> list[ResearchItem]:
     items: list[ResearchItem] = []
     for feed_url in feeds:
         try:
-            parsed = feedparser.parse(feed_url, agent=headers.get("User-Agent", ""), timeout=timeout)
+            parsed = feedparser.parse(
+                feed_url, agent=headers.get("User-Agent", ""), timeout=timeout
+            )
         except Exception as e:
             log.debug(f"[researcher] RSS parse failed for {feed_url}: {e}")
             continue
@@ -235,23 +243,21 @@ def _fetch_rss(query: str, config: dict) -> list[ResearchItem]:
             continue
         for entry in parsed.entries[:limit]:
             title = getattr(entry, "title", "") or ""
-            text = (
-                getattr(entry, "summary", "")
-                or getattr(entry, "description", "")
-                or title
-            )
+            text = getattr(entry, "summary", "") or getattr(entry, "description", "") or title
             url = getattr(entry, "link", "") or ""
             if not title and not text:
                 continue
             if query.lower() not in (title + " " + text).lower():
                 continue
-            items.append(ResearchItem(
-                title=title or url,
-                text=text,
-                url=url,
-                source_type="rss",
-                relevance_score=_score(text or title, query),
-            ))
+            items.append(
+                ResearchItem(
+                    title=title or url,
+                    text=text,
+                    url=url,
+                    source_type="rss",
+                    relevance_score=_score(text or title, query),
+                )
+            )
             if len(items) >= limit:
                 return items
     return items

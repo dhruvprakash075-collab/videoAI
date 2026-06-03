@@ -27,9 +27,11 @@ class TestCleanupHooks:
         shutdown._reset_for_tests()
         order: list[str] = []
         shutdown.register_cleanup_hook(lambda: order.append("a"))
+
         def boom():
             order.append("b")
             raise RuntimeError("kaboom")
+
         shutdown.register_cleanup_hook(boom)
         shutdown.register_cleanup_hook(lambda: order.append("c"))
         shutdown._run_cleanup_hooks()
@@ -37,8 +39,10 @@ class TestCleanupHooks:
 
     def test_hook_with_name_used_in_logs(self, caplog):
         shutdown._reset_for_tests()
+
         def named_hook():
             pass
+
         named_hook.__name__ = "my_named_hook"
         shutdown.register_cleanup_hook(named_hook)
         with caplog.at_level("INFO", logger="utils.shutdown"):
@@ -72,3 +76,20 @@ class TestRegisterShutdownHandlers:
         with pytest.raises(SystemExit) as exc:
             shutdown._handle_signal(signal.SIGINT, None)
         assert exc.value.code == 128 + signal.SIGINT.value
+
+    def test_signal_handler_invalid_signum(self):
+        shutdown._reset_for_tests()
+        with pytest.raises(SystemExit) as exc:
+            # Pass invalid signum (e.g. 999) to force Signals(signum) ValueError/AttributeError path
+            shutdown._handle_signal(999, None)
+        assert exc.value.code == 128 + 999
+        assert shutdown.is_shutting_down() is True
+
+    def test_register_shutdown_handlers_os_error(self):
+        shutdown._reset_for_tests()
+        from unittest.mock import patch
+
+        # Force OSError on all signal.signal calls to cover warning handlers
+        with patch("signal.signal", side_effect=OSError("Not allowed")):
+            res = shutdown.register_shutdown_handlers()
+            assert res is True

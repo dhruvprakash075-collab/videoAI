@@ -9,6 +9,7 @@ Covers:
   - critique_and_rewrite: passes first try, retries on fail, max-rewrites cap
   - CRITIC_PROMPT / REWRITE_PROMPT: contain expected rubric, no format bleed
 """
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ from utils.critic import (
 
 # ── CriticScore dataclass ───────────────────────────────────────────────────
 
+
 class TestCriticScore:
     def test_default_total_is_zero(self):
         s = CriticScore()
@@ -57,26 +59,55 @@ class TestCriticScore:
     def test_to_dict_contains_all_keys(self):
         s = CriticScore(hook=10, issues=["a"], suggestions=["b"])
         d = s.to_dict()
-        assert set(d.keys()) >= {"hook", "emotional_arc", "pacing", "retention", "tts_friendliness", "total", "issues", "suggestions"}
+        assert set(d.keys()) >= {
+            "hook",
+            "emotional_arc",
+            "pacing",
+            "retention",
+            "tts_friendliness",
+            "total",
+            "issues",
+            "suggestions",
+        }
         assert d["total"] == 10
 
 
 # ── _clamp_dim ──────────────────────────────────────────────────────────────
 
+
 class TestClampDim:
-    @pytest.mark.parametrize("val,expected", [
-        (0, 0), (10, 10), (20, 20), (-5, 0), (25, 20), ("15", 15), ("abc", 0), (None, 0), (1.7, 1),
-    ])
+    @pytest.mark.parametrize(
+        "val,expected",
+        [
+            (0, 0),
+            (10, 10),
+            (20, 20),
+            (-5, 0),
+            (25, 20),
+            ("15", 15),
+            ("abc", 0),
+            (None, 0),
+            (1.7, 1),
+        ],
+    )
     def test_clamp(self, val, expected):
         assert _clamp_dim(val) == expected
 
 
 # ── _score_from_dict ────────────────────────────────────────────────────────
 
+
 class TestScoreFromDict:
     def test_full_dict(self):
-        d = {"hook": 18, "emotional_arc": 14, "pacing": 12, "retention": 16, "tts_friendliness": 9,
-             "issues": ["slow start"], "suggestions": ["add micro-hook"]}
+        d = {
+            "hook": 18,
+            "emotional_arc": 14,
+            "pacing": 12,
+            "retention": 16,
+            "tts_friendliness": 9,
+            "issues": ["slow start"],
+            "suggestions": ["add micro-hook"],
+        }
         s = _score_from_dict(d)
         assert s.hook == 18 and s.emotional_arc == 14
         assert s.total == 69
@@ -95,8 +126,13 @@ class TestScoreFromDict:
         s = _score_from_dict({"issues": "not a list"})
         assert s.issues == []
 
+    def test_non_list_suggestions_becomes_empty(self):
+        s = _score_from_dict({"suggestions": "not a list"})
+        assert s.suggestions == []
+
 
 # ── parse_critic_json ───────────────────────────────────────────────────────
+
 
 class TestParseCriticJson:
     def test_empty(self):
@@ -104,25 +140,27 @@ class TestParseCriticJson:
         assert parse_critic_json("   ") is None
 
     def test_valid_direct(self):
-        raw = json.dumps({"hook": 15, "emotional_arc": 12, "pacing": 18, "retention": 10, "tts_friendliness": 14})
+        raw = json.dumps(
+            {"hook": 15, "emotional_arc": 12, "pacing": 18, "retention": 10, "tts_friendliness": 14}
+        )
         s = parse_critic_json(raw)
         assert s is not None
         assert s.hook == 15 and s.total == 69
 
     def test_bracket_depth(self):
-        raw = "Here is the critique: {\"hook\": 8, \"emotional_arc\": 10} and that is all."
+        raw = 'Here is the critique: {"hook": 8, "emotional_arc": 10} and that is all.'
         s = parse_critic_json(raw)
         assert s is not None
         assert s.hook == 8
 
     def test_nested_brackets(self):
-        raw = "Some text {\"hook\": 12, \"meta\": {\"version\": 1}} more text"
+        raw = 'Some text {"hook": 12, "meta": {"version": 1}} more text'
         s = parse_critic_json(raw)
         assert s is not None
         assert s.hook == 12
 
     def test_regex_fallback(self):
-        raw = "no proper json here but {\"hook\": 7, \"pacing\": 13} embedded"
+        raw = 'no proper json here but {"hook": 7, "pacing": 13} embedded'
         s = parse_critic_json(raw)
         assert s is not None
         assert s.hook == 7
@@ -145,8 +183,13 @@ class TestParseCriticJson:
         s = parse_critic_json(raw)
         assert s.hook == 20 and s.pacing == 0
 
+    def test_bracket_depth_list(self):
+        raw = "Array nested {[1, 2, 3]} and invalid json {abc} and regex match {"
+        assert parse_critic_json(raw) is None
+
 
 # ── is_approved ─────────────────────────────────────────────────────────────
+
 
 class TestIsApproved:
     def test_above_threshold(self):
@@ -167,6 +210,7 @@ class TestIsApproved:
 
 # ── _critic_config ──────────────────────────────────────────────────────────
 
+
 class TestCriticConfig:
     def test_defaults(self):
         threshold, max_rewrites = _critic_config({})
@@ -181,9 +225,12 @@ class TestCriticConfig:
 
 # ── score_script (mocked LLM) ───────────────────────────────────────────────
 
+
 class TestScoreScript:
     def test_valid_response(self):
-        raw = json.dumps({"hook": 18, "emotional_arc": 15, "pacing": 12, "retention": 16, "tts_friendliness": 9})
+        raw = json.dumps(
+            {"hook": 18, "emotional_arc": 15, "pacing": 12, "retention": 16, "tts_friendliness": 9}
+        )
         config = {"models": {"writer": "zephyr-writer"}}
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=raw) as mock_call:
             s = score_script("script text", config)
@@ -210,11 +257,16 @@ class TestScoreScript:
 
 # ── rewrite_script (mocked LLM) ─────────────────────────────────────────────
 
+
 class TestRewriteScript:
     def test_valid_rewrite(self):
         config = {"models": {"writer": "zephyr-writer"}}
-        score = CriticScore(hook=5, emotional_arc=5, pacing=5, retention=5, tts_friendliness=5, issues=["too slow"])
-        with patch("utils.crewai_breaker.guarded_ollama_call", return_value="Rewritten script here.") as mock_call:
+        score = CriticScore(
+            hook=5, emotional_arc=5, pacing=5, retention=5, tts_friendliness=5, issues=["too slow"]
+        )
+        with patch(
+            "utils.crewai_breaker.guarded_ollama_call", return_value="Rewritten script here."
+        ) as mock_call:
             result = rewrite_script("old", score, 60, config)
         assert result == "Rewritten script here."
         prompt = mock_call.call_args.args[0]
@@ -234,9 +286,12 @@ class TestRewriteScript:
 
 # ── critique_and_rewrite ────────────────────────────────────────────────────
 
+
 class TestCritiqueAndRewrite:
     def test_approved_first_try(self):
-        raw = json.dumps({"hook": 18, "emotional_arc": 18, "pacing": 18, "retention": 18, "tts_friendliness": 18})
+        raw = json.dumps(
+            {"hook": 18, "emotional_arc": 18, "pacing": 18, "retention": 18, "tts_friendliness": 18}
+        )
         with patch("utils.crewai_breaker.guarded_ollama_call", return_value=raw):
             script, score, attempts = critique_and_rewrite("good", {"critic": {"threshold": 60}})
         assert attempts == 0
@@ -244,21 +299,39 @@ class TestCritiqueAndRewrite:
         assert script == "good"
 
     def test_below_threshold_triggers_rewrite(self):
-        low = json.dumps({"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5})
-        high = json.dumps({"hook": 18, "emotional_arc": 18, "pacing": 18, "retention": 18, "tts_friendliness": 18})
-        with patch("utils.crewai_breaker.guarded_ollama_call", side_effect=[low, "improved script", high]) as mock_call:
-            script, score, attempts = critique_and_rewrite("bad", {"critic": {"threshold": 60, "max_rewrites": 2}})
+        low = json.dumps(
+            {"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5}
+        )
+        high = json.dumps(
+            {"hook": 18, "emotional_arc": 18, "pacing": 18, "retention": 18, "tts_friendliness": 18}
+        )
+        with patch(
+            "utils.crewai_breaker.guarded_ollama_call", side_effect=[low, "improved script", high]
+        ) as mock_call:
+            script, score, attempts = critique_and_rewrite(
+                "bad", {"critic": {"threshold": 60, "max_rewrites": 2}}
+            )
         assert attempts == 1
         assert score.total == 90
         assert script == "improved script"
         assert mock_call.call_count == 3
 
     def test_max_rewrites_caps(self):
-        low = json.dumps({"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5})
-        medium = json.dumps({"hook": 8, "emotional_arc": 8, "pacing": 8, "retention": 8, "tts_friendliness": 8})
-        high = json.dumps({"hook": 12, "emotional_arc": 12, "pacing": 12, "retention": 12, "tts_friendliness": 12})
-        with patch("utils.crewai_breaker.guarded_ollama_call", side_effect=[low, "v2", medium, "v3", high]):
-            script, score, attempts = critique_and_rewrite("bad", {"critic": {"threshold": 60, "max_rewrites": 2}})
+        low = json.dumps(
+            {"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5}
+        )
+        medium = json.dumps(
+            {"hook": 8, "emotional_arc": 8, "pacing": 8, "retention": 8, "tts_friendliness": 8}
+        )
+        high = json.dumps(
+            {"hook": 12, "emotional_arc": 12, "pacing": 12, "retention": 12, "tts_friendliness": 12}
+        )
+        with patch(
+            "utils.crewai_breaker.guarded_ollama_call", side_effect=[low, "v2", medium, "v3", high]
+        ):
+            script, score, attempts = critique_and_rewrite(
+                "bad", {"critic": {"threshold": 60, "max_rewrites": 2}}
+            )
         assert attempts == 2
         assert score.total == 60
         assert script == "v3"
@@ -271,14 +344,36 @@ class TestCritiqueAndRewrite:
         assert script == "anything"
 
     def test_rewrite_failure_breaks_loop(self):
-        low = json.dumps({"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5})
+        low = json.dumps(
+            {"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5}
+        )
         with patch("utils.crewai_breaker.guarded_ollama_call", side_effect=[low, ""]):
-            _script, score, attempts = critique_and_rewrite("bad", {"critic": {"threshold": 60, "max_rewrites": 2}})
+            _script, score, attempts = critique_and_rewrite(
+                "bad", {"critic": {"threshold": 60, "max_rewrites": 2}}
+            )
         assert attempts == 0
         assert score.total == 25
 
+    def test_rewrite_worse_score_kept(self):
+        low = json.dumps(
+            {"hook": 5, "emotional_arc": 5, "pacing": 5, "retention": 5, "tts_friendliness": 5}
+        )
+        worse = json.dumps(
+            {"hook": 1, "emotional_arc": 1, "pacing": 1, "retention": 1, "tts_friendliness": 1}
+        )
+        with patch(
+            "utils.crewai_breaker.guarded_ollama_call", side_effect=[low, "worse script", worse]
+        ):
+            script, score, attempts = critique_and_rewrite(
+                "bad", {"critic": {"threshold": 60, "max_rewrites": 1}}
+            )
+        assert attempts == 1
+        assert score.total == 25
+        assert script == "bad"
+
 
 # ── Prompt contents ─────────────────────────────────────────────────────────
+
 
 class TestPrompts:
     def test_critic_prompt_has_5_dimensions(self):

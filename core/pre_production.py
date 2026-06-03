@@ -14,6 +14,7 @@ runs ONCE before the per-segment loop:
 This module NEVER touches Stable Diffusion, TTS, FFmpeg, or the per-segment loop.
 It is pure LLM/config/state work, so it can be unit-tested in isolation.
 """
+
 from __future__ import annotations
 
 import json as _json
@@ -30,6 +31,7 @@ log = logging.getLogger(__name__)
 
 
 # ── Config merging helper (shared across all phases) ──────────────────────
+
 
 def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge override into base. Returns merged dict."""
@@ -52,6 +54,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 # ── Narration sanitization (W3 — shared with segment_runner) ──────────────
 
+
 def _sanitize_narration(script: str) -> str:
     """Strip all non-spoken artifacts from a script before TTS/translation.
 
@@ -66,43 +69,53 @@ def _sanitize_narration(script: str) -> str:
     Returns clean spoken text only.
     """
     import re as _re
+
     if not script:
         return ""
     s = script
-    s = _re.sub(r'<think>.*?</think>', '', s, flags=_re.DOTALL | _re.IGNORECASE)
-    s = _re.sub(r'</?[a-zA-Z][a-zA-Z0-9_]*(?:\s[^>]*)?\s*/?>', '', s)
-    s = _re.sub(r'<!--.*?-->', '', s, flags=_re.DOTALL)
-    s = _re.sub(r'<\|.*?\|>', '', s)
-    s = _re.sub(r'```[a-zA-Z]*', '', s)
-    s = _re.sub(r'\[END_OF_TEXT\]|\[END\]|\[STOP\]', '', s, flags=_re.IGNORECASE)
-    s = _re.sub(r'\*\*([^*]*)\*\*', r'\1', s)
-    s = _re.sub(r'\*([^*]*)\*', r'\1', s)
+    s = _re.sub(r"<think>.*?</think>", "", s, flags=_re.DOTALL | _re.IGNORECASE)
+    s = _re.sub(r"</?[a-zA-Z][a-zA-Z0-9_]*(?:\s[^>]*)?\s*/?>", "", s)
+    s = _re.sub(r"<!--.*?-->", "", s, flags=_re.DOTALL)
+    s = _re.sub(r"<\|.*?\|>", "", s)
+    s = _re.sub(r"```[a-zA-Z]*", "", s)
+    s = _re.sub(r"\[END_OF_TEXT\]|\[END\]|\[STOP\]", "", s, flags=_re.IGNORECASE)
+    s = _re.sub(r"\*\*([^*]*)\*\*", r"\1", s)
+    s = _re.sub(r"\*([^*]*)\*", r"\1", s)
     _meta_patterns = [
-        r'\bIn response to (?:your|the) (?:critique|feedback|instructions)\b[^.!?।]{0,150}[.!?।]',
-        r'\bThe changes reflect\b[^.!?।]{0,150}[.!?।]',
-        r'\bThis version (?:aims|is|reflects)\b[^.!?।]{0,150}[.!?।]',
-        r'\bRevised Script\s*:?',
+        r"\bIn response to (?:your|the) (?:critique|feedback|instructions)\b[^.!?।]{0,150}[.!?।]",
+        r"\bThe changes reflect\b[^.!?।]{0,150}[.!?।]",
+        r"\bThis version (?:aims|is|reflects)\b[^.!?।]{0,150}[.!?।]",
+        r"\bRevised Script\s*:?",
         r"\bHere'?s? (?:is )?the (?:revised|rewritten|updated)\b[^.!?।]{0,150}?(?:script|version|text|story|narration)\b[^.!?।]{0,80}?\s*[:\-]",
         r"\bHere'?s? (?:is )?the (?:revised|rewritten|updated)\b[^.!?।]{0,100}[.!?।]",
-        r'\bNow,? each (?:detail|layer)\b[^.!?।]{0,150}[.!?।]',
-        r'\bI have (?:revised|rewritten|updated|incorporated)\b[^.!?।]{0,150}[.!?।]',
-        r'\bAs (?:requested|instructed|per your)\b[^.!?।]{0,150}?(?:script|version|text|story|narration)\b[^.!?।]{0,80}?\s*[:\-]',
-        r'\bAs (?:requested|instructed|per your)\b[^.!?।]{0,100}[.!?।]',
-        r'\b(?:Below|Here) (?:is|are) the (?:revised|updated|rewritten)\b[^.!?।]{0,150}[.!?।]',
-        r'\bOutput plain text only[^.!?।]{0,150}[.!?।]',
+        r"\bNow,? each (?:detail|layer)\b[^.!?।]{0,150}[.!?।]",
+        r"\bI have (?:revised|rewritten|updated|incorporated)\b[^.!?।]{0,150}[.!?।]",
+        r"\bAs (?:requested|instructed|per your)\b[^.!?।]{0,150}?(?:script|version|text|story|narration)\b[^.!?।]{0,80}?\s*[:\-]",
+        r"\bAs (?:requested|instructed|per your)\b[^.!?।]{0,100}[.!?।]",
+        r"\b(?:Below|Here) (?:is|are) the (?:revised|updated|rewritten)\b[^.!?।]{0,150}[.!?।]",
+        r"\bOutput plain text only[^.!?।]{0,150}[.!?।]",
     ]
     for pat in _meta_patterns:
-        s = _re.sub(pat, '', s, flags=_re.IGNORECASE | _re.MULTILINE)
-    s = _re.sub(r'\[/?(?:narration|section|pause|scene|sfx|music|cut|fade)[^\]]*\]',
-                '', s, flags=_re.IGNORECASE)
-    s = _re.sub(r'\[[^\]]{0,60}\]', '', s)
-    s = _re.sub(r'^\s*(?:narration|script|segment\s*\d*|title|hook|insight|escalation)\s*:\s*',
-                '', s, flags=_re.IGNORECASE | _re.MULTILINE)
-    s = _re.sub(r'\s+', ' ', s).strip()
+        s = _re.sub(pat, "", s, flags=_re.IGNORECASE | _re.MULTILINE)
+    s = _re.sub(
+        r"\[/?(?:narration|section|pause|scene|sfx|music|cut|fade)[^\]]*\]",
+        "",
+        s,
+        flags=_re.IGNORECASE,
+    )
+    s = _re.sub(r"\[[^\]]{0,60}\]", "", s)
+    s = _re.sub(
+        r"^\s*(?:narration|script|segment\s*\d*|title|hook|insight|escalation)\s*:\s*",
+        "",
+        s,
+        flags=_re.IGNORECASE | _re.MULTILINE,
+    )
+    s = _re.sub(r"\s+", " ", s).strip()
     return s
 
 
 # ── Preflight health checks ───────────────────────────────────────────────
+
 
 def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
     """Run startup checks to ensure all requirements are met before starting the long pipeline."""
@@ -119,7 +132,10 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         f"Ollama Model '{director_model}'": {"status": "PENDING", "info": "Required for outlining"},
         f"Ollama Model '{writer_model}'": {"status": "PENDING", "info": "Required for scripting"},
         "FFmpeg Executable on PATH": {"status": "PENDING", "info": ""},
-        "OmniVoice Python Environment": {"status": "PENDING", "info": "omnivoice_env/Scripts/python.exe"},
+        "OmniVoice Python Environment": {
+            "status": "PENDING",
+            "info": "omnivoice_env/Scripts/python.exe",
+        },
     }
 
     # 1. FFmpeg
@@ -154,6 +170,7 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
     elif tts_engine == "edge":
         try:
             import edge_tts
+
             checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
             checks[f"TTS Engine '{tts_engine}'"]["info"] = "edge-tts module installed"
         except ImportError:
@@ -167,13 +184,15 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
     checks.setdefault("Disk Space Availability", {})
     try:
         _total, _used, free = shutil.disk_usage(".")
-        free_gb = free / (1024 ** 3)
+        free_gb = free / (1024**3)
         if free_gb > 10.0:
             checks["Disk Space Availability"]["status"] = "OK"
             checks["Disk Space Availability"]["info"] = f"{free_gb:.1f} GB free"
         else:
             checks["Disk Space Availability"]["status"] = "FAILED"
-            checks["Disk Space Availability"]["info"] = f"Only {free_gb:.1f} GB free (10GB recommended)"
+            checks["Disk Space Availability"]["info"] = (
+                f"Only {free_gb:.1f} GB free (10GB recommended)"
+            )
     except Exception as e:
         checks["Disk Space Availability"]["status"] = "FAILED"
         checks["Disk Space Availability"]["info"] = f"Check failed: {e}"
@@ -195,7 +214,9 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
                 checks[f"Ollama Model '{director_model}'"]["info"] = "Available in Ollama"
             else:
                 checks[f"Ollama Model '{director_model}'"]["status"] = "FAILED"
-                checks[f"Ollama Model '{director_model}'"]["info"] = f"Model '{director_model}' not loaded in Ollama!"
+                checks[f"Ollama Model '{director_model}'"]["info"] = (
+                    f"Model '{director_model}' not loaded in Ollama!"
+                )
             found_writer = any(writer_model in t or t.startswith(writer_model) for t in tags)
             if found_writer:
                 checks[f"Ollama Model '{writer_model}'"]["status"] = "OK"
@@ -231,13 +252,17 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
     if failed:
         log.warning("WARNING: Some preflight system health checks failed. Run may fail!")
         if checks["FFmpeg Executable on PATH"]["status"] == "FAILED" and not dry_run:
-            raise RuntimeError("Fatal: FFmpeg is missing from PATH. Video generation is impossible.")
+            raise RuntimeError(
+                "Fatal: FFmpeg is missing from PATH. Video generation is impossible."
+            )
 
 
 # ── Upfront LoRA Studio Session ───────────────────────────────────────────
 
-def _run_studio_session(config: dict, out_base: Path, dry_run: bool = False,
-                        global_scheduler=None) -> dict:
+
+def _run_studio_session(
+    config: dict, out_base: Path, dry_run: bool = False, global_scheduler=None
+) -> dict:
     """Pre-train Face-Lock LoRAs for all characters before video generation."""
     try:
         from train_lora import train_protagonist_lora
@@ -258,20 +283,53 @@ def _run_studio_session(config: dict, out_base: Path, dry_run: bool = False,
         char_desc = c_data.get("description", "")
 
         if len(char_desc) < 50:
-            log.info(f"[Studio Session] Skipping {char_name} — description too short ({len(char_desc)} chars, need 50+)")
+            log.info(
+                f"[Studio Session] Skipping {char_name} — description too short ({len(char_desc)} chars, need 50+)"
+            )
             continue
         desc_lower = char_desc.lower()
-        visual_terms = ["hair", "eye", "wearing", "cloak", "armor", "tall", "short", "beard",
-                        "scar", "muscular", "slim", "pale", "dark", "bright", "hood", "coat",
-                        "sword", "staff", "mask", "tattoo", "mark", "symbol", "glove", "boot"]
+        visual_terms = [
+            "hair",
+            "eye",
+            "wearing",
+            "cloak",
+            "armor",
+            "tall",
+            "short",
+            "beard",
+            "scar",
+            "muscular",
+            "slim",
+            "pale",
+            "dark",
+            "bright",
+            "hood",
+            "coat",
+            "sword",
+            "staff",
+            "mask",
+            "tattoo",
+            "mark",
+            "symbol",
+            "glove",
+            "boot",
+        ]
         if not any(t in desc_lower for t in visual_terms):
-            log.info(f"[Studio Session] Skipping {char_name} — no visual detail keywords in description")
+            log.info(
+                f"[Studio Session] Skipping {char_name} — no visual detail keywords in description"
+            )
             continue
-        log.info(f"[Studio Session] Description OK for {char_name}: {len(char_desc)} chars, visual terms found")
+        log.info(
+            f"[Studio Session] Description OK for {char_name}: {len(char_desc)} chars, visual terms found"
+        )
 
-        existing_loras = list(ck_dir.glob(f"protagonist_{char_name.lower().replace(' ', '_')}*lora.safetensors"))
+        existing_loras = list(
+            ck_dir.glob(f"protagonist_{char_name.lower().replace(' ', '_')}*lora.safetensors")
+        )
         if existing_loras:
-            log.info(f"[Studio Session] LoRA already exists for {char_name}: {existing_loras[0].name}")
+            log.info(
+                f"[Studio Session] LoRA already exists for {char_name}: {existing_loras[0].name}"
+            )
             trained_loras[c_key] = existing_loras[0]
             continue
 
@@ -283,7 +341,9 @@ def _run_studio_session(config: dict, out_base: Path, dry_run: bool = False,
 
         seg_config = dict(config)
         seg_config["image_gen"] = dict(config.get("image_gen", {}))
-        seg_config["image_gen"]["negative_prompt"] = "photorealistic, real life, 3d, extra limbs, bad anatomy, disfigured, blurry"
+        seg_config["image_gen"]["negative_prompt"] = (
+            "photorealistic, real life, 3d, extra limbs, bad anatomy, disfigured, blurry"
+        )
 
         if global_scheduler is not None:
             with global_scheduler.task("heavy", f"Studio:{c_key}:gen"):
@@ -330,7 +390,9 @@ def _run_studio_session(config: dict, out_base: Path, dry_run: bool = False,
 
         if lora_path:
             trained_loras[c_key] = lora_path
-            log.info(f"[Studio Session] Successfully trained LoRA for {char_name}: {lora_path.name}")
+            log.info(
+                f"[Studio Session] Successfully trained LoRA for {char_name}: {lora_path.name}"
+            )
         else:
             log.warning(f"[Studio Session] LoRA training failed for {char_name}")
 
@@ -338,6 +400,7 @@ def _run_studio_session(config: dict, out_base: Path, dry_run: bool = False,
 
 
 # ── Director memory seeding ───────────────────────────────────────────────
+
 
 def _seed_director_memory(topic: str, overlay: dict, config: dict) -> None:
     """Feed Director pre-production findings into StoryMemory + WorldState."""
@@ -363,9 +426,7 @@ def _seed_director_memory(topic: str, overlay: dict, config: dict) -> None:
         perm.log_recurring_motif("theme", vision["theme"])
     if vision.get("emotions"):
         perm.log_recurring_motif("emotions", vision["emotions"])
-    perm.data["director_knowledge"]["production_notes"] = (
-        overlay.get("production_notes", {})
-    )
+    perm.data["director_knowledge"]["production_notes"] = overlay.get("production_notes", {})
     perm._save_memory()
 
     ck_dir = Path(config.get("checkpoint", {}).get("dir", "studio_checkpoints"))
@@ -391,33 +452,43 @@ def _seed_director_memory(topic: str, overlay: dict, config: dict) -> None:
             ws._data.setdefault("world_facts", []).append(f"[Director] {rec}")
 
     ws._save()
-    log.info(f"[MEMORY] Director knowledge seeded: "
-             f"{len(overlay.get('characters', {}))} characters, "
-             f"{len(ws._data.get('world_facts', []))} facts")
+    log.info(
+        f"[MEMORY] Director knowledge seeded: "
+        f"{len(overlay.get('characters', {}))} characters, "
+        f"{len(ws._data.get('world_facts', []))} facts"
+    )
 
-    mem_file = config.get("memory", {}).get("memory_file",
-                "studio_checkpoints/story_memory.json")
+    mem_file = config.get("memory", {}).get("memory_file", "studio_checkpoints/story_memory.json")
     sm = StoryMemory(Path(mem_file))
     char_summaries = ", ".join(
-        f"{c_data.get('name', k)}"
-        for k, c_data in overlay.get("characters", {}).items()
+        f"{c_data.get('name', k)}" for k, c_data in overlay.get("characters", {}).items()
     )
     theme = vision.get("theme", "Unknown")
-    sm.save(topic, 0,
-            f"Director pre-production for {topic}. "
-            f"Theme: {theme}. Characters: {char_summaries}. "
-            f"Style: {vision.get('visual_style', '')}. "
-            f"Emotions: {vision.get('emotions', '')}. ",
-            f"Director Vision: {theme} — {char_summaries}")
+    sm.save(
+        topic,
+        0,
+        f"Director pre-production for {topic}. "
+        f"Theme: {theme}. Characters: {char_summaries}. "
+        f"Style: {vision.get('visual_style', '')}. "
+        f"Emotions: {vision.get('emotions', '')}. ",
+        f"Director Vision: {theme} — {char_summaries}",
+    )
     log.info("[MEMORY] StoryMemory pre-seeded with Director context")
 
 
 # ── Main pre-production entry point ───────────────────────────────────────
 
-def run_pre_production(topic: str, config: dict, skip_consultation: bool = False,
-                       content_text: str | None = None, force_refresh: bool = False,
-                       project_name: str | None = None, cli_flags: dict | None = None,
-                       run_mode: str = "one_time") -> dict:
+
+def run_pre_production(
+    topic: str,
+    config: dict,
+    skip_consultation: bool = False,
+    content_text: str | None = None,
+    force_refresh: bool = False,
+    project_name: str | None = None,
+    cli_flags: dict | None = None,
+    run_mode: str = "one_time",
+) -> dict:
     """Run Director pre-production before any segment generation.
 
     Phases:
@@ -467,14 +538,18 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
         try:
             create_scratch, scratch_notes = director.ask_create_from_scratch(topic)
         except Exception as e:
-            log.warning(f"[DIRECTOR] Create-from-scratch consultation failed ({e}) — proceeding with defaults")
+            log.warning(
+                f"[DIRECTOR] Create-from-scratch consultation failed ({e}) — proceeding with defaults"
+            )
             create_scratch, scratch_notes = False, ""
         log.info(f"[DIRECTOR] Create from scratch: {'YES' if create_scratch else 'NO'}")
 
     _models = config.setdefault("models", {})
     if create_scratch:
         _chosen_writer = _models.get("writer_scratch", _models.get("writer", "cra-guided-7b"))
-        log.info(f"[DIRECTOR] Writer mode: CREATE-FROM-SCRATCH → creative writer '{_chosen_writer}'")
+        log.info(
+            f"[DIRECTOR] Writer mode: CREATE-FROM-SCRATCH → creative writer '{_chosen_writer}'"
+        )
     else:
         _chosen_writer = _models.get("writer_adapt", _models.get("writer", "zephyr-writer"))
         log.info(f"[DIRECTOR] Writer mode: ADAPTATION → faithful writer '{_chosen_writer}'")
@@ -483,18 +558,26 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
     if create_scratch:
         story_text = director.invent_story(topic, scratch_notes)
         vision_doc = director.analyze_with_research(
-            topic, {"combined_summary": story_text, "result_count": 0},
+            topic,
+            {"combined_summary": story_text, "result_count": 0},
             content_text=content_text,
         )
         user_responses, writer_input = director.consult_on_config(vision_doc)
-        config_overlay = director.produce_runtime_config(vision_doc, user_responses, writer_input, mode=output_mode)
+        config_overlay = director.produce_runtime_config(
+            vision_doc, user_responses, writer_input, mode=output_mode
+        )
         config_overlay["_invented_story"] = story_text
         _ov_chars = config_overlay.get("characters", {})
-        _usable = {k: v for k, v in _ov_chars.items()
-                   if isinstance(v, dict) and len(str(v.get("description", "")).strip()) >= 30}
+        _usable = {
+            k: v
+            for k, v in _ov_chars.items()
+            if isinstance(v, dict) and len(str(v.get("description", "")).strip()) >= 30
+        }
         if not _usable:
-            log.warning("[PRE-PROD] Scratch mode produced no characters with visual detail — "
-                        "keeping config.yaml characters for visual consistency")
+            log.warning(
+                "[PRE-PROD] Scratch mode produced no characters with visual detail — "
+                "keeping config.yaml characters for visual consistency"
+            )
             config_overlay.pop("characters", None)
         else:
             config_overlay["characters"] = _usable
@@ -502,6 +585,7 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
 
         try:
             from agents.decision_engine import build_decision_record
+
             _scratch_user_locks = {"run_mode": run_mode}
             if project_name:
                 _scratch_user_locks["project_name"] = project_name
@@ -517,6 +601,7 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
                 config=config,
             )
             from memory.blackboard import get_blackboard
+
             _scratch_bb = get_blackboard(config, topic_slug=_safe_filename(topic))
             _scratch_bb.write_decision(_scratch_rec)
             config_overlay = _deep_merge(config_overlay, _scratch_rec.to_overlay())
@@ -570,15 +655,22 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
             "visual_style": prev_overlay.get("visual", {}).get("style", ""),
             "subtitle_style": prev_overlay.get("subtitles", {}).get("format", "classic"),
             "tts_engine": prev_overlay.get("tts", {}).get("engine", "omnivoice"),
-            "custom_instructions": prev_overlay.get("production_notes", {}).get("custom_instructions", ""),
+            "custom_instructions": prev_overlay.get("production_notes", {}).get(
+                "custom_instructions", ""
+            ),
         }
         writer_input = director.consult_with_writer(vision_doc, user_responses)
-        config_overlay = director.produce_runtime_config(vision_doc, user_responses, writer_input, mode=output_mode)
+        config_overlay = director.produce_runtime_config(
+            vision_doc, user_responses, writer_input, mode=output_mode
+        )
         config_overlay = _deep_merge(prev_overlay, config_overlay)
-        log.info(f"[PRE-PROD] Series resume: overlay merged with previous ({len(config_overlay.get('characters', {}))} total chars)")
+        log.info(
+            f"[PRE-PROD] Series resume: overlay merged with previous ({len(config_overlay.get('characters', {}))} total chars)"
+        )
 
         try:
             from agents.decision_engine import build_decision_record
+
             _series_user_locks = {"run_mode": run_mode}
             if project_name:
                 _series_user_locks["project_name"] = project_name
@@ -594,6 +686,7 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
                 config=config,
             )
             from memory.blackboard import get_blackboard
+
             _series_bb = get_blackboard(config, topic_slug=_safe_filename(topic))
             _series_bb.write_decision(_series_rec)
             config_overlay = _deep_merge(config_overlay, _series_rec.to_overlay())
@@ -610,7 +703,8 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
 
     # Phase 2: Director analysis
     vision_doc = director.analyze_with_research(
-        topic, research,
+        topic,
+        research,
         config.get("video", {}).get("total_duration_min", 10),
         content_text=content_text,
     )
@@ -634,7 +728,8 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
                     f"Option {i + 1}",
                     c["outcome"],
                     max(5, int(est_minutes * c["point"] / 100)),
-                ) for i, c in enumerate(cliffhangers)
+                )
+                for i, c in enumerate(cliffhangers)
             ]
             chosen = director.consult_user(
                 "Which cliffhanger point would you like the video to end at?",
@@ -658,7 +753,9 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
             compacted = director.compact_story(content_text, target, est_minutes)
             content_text = compacted
             log.info("[DURATION] Re-analyzing with compacted content...")
-            vision_doc = director.analyze_with_research(topic, research, target, content_text=compacted)
+            vision_doc = director.analyze_with_research(
+                topic, research, target, content_text=compacted
+            )
             config_overlay["video"]["total_duration_min"] = target
             config_overlay["video"]["_content_compacted"] = True
             est_minutes = target
@@ -681,8 +778,13 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
     if not skip_consultation:
         try:
             writer_structural = director.consult_with_writer(vision_doc, user_responses)
-            for k in ("segment_count", "words_per_segment", "image_count_per_segment",
-                      "opening_hook_style", "pacing_notes"):
+            for k in (
+                "segment_count",
+                "words_per_segment",
+                "image_count_per_segment",
+                "opening_hook_style",
+                "pacing_notes",
+            ):
                 if writer_structural.get(k):
                     writer_input.setdefault(k, writer_structural[k])
         except Exception as e:
@@ -716,6 +818,7 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
 
     try:
         from agents.decision_engine import build_decision_record
+
         rec = build_decision_record(
             director=director,
             vision_doc=vision_doc,
@@ -725,6 +828,7 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
             config=config,
         )
         from memory.blackboard import get_blackboard
+
         bb = get_blackboard(config, topic_slug=_safe_filename(topic))
         bb.write_decision(rec)
         config_overlay = _deep_merge(config_overlay, rec.to_overlay())
@@ -738,13 +842,16 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
         log.warning(f"[PRE-PROD] DecisionEngine failed ({e}) — overlay used as-is")
 
     seg_count = config_overlay.get("video", {}).get("total_duration_min", "?")
-    log.info(f"Pre-production complete! Config overlay: "
-             f"{len(config_overlay.get('characters', {}))} characters, "
-             f"~{seg_count} min")
+    log.info(
+        f"Pre-production complete! Config overlay: "
+        f"{len(config_overlay.get('characters', {}))} characters, "
+        f"~{seg_count} min"
+    )
 
     # Normalize TTS engine in overlay
     try:
         from audio.audio_proxy import normalize_tts_engine as _norm_engine
+
         _raw_ov_engine = config_overlay.get("tts", {}).get("engine", "")
         if _raw_ov_engine:
             _norm_ov_engine = _norm_engine(_raw_ov_engine)
@@ -770,8 +877,10 @@ def run_pre_production(topic: str, config: dict, skip_consultation: bool = False
 
 # ── Story outline (called once before segment loop) ───────────────────────
 
-def plan_outline(topic: str, n_segs: int, config: dict,
-                 director_agent, cp_mgr, resume: bool) -> list[dict]:
+
+def plan_outline(
+    topic: str, n_segs: int, config: dict, director_agent, cp_mgr, resume: bool
+) -> list[dict]:
     """Plan the story outline (once, before segments). Loads from checkpoint if available."""
     from utils.story_planner import plan_story
 
@@ -789,6 +898,7 @@ def plan_outline(topic: str, n_segs: int, config: dict,
 
 
 # ── Time formatters (shared with post_production) ─────────────────────────
+
 
 def format_time_hms(seconds: float) -> str:
     h, rem = divmod(int(seconds), 3600)
@@ -812,11 +922,14 @@ def get_video_duration(mp4: Path) -> float:
     """Read a video's actual duration via ffprobe. Returns 30.0 on error."""
     import json as _json
     import subprocess
+
     try:
         r = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "json", str(mp4)],
-            capture_output=True, check=True, text=True, encoding="utf-8",
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(mp4)],
+            capture_output=True,
+            check=True,
+            text=True,
+            encoding="utf-8",
         )
         return float(_json.loads(r.stdout)["format"]["duration"])
     except Exception:

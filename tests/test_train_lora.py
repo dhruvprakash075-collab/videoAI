@@ -13,7 +13,6 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 
-
 def test_mock_lora_uses_dot_notation_for_to_out(tmp_path):
     """P2-8: mock path must use 'to_out.0' (dot notation), not 'to_out_0'."""
     from train_lora import train_protagonist_lora
@@ -28,6 +27,7 @@ def test_mock_lora_uses_dot_notation_for_to_out(tmp_path):
     assert result.exists()
 
     from safetensors import safe_open
+
     keys = []
     with safe_open(str(result), framework="pt", device="cpu") as f:
         keys = list(f.keys())
@@ -53,6 +53,7 @@ def test_mock_lora_has_no_alpha_keys(tmp_path):
     assert result is not None
 
     from safetensors import safe_open
+
     keys = []
     with safe_open(str(result), framework="pt", device="cpu") as f:
         keys = list(f.keys())
@@ -74,6 +75,7 @@ def test_mock_lora_has_lora_down_and_up_weights(tmp_path):
     assert result is not None
 
     from safetensors import safe_open
+
     keys = []
     with safe_open(str(result), framework="pt", device="cpu") as f:
         keys = list(f.keys())
@@ -98,6 +100,7 @@ def test_mock_lora_key_format_matches_diffusers_convention(tmp_path):
     assert result is not None
 
     from safetensors import safe_open
+
     keys = []
     with safe_open(str(result), framework="pt", device="cpu") as f:
         keys = list(f.keys())

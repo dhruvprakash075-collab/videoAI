@@ -23,6 +23,7 @@ def _crash_log(exc_type, exc, tb):
     try:
         with open(_CRASH_LOG, "w", encoding="utf-8") as f:
             import traceback as _tb
+
             _tb.print_exception(exc_type, exc, tb, file=f)
     except Exception:
         pass
@@ -192,6 +193,7 @@ _HELP_TEXT = """\
 
 # ── Confirm modal (Phase 2) ───────────────────────────────────────────────────
 
+
 class ConfirmModal(ModalScreen):
     """Generic yes/no confirmation dialog."""
 
@@ -205,7 +207,7 @@ class ConfirmModal(ModalScreen):
             yield Static(self._message, id="confirm_msg")
             with Horizontal(id="confirm_btns"):
                 yield Button("Yes", id="btn_yes", variant="error")
-                yield Button("No",  id="btn_no",  variant="default")
+                yield Button("No", id="btn_no", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_yes":
@@ -220,6 +222,7 @@ class ConfirmModal(ModalScreen):
 
 
 # ── Checkpoints screen (Phase 3) ─────────────────────────────────────────────
+
 
 class CheckpointsScreen(ModalScreen):
     """Read-only list of resumable checkpoints with clear action."""
@@ -246,6 +249,7 @@ class CheckpointsScreen(ModalScreen):
         for p in sorted(cp_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 import json as _j
+
                 data = _j.loads(p.read_text(encoding="utf-8"))
                 steps = str(len(data))
                 age_h = (now - p.stat().st_mtime) / 3600
@@ -270,21 +274,26 @@ class CheckpointsScreen(ModalScreen):
                     row_key = table.get_row_at(table.cursor_row)[0]
                     topic = str(row_key) if row_key else None
                     if topic:
+
                         def do_clear():
                             try:
                                 from utils.checkpoint import CheckpointManager
+
                                 CheckpointManager().clear(topic)
                                 self._load(table)
                                 self.app.notify(f"Checkpoint cleared: {topic}")
                             except Exception as e:
                                 self.app.notify(f"Clear failed: {e}", severity="error")
-                        self.app.push_screen(ConfirmModal(
-                            f"Clear checkpoint for '{topic}'?", do_clear))
+
+                        self.app.push_screen(
+                            ConfirmModal(f"Clear checkpoint for '{topic}'?", do_clear)
+                        )
                 except Exception:
                     pass
 
 
 # ── Artifacts screen (Phase 3) ────────────────────────────────────────────────
+
 
 class ArtifactsScreen(ModalScreen):
     """Read-only viewer for run_manifest.json, segment meta, chapters."""
@@ -303,13 +312,15 @@ class ArtifactsScreen(ModalScreen):
 
     def _load(self, log: RichLog) -> None:
         import json as _j
+
         out_dir = _PROJECT_ROOT / "studio_outputs"
         if not out_dir.exists():
             log.write(Text("  No studio_outputs directory found.", style="#7d8590"))
             return
         # Find most recent run manifest
-        manifests = sorted(out_dir.rglob("run_manifest.json"),
-                           key=lambda p: p.stat().st_mtime, reverse=True)
+        manifests = sorted(
+            out_dir.rglob("run_manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         if not manifests:
             log.write(Text("  No run_manifest.json found yet.", style="#7d8590"))
             return
@@ -318,16 +329,26 @@ class ArtifactsScreen(ModalScreen):
         try:
             data = _j.loads(manifest_path.read_text(encoding="utf-8"))
             models = data.get("models", {})
-            log.write(Text(f"  Director: {models.get('director','—')}  Writer: {models.get('writer','—')}", style="#e6edf3"))
+            log.write(
+                Text(
+                    f"  Director: {models.get('director', '—')}  Writer: {models.get('writer', '—')}",
+                    style="#e6edf3",
+                )
+            )
             segs = data.get("segments_completed", "—")
-            dur  = data.get("duration_s", 0)
+            dur = data.get("duration_s", 0)
             log.write(Text(f"  Segments: {segs}  Duration: {dur:.0f}s", style="#e6edf3"))
             quality = data.get("quality", {})
             if quality:
                 passed = quality.get("passed", False)
                 issues = quality.get("issues", [])
                 color = "#7ee787" if passed else "#f85149"
-                log.write(Text(f"  Quality: {'PASS' if passed else 'FAIL'}  Issues: {len(issues)}", style=color))
+                log.write(
+                    Text(
+                        f"  Quality: {'PASS' if passed else 'FAIL'}  Issues: {len(issues)}",
+                        style=color,
+                    )
+                )
         except Exception as e:
             log.write(Text(f"  manifest error: {e}", style="#f85149"))
         # Chapters
@@ -350,12 +371,15 @@ class ArtifactsScreen(ModalScreen):
                     words = d.get("word_count", "—")
                     oom = d.get("oom", False)
                     oom_str = " ⚠OOM" if oom else ""
-                    log.write(Text(f"  {sm.stem}: mood={mood} words={words}{oom_str}", style="#e6edf3"))
+                    log.write(
+                        Text(f"  {sm.stem}: mood={mood} words={words}{oom_str}", style="#e6edf3")
+                    )
                 except Exception:
                     pass
 
 
 # ── Preflight screen (Phase 3) ────────────────────────────────────────────────
+
 
 class PreflightScreen(ModalScreen):
     """Shows preflight health checks. 'r' re-runs them on a background thread."""
@@ -367,7 +391,9 @@ class PreflightScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("  ◈ Preflight Health Checks  (r=Re-run  Escape=Close)", classes="screen_title")
+            yield Static(
+                "  ◈ Preflight Health Checks  (r=Re-run  Escape=Close)", classes="screen_title"
+            )
             yield DataTable(id="pf_table")
 
     def on_mount(self) -> None:
@@ -388,6 +414,7 @@ class PreflightScreen(ModalScreen):
     def _run_checks(self, table: DataTable) -> None:
         try:
             from utils import load_config
+
             config = load_config()
             checks = _collect_preflight(config)
         except Exception as e:
@@ -404,6 +431,7 @@ class PreflightScreen(ModalScreen):
                     Text(f"{icon} {st}", style=color),
                     Text(result.get("info", ""), style="#7d8590"),
                 )
+
         with contextlib.suppress(Exception):
             self.app.call_from_thread(_update)
 
@@ -413,28 +441,34 @@ def _collect_preflight(config: dict) -> dict:
     import json as _j
     import shutil
     import urllib.request
+
     checks = {}
     ollama_host = config.get("ollama", {}).get("host", "http://localhost:11434")
     director_model = config.get("models", {}).get("director", "hermes-director")
-    writer_model   = config.get("models", {}).get("writer",   "zephyr-writer")
-    tts_engine     = config.get("tts", {}).get("engine", "omnivoice")
+    writer_model = config.get("models", {}).get("writer", "zephyr-writer")
+    tts_engine = config.get("tts", {}).get("engine", "omnivoice")
 
     # FFmpeg
     ffmpeg = shutil.which("ffmpeg")
-    checks["FFmpeg"] = {"status": "OK" if ffmpeg else "FAILED",
-                        "info": ffmpeg or "NOT FOUND on PATH"}
+    checks["FFmpeg"] = {
+        "status": "OK" if ffmpeg else "FAILED",
+        "info": ffmpeg or "NOT FOUND on PATH",
+    }
     # Disk
     try:
         _, _, free = shutil.disk_usage(".")
         free_gb = free / (1024**3)
-        checks["Disk Space"] = {"status": "OK" if free_gb > 10 else "WARN",
-                                 "info": f"{free_gb:.1f} GB free"}
+        checks["Disk Space"] = {
+            "status": "OK" if free_gb > 10 else "WARN",
+            "info": f"{free_gb:.1f} GB free",
+        }
     except Exception as e:
         checks["Disk Space"] = {"status": "FAILED", "info": str(e)}
     # TTS
     if tts_engine == "edge":
         try:
             import edge_tts
+
             checks[f"TTS ({tts_engine})"] = {"status": "OK", "info": "edge-tts installed"}
         except ImportError:
             checks[f"TTS ({tts_engine})"] = {"status": "FAILED", "info": "edge-tts not installed"}
@@ -442,12 +476,13 @@ def _collect_preflight(config: dict) -> dict:
         worker = _PROJECT_ROOT / "audio" / "omnivoice_worker.py"
         checks[f"TTS ({tts_engine})"] = {
             "status": "OK" if worker.exists() else "WARN",
-            "info": str(worker) if worker.exists() else "omnivoice_worker.py not found"
+            "info": str(worker) if worker.exists() else "omnivoice_worker.py not found",
         }
     # Ollama
     try:
-        req = urllib.request.Request(f"{ollama_host}/api/tags",
-                                     headers={"User-Agent": "Video.AI TUI"})
+        req = urllib.request.Request(
+            f"{ollama_host}/api/tags", headers={"User-Agent": "Video.AI TUI"}
+        )
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _j.loads(resp.read().decode())
         tags = [t["name"] for t in data.get("models", [])]
@@ -456,16 +491,17 @@ def _collect_preflight(config: dict) -> dict:
             found = any(m in t for t in tags)
             checks[f"Model {label}"] = {
                 "status": "OK" if found else "WARN",
-                "info": m if found else f"Not pulled — run: ollama pull {m}"
+                "info": m if found else f"Not pulled — run: ollama pull {m}",
             }
     except Exception as e:
         checks["Ollama"] = {"status": "FAILED", "info": str(e)}
         checks["Model Director"] = {"status": "FAILED", "info": "Ollama unreachable"}
-        checks["Model Writer"]   = {"status": "FAILED", "info": "Ollama unreachable"}
+        checks["Model Writer"] = {"status": "FAILED", "info": "Ollama unreachable"}
     return checks
 
 
 # ── Main App ──────────────────────────────────────────────────────────────────
+
 
 class StudioTUI(App):
     """Video.AI Studio Console — Phase 1 + 2 + 3."""
@@ -474,26 +510,26 @@ class StudioTUI(App):
     TITLE = "Video.AI Studio Console"
 
     BINDINGS = [
-        Binding("ctrl+q,ctrl+c", "quit",        "Quit",        priority=True),
-        Binding("ctrl+l",        "clear_log",   "Clear Log",   priority=True),
-        Binding("ctrl+e",        "scroll_end",  "Scroll End",  priority=True),
-        Binding("f1",            "show_help",   "Help",        priority=True),
-        Binding("f2",            "show_run",    "Run",         priority=True),
-        Binding("f3",            "show_stats",  "Stats",       priority=True),
-        Binding("f5",            "pause_run",   "Pause",       priority=True),
-        Binding("ctrl+x",        "cancel_run",  "Cancel",      priority=True),
-        Binding("ctrl+o",        "open_output", "Open Output", priority=True),
-        Binding("ctrl+y",        "copy_output", "Copy Path",   priority=True),
-        Binding("ctrl+w",        "save_log",    "Save Log",    priority=True),
-        Binding("ctrl+k",        "show_checkpoints", "Checkpoints", priority=True),
-        Binding("ctrl+r",        "show_artifacts",   "Artifacts",   priority=True),
-        Binding("f6",            "show_preflight",   "Preflight",   priority=True),
+        Binding("ctrl+q,ctrl+c", "quit", "Quit", priority=True),
+        Binding("ctrl+l", "clear_log", "Clear Log", priority=True),
+        Binding("ctrl+e", "scroll_end", "Scroll End", priority=True),
+        Binding("f1", "show_help", "Help", priority=True),
+        Binding("f2", "show_run", "Run", priority=True),
+        Binding("f3", "show_stats", "Stats", priority=True),
+        Binding("f5", "pause_run", "Pause", priority=True),
+        Binding("ctrl+x", "cancel_run", "Cancel", priority=True),
+        Binding("ctrl+o", "open_output", "Open Output", priority=True),
+        Binding("ctrl+y", "copy_output", "Copy Path", priority=True),
+        Binding("ctrl+w", "save_log", "Save Log", priority=True),
+        Binding("ctrl+k", "show_checkpoints", "Checkpoints", priority=True),
+        Binding("ctrl+r", "show_artifacts", "Artifacts", priority=True),
+        Binding("f6", "show_preflight", "Preflight", priority=True),
     ]
 
     POLL_INTERVAL_S: float = 0.4
-    _STYLE_AGENT  = "#7aa2f7"
-    _STYLE_USER   = "#73daca"
-    _STYLE_ERROR  = "#f7768e"
+    _STYLE_AGENT = "#7aa2f7"
+    _STYLE_USER = "#73daca"
+    _STYLE_ERROR = "#f7768e"
     _STYLE_SYSTEM = "#565f89"
 
     def __init__(self):
@@ -538,9 +574,13 @@ class StudioTUI(App):
                         with Vertical():
                             with Horizontal(id="opts_row1"):
                                 yield Label("Duration(min)", classes="opt_label")
-                                yield Input(placeholder="10", id="opt_duration", classes="opt_input")
+                                yield Input(
+                                    placeholder="10", id="opt_duration", classes="opt_input"
+                                )
                                 yield Label("Project", classes="opt_label")
-                                yield Input(placeholder="(optional)", id="opt_project", classes="opt_input")
+                                yield Input(
+                                    placeholder="(optional)", id="opt_project", classes="opt_input"
+                                )
                             with Horizontal(id="opts_row2"):
                                 yield Label("Resume", classes="opt_label")
                                 yield Switch(value=True, id="opt_resume")
@@ -553,11 +593,18 @@ class StudioTUI(App):
                             with Horizontal(id="opts_row3"):
                                 yield Label("Story file", classes="opt_label")
                                 yield Switch(value=False, id="opt_use_file")
-                                yield Input(placeholder="path\\to\\story.txt", id="opt_file", classes="opt_input")
+                                yield Input(
+                                    placeholder="path\\to\\story.txt",
+                                    id="opt_file",
+                                    classes="opt_input",
+                                )
                     yield RichLog(id="log_container", auto_scroll=True)
-                    yield Input(placeholder="Enter topic — or reply to Director pause…", id="composer")
+                    yield Input(
+                        placeholder="Enter topic — or reply to Director pause…", id="composer"
+                    )
             with TabPane("Stats", id="stats"):
                 from textual.containers import Grid
+
                 with Grid(id="stats_grid"):
                     yield Static("", id="card_elapsed", classes="stats_card")
                     yield Static("", id="card_segments", classes="stats_card")
@@ -575,7 +622,8 @@ class StudioTUI(App):
         self.set_interval(self.POLL_INTERVAL_S, self._poll)
         with contextlib.suppress(Exception):
             self.query_one("#log_container", RichLog).write(
-                Text("● Studio Console ready — enter a topic to start", style=self._STYLE_AGENT))
+                Text("● Studio Console ready — enter a topic to start", style=self._STYLE_AGENT)
+            )
         # Focus the composer so typed input lands in it (TabbedContent steals focus otherwise)
         with contextlib.suppress(Exception):
             self.set_focus(self.query_one("#composer", Input))
@@ -584,12 +632,17 @@ class StudioTUI(App):
 
     def _poll(self) -> None:
         try:
-            self._poll_logs(); self._poll_status(); self._poll_progress()
-            self._poll_stats(); self._poll_question(); self._poll_bell()
+            self._poll_logs()
+            self._poll_status()
+            self._poll_progress()
+            self._poll_stats()
+            self._poll_question()
+            self._poll_bell()
         except Exception as e:
             with contextlib.suppress(Exception):
                 self.query_one("#log_container", RichLog).write(
-                    Text(f"  [poll error] {e}", style=self._STYLE_ERROR))
+                    Text(f"  [poll error] {e}", style=self._STYLE_ERROR)
+                )
 
     def _poll_logs(self) -> None:
         logs = getattr(UIState, "logs", [])
@@ -604,12 +657,12 @@ class StudioTUI(App):
 
     def _poll_status(self) -> None:
         status = getattr(UIState, "status", "idle")
-        topic  = getattr(UIState, "topic", "")
+        topic = getattr(UIState, "topic", "")
         output = getattr(UIState, "output_video", "")
-        seg_c  = getattr(UIState, "segment_current", 0)
-        seg_t  = getattr(UIState, "segment_total", 0)
-        vram   = getattr(UIState, "vram_text", "")
-        ts     = getattr(UIState, "run_start_ts", 0.0)
+        seg_c = getattr(UIState, "segment_current", 0)
+        seg_t = getattr(UIState, "segment_total", 0)
+        vram = getattr(UIState, "vram_text", "")
+        ts = getattr(UIState, "run_start_ts", 0.0)
 
         # B2: degradation count badge
         _deg_count = len(getattr(UIState, "degradations", []))
@@ -627,6 +680,7 @@ class StudioTUI(App):
                 try:
                     from config import load_config as _lc
                     from utils.checkpoint import build_checkpoint_manager
+
                     _cp = build_checkpoint_manager(_lc())
                     if _cp.get(topic) is not None:
                         self._resumable_cache = "  ↩ RESUMABLE"
@@ -648,9 +702,9 @@ class StudioTUI(App):
             badge = "● IDLE — enter a topic to start"
         with contextlib.suppress(Exception):
             self.query_one("#status_badge", Static).update(badge)
-        elapsed  = _format_elapsed(ts)
-        etc      = _format_etc(ts, seg_c, seg_t)
-        seg_str  = f"{seg_c}/{seg_t}" if seg_t else "—"
+        elapsed = _format_elapsed(ts)
+        etc = _format_etc(ts, seg_c, seg_t)
+        seg_str = f"{seg_c}/{seg_t}" if seg_t else "—"
         vram_str = vram if vram else "—"
         if status == "complete" and output:
             meta = f"  Output: {output}{_deg_badge}"
@@ -662,13 +716,14 @@ class StudioTUI(App):
             self.query_one("#status_meta", Static).update(meta)
 
     def _poll_progress(self) -> None:
-        seg_c  = getattr(UIState, "segment_current", 0)
-        seg_t  = getattr(UIState, "segment_total", 0)
+        seg_c = getattr(UIState, "segment_current", 0)
+        seg_t = getattr(UIState, "segment_total", 0)
         status = getattr(UIState, "status", "idle")
         try:
             bar = self.query_one("#seg_progress", ProgressBar)
             if status not in ("running", "paused", "complete"):
-                bar.update(total=None); return
+                bar.update(total=None)
+                return
             if seg_t == 0:
                 bar.update(total=None)
             elif status == "complete":
@@ -681,12 +736,12 @@ class StudioTUI(App):
     def _poll_stats(self) -> None:
         seg_c = getattr(UIState, "segment_current", 0)
         seg_t = getattr(UIState, "segment_total", 0)
-        vram  = getattr(UIState, "vram_text", "")
-        ts    = getattr(UIState, "run_start_ts", 0.0)
-        logs  = getattr(UIState, "logs", [])
-        elapsed  = _format_elapsed(ts)
-        etc      = _format_etc(ts, seg_c, seg_t)
-        pct      = f"{int(seg_c/seg_t*100)}%" if seg_t else "—"
+        vram = getattr(UIState, "vram_text", "")
+        ts = getattr(UIState, "run_start_ts", 0.0)
+        logs = getattr(UIState, "logs", [])
+        elapsed = _format_elapsed(ts)
+        etc = _format_etc(ts, seg_c, seg_t)
+        pct = f"{int(seg_c / seg_t * 100)}%" if seg_t else "—"
         last_log = logs[-1][:50] if logs else "—"
         if seg_c > self._last_seg_current and ts and seg_c > 0:
             elapsed_s = max(0.001, time.time() - ts)
@@ -696,10 +751,12 @@ class StudioTUI(App):
         self._last_seg_current = seg_c
         with contextlib.suppress(Exception):
             self.query_one("#card_elapsed", Static).update(
-                f"[bold #4a90d9]Elapsed[/]\n\n  {elapsed}\n  ETC: {etc}")
+                f"[bold #4a90d9]Elapsed[/]\n\n  {elapsed}\n  ETC: {etc}"
+            )
         with contextlib.suppress(Exception):
             self.query_one("#card_segments", Static).update(
-                f"[bold #4a90d9]Segments[/]\n\n  {seg_c} / {seg_t if seg_t else '—'}\n  {pct}")
+                f"[bold #4a90d9]Segments[/]\n\n  {seg_c} / {seg_t if seg_t else '—'}\n  {pct}"
+            )
         try:
             sp = self.query_one("#card_sparkline", Sparkline)
             if self._throughput_samples:
@@ -711,7 +768,8 @@ class StudioTUI(App):
             self.query_one("#card_engines", Static).update(
                 f"[bold #4a90d9]Engines / VRAM[/]\n\n"
                 f"  [{vram_color}]{vram if vram else '—'}[/]\n"
-                f"  [dim]{last_log}[/]")
+                f"  [dim]{last_log}[/]"
+            )
 
     def _poll_question(self) -> None:
         question = getattr(UIState, "active_question", None)
@@ -719,7 +777,8 @@ class StudioTUI(App):
             self._last_question = question
             try:
                 self.query_one("#log_container", RichLog).write(
-                    Text(f"● {question}", style=self._STYLE_AGENT))
+                    Text(f"● {question}", style=self._STYLE_AGENT)
+                )
                 self.query_one("#composer", Input).focus()
             except Exception:
                 pass
@@ -759,7 +818,8 @@ class StudioTUI(App):
         if getattr(UIState, "status", "idle") == "paused":
             with contextlib.suppress(Exception):
                 self.query_one("#log_container", RichLog).write(
-                    Text(f"▸ {text}", style=self._STYLE_USER))
+                    Text(f"▸ {text}", style=self._STYLE_USER)
+                )
             UIState.user_reply = text
             self._last_question = ""
             if hasattr(UIState, "pause_event") and UIState.pause_event:
@@ -767,7 +827,8 @@ class StudioTUI(App):
             return
 
         if self._pipeline_active:
-            self.notify("Pipeline already running", severity="warning"); return
+            self.notify("Pipeline already running", severity="warning")
+            return
 
         # Build kwargs from options
         kwargs: dict[str, Any] = {}
@@ -791,25 +852,31 @@ class StudioTUI(App):
         if self._opt_use_file:
             file_path_str = self._opt_file.strip() if hasattr(self, "_opt_file") else ""
             if not file_path_str:
-                self.notify("Story file path is empty", severity="error"); return
+                self.notify("Story file path is empty", severity="error")
+                return
             try:
                 candidate = _Path(file_path_str).resolve()
                 if not str(candidate).startswith(str(_PROJECT_ROOT)):
-                    self.notify("File path must be inside the project folder", severity="error"); return
+                    self.notify("File path must be inside the project folder", severity="error")
+                    return
                 if not candidate.exists():
-                    self.notify(f"File not found: {candidate}", severity="error"); return
+                    self.notify(f"File not found: {candidate}", severity="error")
+                    return
                 content_text = candidate.read_text(encoding="utf-8")
                 topic = candidate.stem
                 kwargs["content_text"] = content_text
             except Exception as e:
-                self.notify(f"Cannot read file: {e}", severity="error"); return
+                self.notify(f"Cannot read file: {e}", severity="error")
+                return
 
         with contextlib.suppress(Exception):
             self.query_one("#log_container", RichLog).write(
-                Text(f"▸ Starting: {topic}  {kwargs if kwargs else ''}", style=self._STYLE_USER))
+                Text(f"▸ Starting: {topic}  {kwargs if kwargs else ''}", style=self._STYLE_USER)
+            )
 
         try:
             from core.pipeline_long import _director_set_abort
+
             _director_set_abort(False)
         except Exception:
             pass
@@ -834,24 +901,34 @@ class StudioTUI(App):
         self._pipeline_active = True
         self._start_pipeline_thread(topic, kwargs)
         self.notify(f"Run started: {topic}", severity="information")
+
     def on_switch_changed(self, event: Switch.Changed) -> None:
         sid = event.switch.id
-        if sid == "opt_resume":     self._opt_resume    = event.value
-        elif sid == "opt_skip_rvc": self._opt_skip_rvc  = event.value
-        elif sid == "opt_director": self._opt_director  = event.value
-        elif sid == "opt_preview":  self._opt_preview   = event.value
-        elif sid == "opt_use_file": self._opt_use_file  = event.value
+        if sid == "opt_resume":
+            self._opt_resume = event.value
+        elif sid == "opt_skip_rvc":
+            self._opt_skip_rvc = event.value
+        elif sid == "opt_director":
+            self._opt_director = event.value
+        elif sid == "opt_preview":
+            self._opt_preview = event.value
+        elif sid == "opt_use_file":
+            self._opt_use_file = event.value
 
     def on_input_changed(self, event: Input.Changed) -> None:
         iid = event.input.id
-        if iid == "opt_duration": self._opt_duration = event.value
-        elif iid == "opt_project": self._opt_project = event.value
-        elif iid == "opt_file":    self._opt_file    = event.value
+        if iid == "opt_duration":
+            self._opt_duration = event.value
+        elif iid == "opt_project":
+            self._opt_project = event.value
+        elif iid == "opt_file":
+            self._opt_file = event.value
 
     def _start_pipeline_thread(self, topic: str, kwargs: dict) -> None:
         def run():
             try:
                 from core.pipeline_long import run_long_pipeline
+
                 result = run_long_pipeline(topic=topic, **kwargs)
                 status = result.get("status", "unknown")
                 if status == "success":
@@ -864,6 +941,7 @@ class StudioTUI(App):
                     UIState.add_log(f"Pipeline ended: {reason}")
             except Exception as e:
                 import traceback as _tb
+
                 UIState.status = "error"
                 UIState.add_log(f"FATAL ERROR: {type(e).__name__}: {e}")
                 # Write full traceback to crash log for debugging
@@ -874,12 +952,14 @@ class StudioTUI(App):
                     pass
             finally:
                 self._pipeline_active = False
+
         threading.Thread(target=run, daemon=True).start()
 
     def _resume_from_checkpoint(self, topic: str) -> None:
         """Called by CheckpointsScreen after user selects a checkpoint."""
         if self._pipeline_active:
-            self.notify("Pipeline already running", severity="warning"); return
+            self.notify("Pipeline already running", severity="warning")
+            return
         UIState.is_ui_mode = True
         UIState.logs = []
         UIState.active_question = None
@@ -930,42 +1010,53 @@ class StudioTUI(App):
         try:
             self.set_focus(None)
             self.query_one(TabbedContent).active = "help"
-        except Exception: pass
+        except Exception:
+            pass
 
     def action_show_run(self) -> None:
         try:
             self.query_one(TabbedContent).active = "run"
             self._restore_composer_focus()
-        except Exception: pass
+        except Exception:
+            pass
 
     def action_show_stats(self) -> None:
         try:
             self.set_focus(None)
             self.query_one(TabbedContent).active = "stats"
-        except Exception: pass
+        except Exception:
+            pass
 
     def action_pause_run(self) -> None:
         if not self._pipeline_active:
-            self.notify("No run active", severity="warning"); return
+            self.notify("No run active", severity="warning")
+            return
         UIState.status = "paused"
-        UIState.active_question = "Manual pause — type a reply to resume, or press Enter to continue."
+        UIState.active_question = (
+            "Manual pause — type a reply to resume, or press Enter to continue."
+        )
         if hasattr(UIState, "pause_event"):
             UIState.pause_event.clear()
         self.notify("Run paused", severity="warning")
 
     def action_cancel_run(self) -> None:
         if not self._pipeline_active:
-            self.notify("No run active", severity="warning"); return
+            self.notify("No run active", severity="warning")
+            return
+
         def do_cancel():
             try:
                 from core.pipeline_long import request_cancel
+
                 request_cancel()
             except Exception:
                 pass
             # If the pipeline is blocked on a Director pause, release it so the
             # abort actually takes effect instead of hanging until the 600s timeout.
             try:
-                if getattr(UIState, "status", "") == "paused" and getattr(UIState, "pause_event", None):
+                if getattr(UIState, "status", "") == "paused" and getattr(
+                    UIState, "pause_event", None
+                ):
                     UIState.user_reply = "quit"
                     UIState.pause_event.set()
             except Exception:
@@ -973,6 +1064,7 @@ class StudioTUI(App):
             self._last_question = ""
             self.notify("Cancel requested — stopping run…", severity="warning")
             self._restore_composer_focus()
+
         self.push_screen(ConfirmModal("Cancel the current run? (checkpoints preserved)", do_cancel))
 
     def _restore_composer_focus(self) -> None:
@@ -983,7 +1075,8 @@ class StudioTUI(App):
     def action_open_output(self) -> None:
         output = getattr(UIState, "output_video", "")
         if not output:
-            self.notify("No output path yet", severity="warning"); return
+            self.notify("No output path yet", severity="warning")
+            return
         try:
             folder = _Path(output).parent
             os.startfile(str(folder))
@@ -993,10 +1086,11 @@ class StudioTUI(App):
 
     def action_copy_output(self) -> None:
         output = getattr(UIState, "output_video", "")
-        logs   = getattr(UIState, "logs", [])
-        value  = output or (logs[-1] if logs else "")
+        logs = getattr(UIState, "logs", [])
+        value = output or (logs[-1] if logs else "")
         if not value:
-            self.notify("Nothing to copy", severity="warning"); return
+            self.notify("Nothing to copy", severity="warning")
+            return
         try:
             self.copy_to_clipboard(value)
             self.notify(f"Copied: {value[:60]}")
@@ -1006,7 +1100,8 @@ class StudioTUI(App):
     def action_save_log(self) -> None:
         logs = getattr(UIState, "logs", [])
         if not logs:
-            self.notify("Log is empty", severity="warning"); return
+            self.notify("Log is empty", severity="warning")
+            return
         try:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_dir = _PROJECT_ROOT / "logs"
@@ -1028,8 +1123,10 @@ class StudioTUI(App):
 
     async def action_quit(self) -> None:
         if self._pipeline_active:
+
             def do_quit():
                 self.exit()
+
             self.push_screen(ConfirmModal("A run is active. Quit anyway?", do_quit))
         else:
             self.exit()

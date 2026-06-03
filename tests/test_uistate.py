@@ -15,6 +15,7 @@ from studio_tui_helpers import (
 
 # ── UIState.set_progress ──────────────────────────────────────────────────────
 
+
 def test_set_progress_total_only():
     UIState.set_progress(total=12)
     assert UIState.segment_total == 12
@@ -54,6 +55,7 @@ def test_set_progress_non_castable_raises():
 
 # ── UIState.reset_run ─────────────────────────────────────────────────────────
 
+
 def test_reset_run_zeroes_and_sets_topic():
     UIState.segment_current = 9
     UIState.segment_total = 9
@@ -76,6 +78,7 @@ def test_reset_run_twice_from_dirty_state():
 
 # ── format_elapsed ────────────────────────────────────────────────────────────
 
+
 def test_format_elapsed_not_started():
     assert format_elapsed(0) == "—"
 
@@ -89,6 +92,7 @@ def test_format_elapsed_hours():
 
 
 # ── format_etc ────────────────────────────────────────────────────────────────
+
 
 def test_format_etc_total_zero():
     assert format_etc(time.time(), 0, 0) == "—"
@@ -114,22 +118,27 @@ def test_format_etc_halfway_seconds():
 
 # ── parse_duration ────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("value,expected", [
-    ("0", None),
-    ("-5", None),
-    ("abc", None),
-    ("  15  ", 15),
-    ("99999", None),     # above upper bound 480
-    ("480", 480),        # exactly the cap
-    ("1", 1),
-    (10, 10),
-    (None, None),
-])
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("0", None),
+        ("-5", None),
+        ("abc", None),
+        ("  15  ", 15),
+        ("99999", None),  # above upper bound 480
+        ("480", 480),  # exactly the cap
+        ("1", 1),
+        (10, 10),
+        (None, None),
+    ],
+)
 def test_parse_duration(value, expected):
     assert parse_duration(value) == expected
 
 
 # ── safe_filename ─────────────────────────────────────────────────────────────
+
 
 def test_safe_filename_strips_unsafe():
     assert safe_filename("The Clockmaker's Secret!") == "The_Clockmaker_s_Secret_"
@@ -140,6 +149,7 @@ def test_safe_filename_keeps_safe():
 
 
 # ── vram_high ─────────────────────────────────────────────────────────────────
+
 
 def test_vram_high_above_threshold():
     assert vram_high("4.9/6.0GB (82%)") is True
@@ -155,3 +165,56 @@ def test_vram_high_no_percent():
 
 def test_vram_high_empty():
     assert vram_high("") is False
+
+
+# ── UIState._uistate_log ──────────────────────────────────────────────────────
+
+
+def test_uistate_log_basic():
+    """_uistate_log appends a message to UIState.logs."""
+    UIState.logs = []
+    UIState._uistate_log("Test message one")
+    assert "Test message one" in UIState.logs
+
+
+def test_uistate_log_trims_when_over_maxlen():
+    """_uistate_log trims the oldest 100 entries when log exceeds _log_maxlen."""
+    UIState.logs = [f"old {i}" for i in range(UIState._log_maxlen)]
+    assert len(UIState.logs) == UIState._log_maxlen
+
+    UIState._uistate_log("New message after trim")
+
+    # After trim, 100 oldest dropped, then new message appended
+    assert len(UIState.logs) < UIState._log_maxlen
+    assert "New message after trim" in UIState.logs
+    # 'old 0' through 'old 99' should be gone
+    assert "old 0" not in UIState.logs
+
+
+def test_add_log_basic():
+    """add_log appends a message to UIState.logs."""
+    UIState.logs = []
+    UIState.add_log("Added message")
+    assert "Added message" in UIState.logs
+
+
+def test_add_log_trims_when_over_maxlen():
+    """add_log trims the log list to _log_maxlen when it exceeds the limit."""
+    # Fill to exactly maxlen + 1
+    UIState.logs = [f"entry {i}" for i in range(UIState._log_maxlen + 1)]
+
+    # Trigger the trim path
+    UIState.add_log("trim trigger")
+
+    # Should be trimmed back to at most _log_maxlen
+    assert len(UIState.logs) <= UIState._log_maxlen
+    assert "trim trigger" in UIState.logs
+
+
+def test_uistate_log_multiple_additions():
+    """Multiple calls accumulate in order."""
+    UIState.logs = []
+    UIState._uistate_log("first")
+    UIState._uistate_log("second")
+    UIState._uistate_log("third")
+    assert UIState.logs == ["first", "second", "third"]

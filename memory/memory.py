@@ -46,8 +46,7 @@ class StoryMemory:
             tmp_path = self.memory_file.with_suffix(".tmp")
             try:
                 tmp_path.write_text(
-                    json.dumps(data, indent=2, ensure_ascii=False),
-                    encoding="utf-8"
+                    json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
                 os.replace(tmp_path, self.memory_file)
             except Exception:
@@ -61,12 +60,16 @@ class StoryMemory:
             if topic not in data:
                 data[topic] = {"segments": []}
             # Remove any existing record for this segment to avoid duplicates on resume/retry
-            data[topic]["segments"] = [s for s in data[topic]["segments"] if s.get("segment") != segment]
-            data[topic]["segments"].append({
-                "segment": segment,
-                "script": script,
-                "summary": summary,
-            })
+            data[topic]["segments"] = [
+                s for s in data[topic]["segments"] if s.get("segment") != segment
+            ]
+            data[topic]["segments"].append(
+                {
+                    "segment": segment,
+                    "script": script,
+                    "summary": summary,
+                }
+            )
             self._save_all(data)
             log.info(f"Memory saved: {topic} seg {segment}")
 
@@ -78,9 +81,7 @@ class StoryMemory:
             if not segments:
                 return ""
             recent = segments[-3:]
-            context = "\n".join(
-                f"Segment {s['segment']}: {s['summary']}" for s in recent
-            )
+            context = "\n".join(f"Segment {s['segment']}: {s['summary']}" for s in recent)
             return context
 
     def get_all_entries(self, topic: str) -> list:
@@ -122,14 +123,17 @@ class WorldState:
         open_threads: list - ["Who is the mysterious figure watching from the shadows?", ...]
         resolved_threads: list - ["The village elder's secret has been revealed", ...]
     """
+
     def __init__(self, topic: str, checkpoint_dir: Path):
         self._lock = threading.RLock()
         safe = topic.lower().replace(" ", "_")[:40]
         self._path = checkpoint_dir / f"world_state_{safe}.json"
         self._data: dict = self._load()
-        log.info(f"[WorldState] Loaded from {self._path} - "
-                 f"{len(self._data.get('world_facts', []))} facts, "
-                 f"{len(self._data.get('open_threads', []))} open threads")
+        log.info(
+            f"[WorldState] Loaded from {self._path} - "
+            f"{len(self._data.get('world_facts', []))} facts, "
+            f"{len(self._data.get('open_threads', []))} open threads"
+        )
 
     # -- persistence ----------------------------------------------------------
 
@@ -147,16 +151,17 @@ class WorldState:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = self._path.with_suffix(".tmp")
             tmp_path.write_text(
-                json.dumps(self._data, indent=2, ensure_ascii=False),
-                encoding="utf-8"
+                json.dumps(self._data, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             import os
+
             os.replace(tmp_path, self._path)
 
     # -- update ---------------------------------------------------------------
 
-    def update(self, script: str, plan: dict, force_save: bool = True,
-               config: dict | None = None) -> None:
+    def update(
+        self, script: str, plan: dict, force_save: bool = True, config: dict | None = None
+    ) -> None:
         """Extract and persist world facts from a newly written segment script.
 
         B3: When memory.llm_world_state is true, uses the 3B reviewer LLM for
@@ -164,16 +169,18 @@ class WorldState:
         Set force_save=False to skip redundant saves when resuming from checkpoint.
         """
         import re
+
         with self._lock:
             seg_num = plan.get("seg", 0)
-            mood    = plan.get("mood", "")
-            title   = plan.get("title", "")
+            mood = plan.get("mood", "")
+            title = plan.get("title", "")
 
             # ── B3: LLM-based extraction (Devanagari-aware) ───────────────
             _llm_used = False
             if config and config.get("memory", {}).get("llm_world_state", False):
                 try:
                     from utils.specialized_models import extract_world_state
+
                     _llm_result = extract_world_state(script, config)
                     if _llm_result:
                         # Merge LLM-extracted characters
@@ -199,11 +206,15 @@ class WorldState:
                             if thread and thread not in self._data.get("resolved_threads", []):
                                 self._data.setdefault("resolved_threads", []).append(thread)
                         _llm_used = True
-                        log.debug(f"[B3] WorldState updated via LLM: "
-                                  f"{len(_llm_result.get('characters', []))} chars, "
-                                  f"{len(_llm_result.get('facts', []))} facts")
+                        log.debug(
+                            f"[B3] WorldState updated via LLM: "
+                            f"{len(_llm_result.get('characters', []))} chars, "
+                            f"{len(_llm_result.get('facts', []))} facts"
+                        )
                 except Exception as _b3_err:
-                    log.warning(f"[B3] LLM world-state extraction failed ({_b3_err}), falling back to regex")
+                    log.warning(
+                        f"[B3] LLM world-state extraction failed ({_b3_err}), falling back to regex"
+                    )
 
             if not _llm_used:
                 # ── Regex fallback (original behavior) ────────────────────
@@ -212,13 +223,44 @@ class WorldState:
                 # P3-22: Unicode-aware — also match Devanagari-initial words
                 # (U+0900–U+097F covers the full Devanagari block).
                 char_candidates = re.findall(
-                    r'\b(?:[A-Z][a-z]{2,}|[\u0900-\u097F][\u0900-\u097F\u200C\u200D]{2,})\b',
-                    script
+                    r"\b(?:[A-Z][a-z]{2,}|[\u0900-\u097F][\u0900-\u097F\u200C\u200D]{2,})\b", script
                 )
-                exclusions = {"The", "But", "And", "For", "Yet", "So", "He", "She", "It", "They",
-                              "Then", "When", "While", "Where", "Why", "How", "What",
-                              "Suddenly", "Meanwhile", "Slowly", "Quickly", "This", "That", "There",
-                              "Here", "A", "An", "In", "On", "At", "To", "From", "By", "With"}
+                exclusions = {
+                    "The",
+                    "But",
+                    "And",
+                    "For",
+                    "Yet",
+                    "So",
+                    "He",
+                    "She",
+                    "It",
+                    "They",
+                    "Then",
+                    "When",
+                    "While",
+                    "Where",
+                    "Why",
+                    "How",
+                    "What",
+                    "Suddenly",
+                    "Meanwhile",
+                    "Slowly",
+                    "Quickly",
+                    "This",
+                    "That",
+                    "There",
+                    "Here",
+                    "A",
+                    "An",
+                    "In",
+                    "On",
+                    "At",
+                    "To",
+                    "From",
+                    "By",
+                    "With",
+                }
                 for name in char_candidates:
                     if name not in exclusions:
                         if name not in self._data["characters"]:
@@ -248,7 +290,7 @@ class WorldState:
 
                 # -- 2. Extract world facts -----------------------------------
                 fact_patterns = [
-                    r'[A-Z][^.!?]{0,200}(?:cannot|never|always|must|forbidden|ancient|cursed|sacred|only|mysterious|strange|hidden|secret)[^.!?]{0,100}[.!?]',
+                    r"[A-Z][^.!?]{0,200}(?:cannot|never|always|must|forbidden|ancient|cursed|sacred|only|mysterious|strange|hidden|secret)[^.!?]{0,100}[.!?]",
                 ]
                 new_facts = []
                 for pat in fact_patterns:
@@ -261,7 +303,7 @@ class WorldState:
 
                 # -- 3. Every 5th segment: scan for open threads --------------
                 if seg_num % 5 == 0 and seg_num > 0:
-                    question_sentences = re.findall(r'[A-Z][^.!?]*\?', script)
+                    question_sentences = re.findall(r"[A-Z][^.!?]*\?", script)
                     for q in question_sentences[:2]:
                         q = q.strip()
                         if q and q not in self._data["open_threads"]:
@@ -277,8 +319,10 @@ class WorldState:
 
             if force_save:
                 self._save()
-            log.debug(f"[WorldState] Updated: {len(self._data['world_facts'])} facts, "
-                      f"{len(self._data['open_threads'])} threads")
+            log.debug(
+                f"[WorldState] Updated: {len(self._data['world_facts'])} facts, "
+                f"{len(self._data['open_threads'])} threads"
+            )
 
     # -- prompt injection ------------------------------------------------------
 
@@ -303,10 +347,9 @@ class WorldState:
                     lines.append(f"  ? {t}")
 
             chars = self._data.get("characters", {})
-            active_chars = [
-                name for name, info in chars.items()
-                if info.get("status") == "active"
-            ][:6]
+            active_chars = [name for name, info in chars.items() if info.get("status") == "active"][
+                :6
+            ]
             if active_chars:
                 lines.append(f"Active characters: {', '.join(active_chars)}")
 

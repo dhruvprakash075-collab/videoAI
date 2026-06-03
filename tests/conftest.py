@@ -39,6 +39,8 @@ def reset_uistate():
     UIState.segment_total = 0
     UIState.run_start_ts = 0.0
     UIState.vram_text = ""
+    # A6 additive field
+    UIState.auto_accept = False
     # B2 additive field — degradation ledger (reset so it never bleeds between tests)
     UIState.degradations = []
     yield

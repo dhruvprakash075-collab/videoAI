@@ -8,6 +8,7 @@ Covers:
   - _score: word overlap, edge cases
   - research_topic dispatcher: budget, ordering, disabled, no sources
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -24,6 +25,7 @@ from utils.researcher import (
 
 # ── ResearchItem dataclass ─────────────────────────────────────────────────
 
+
 class TestResearchItem:
     def test_defaults(self):
         item = ResearchItem(title="t", text="x", url="u", source_type="wikipedia")
@@ -35,6 +37,7 @@ class TestResearchItem:
 
 
 # ── _score ──────────────────────────────────────────────────────────────────
+
 
 class TestScore:
     def test_no_query_words(self):
@@ -56,6 +59,7 @@ class TestScore:
 
 # ── _fetch_wikipedia_rest ───────────────────────────────────────────────────
 
+
 def _requests_mock(json_data, status_code=200, raise_exc=False):
     mock = MagicMock()
     mock.status_code = status_code
@@ -67,19 +71,26 @@ def _requests_mock(json_data, status_code=200, raise_exc=False):
 
 class TestFetchWikipedia:
     def test_returns_items(self):
-        search_resp = _requests_mock([
-            "query",
-            ["Amazon River", "Amazon rainforest"],
-            ["", ""],
-            ["https://en.wikipedia.org/wiki/Amazon_River", "https://en.wikipedia.org/wiki/Amazon_rainforest"],
-        ])
+        search_resp = _requests_mock(
+            [
+                "query",
+                ["Amazon River", "Amazon rainforest"],
+                ["", ""],
+                [
+                    "https://en.wikipedia.org/wiki/Amazon_River",
+                    "https://en.wikipedia.org/wiki/Amazon_rainforest",
+                ],
+            ]
+        )
         summary_data = {
             "extract": "The Amazon River is the largest river by discharge.",
             "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}},
         }
         summary_resp = _requests_mock(summary_data)
         config = {"research": {"user_agent": "TestAgent", "timeout_s": 5, "per_source_limit": 3}}
-        with patch("requests.get", side_effect=[search_resp, summary_resp, summary_resp]) as mock_get:
+        with patch(
+            "requests.get", side_effect=[search_resp, summary_resp, summary_resp]
+        ) as mock_get:
             items = _fetch_wikipedia_rest("amazon", config)
         assert len(items) == 2
         assert items[0].title == "Amazon River"
@@ -102,9 +113,9 @@ class TestFetchWikipedia:
             assert _fetch_wikipedia_rest("amazon", config) == []
 
     def test_summary_failure_skipped(self):
-        search_resp = _requests_mock([
-            "q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]
-        ])
+        search_resp = _requests_mock(
+            ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
+        )
         bad_summary = MagicMock()
         bad_summary.raise_for_status.side_effect = Exception("404")
         config = {"research": {"timeout_s": 5, "per_source_limit": 3}}
@@ -113,9 +124,9 @@ class TestFetchWikipedia:
         assert items == []
 
     def test_empty_text_skipped(self):
-        search_resp = _requests_mock([
-            "q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]
-        ])
+        search_resp = _requests_mock(
+            ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
+        )
         summary_resp = _requests_mock({"extract": ""})
         config = {"research": {"timeout_s": 5, "per_source_limit": 3}}
         with patch("requests.get", side_effect=[search_resp, summary_resp]):
@@ -124,14 +135,20 @@ class TestFetchWikipedia:
 
 # ── _fetch_wikimedia_rest ───────────────────────────────────────────────────
 
+
 class TestFetchWikimedia:
     def test_returns_items(self):
-        resp = _requests_mock([
-            "amazon",
-            ["Amazon River", "Amazon basin"],
-            ["", ""],
-            ["https://en.wikipedia.org/wiki/Amazon_River", "https://en.wikipedia.org/wiki/Amazon_basin"],
-        ])
+        resp = _requests_mock(
+            [
+                "amazon",
+                ["Amazon River", "Amazon basin"],
+                ["", ""],
+                [
+                    "https://en.wikipedia.org/wiki/Amazon_River",
+                    "https://en.wikipedia.org/wiki/Amazon_basin",
+                ],
+            ]
+        )
         config = {"research": {"user_agent": "TestAgent", "timeout_s": 5, "per_source_limit": 3}}
         with patch("requests.get", return_value=resp):
             items = _fetch_wikimedia_rest("amazon", config)
@@ -157,6 +174,7 @@ class TestFetchWikimedia:
 
 # ── _fetch_rss ──────────────────────────────────────────────────────────────
 
+
 class FakeFeedEntry:
     def __init__(self, title, summary, link):
         self.title = title
@@ -174,9 +192,15 @@ class FakeFeed:
 class TestFetchRss:
     def test_returns_matching_items(self):
         entries = [
-            FakeFeedEntry("Amazon discovery", "The Amazon river is huge", "https://news.example.com/a1"),
-            FakeFeedEntry("Unrelated topic", "Nothing to do with query", "https://news.example.com/u1"),
-            FakeFeedEntry("Amazon drought", "Drought in Amazon basin", "https://news.example.com/a2"),
+            FakeFeedEntry(
+                "Amazon discovery", "The Amazon river is huge", "https://news.example.com/a1"
+            ),
+            FakeFeedEntry(
+                "Unrelated topic", "Nothing to do with query", "https://news.example.com/u1"
+            ),
+            FakeFeedEntry(
+                "Amazon drought", "Drought in Amazon basin", "https://news.example.com/a2"
+            ),
         ]
         fake_feedparser = MagicMock()
         fake_feedparser.parse.return_value = FakeFeed(entries)
@@ -231,6 +255,7 @@ class TestFetchRss:
 
 # ── research_topic dispatcher ──────────────────────────────────────────────
 
+
 class TestResearchTopic:
     def test_empty_query_returns_empty(self):
         assert research_topic("", {}) == []
@@ -246,7 +271,10 @@ class TestResearchTopic:
 
     def test_single_source_exhausts_budget(self):
         wiki_data = ["q", ["Amazon River"], [""], ["https://en.wikipedia.org/wiki/Amazon_River"]]
-        wiki_summary = {"extract": "Amazon river", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}}}
+        wiki_summary = {
+            "extract": "Amazon river",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}},
+        }
         search_resp = _requests_mock(wiki_data)
         summary_resp = _requests_mock(wiki_summary)
         config = {
@@ -266,13 +294,18 @@ class TestResearchTopic:
 
     def test_budget_limits_source_count(self):
         wiki_data = ["q", ["Amazon River"], [""], ["https://en.wikipedia.org/wiki/Amazon_River"]]
-        wiki_summary = {"extract": "Amazon river text", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}}}
+        wiki_summary = {
+            "extract": "Amazon river text",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}},
+        }
         wiki_search = _requests_mock(wiki_data)
         wiki_summary_resp = _requests_mock(wiki_summary)
         wm_data = ["q", ["Amazon basin"], [""], ["https://en.wikipedia.org/wiki/Amazon_basin"]]
         wm_resp = _requests_mock(wm_data)
         fake_fdp = MagicMock()
-        fake_fdp.parse.return_value = FakeFeed([FakeFeedEntry("Amazon news", "Amazon story", "https://x.example.com/a")])
+        fake_fdp.parse.return_value = FakeFeed(
+            [FakeFeedEntry("Amazon news", "Amazon story", "https://x.example.com/a")]
+        )
         config = {
             "research": {
                 "enabled": True,
@@ -284,8 +317,12 @@ class TestResearchTopic:
                 "user_agent": "TestAgent",
             }
         }
-        with patch("requests.get", side_effect=[wiki_search, wiki_summary_resp, wm_resp]) as mock_get, \
-             patch.dict("sys.modules", {"feedparser": fake_fdp}):
+        with (
+            patch(
+                "requests.get", side_effect=[wiki_search, wiki_summary_resp, wm_resp]
+            ) as mock_get,
+            patch.dict("sys.modules", {"feedparser": fake_fdp}),
+        ):
             items = research_topic("amazon", config)
         assert mock_get.call_count == 3
         wiki_titles = [it for it in items if it.source_type == "wikipedia"]
@@ -300,9 +337,9 @@ class TestResearchTopic:
             "extract": "Amazon Amazon Amazon river water",
             "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon"}},
         }
-        wiki_search = _requests_mock([
-            "q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]
-        ])
+        wiki_search = _requests_mock(
+            ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
+        )
         wiki_summary_resp = _requests_mock(wiki_summary_high)
         wm_data = ["q", ["Other thing"], [""], ["https://en.wikipedia.org/wiki/Other"]]
         wm_resp = _requests_mock(wm_data)
@@ -322,7 +359,10 @@ class TestResearchTopic:
 
     def test_dedup_by_url(self):
         wiki_data = ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
-        wiki_summary = {"extract": "Amazon river", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon"}}}
+        wiki_summary = {
+            "extract": "Amazon river",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon"}},
+        }
         wiki_search = _requests_mock(wiki_data)
         wiki_summary_resp = _requests_mock(wiki_summary)
         wm_data = ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
@@ -342,7 +382,10 @@ class TestResearchTopic:
 
     def test_source_failure_isolated(self):
         wiki_data = ["q", ["Amazon"], [""], ["https://en.wikipedia.org/wiki/Amazon"]]
-        wiki_summary = {"extract": "Amazon river text", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon"}}}
+        wiki_summary = {
+            "extract": "Amazon river text",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon"}},
+        }
         wiki_search = _requests_mock(wiki_data)
         wiki_summary_resp = _requests_mock(wiki_summary)
         config = {
@@ -354,7 +397,9 @@ class TestResearchTopic:
                 "per_source_limit": 3,
             }
         }
-        with patch("requests.get", side_effect=[wiki_search, wiki_summary_resp, Exception("WM down")]):
+        with patch(
+            "requests.get", side_effect=[wiki_search, wiki_summary_resp, Exception("WM down")]
+        ):
             items = research_topic("amazon", config)
         assert len(items) == 1
         assert items[0].source_type == "wikipedia"
@@ -378,9 +423,20 @@ class TestResearchTopic:
 
     def test_user_agent_default(self):
         from contextlib import suppress
+
         with patch("requests.get", side_effect=Exception("boom")) as mock_get:
             with suppress(Exception):
-                research_topic("amazon", {"research": {"enabled": True, "sources": ["wikimedia"], "budget": 1, "per_source_limit": 1}})
+                research_topic(
+                    "amazon",
+                    {
+                        "research": {
+                            "enabled": True,
+                            "sources": ["wikimedia"],
+                            "budget": 1,
+                            "per_source_limit": 1,
+                        }
+                    },
+                )
         assert mock_get.called
         call_kwargs = mock_get.call_args.kwargs
         assert call_kwargs.get("headers", {}).get("User-Agent") == DEFAULT_USER_AGENT
@@ -388,17 +444,36 @@ class TestResearchTopic:
 
 # ── End-to-end smoke ────────────────────────────────────────────────────────
 
+
 class TestEndToEnd:
     def test_full_flow_with_mocks(self):
-        wiki_data = ["q", ["Amazon River", "Amazon basin"], [""], ["https://en.wikipedia.org/wiki/Amazon_River", "https://en.wikipedia.org/wiki/Amazon_basin"]]
-        wiki_summary_1 = {"extract": "The Amazon River flows through South America.", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}}}
-        wiki_summary_2 = {"extract": "The Amazon basin is the largest drainage basin.", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_basin"}}}
+        wiki_data = [
+            "q",
+            ["Amazon River", "Amazon basin"],
+            [""],
+            [
+                "https://en.wikipedia.org/wiki/Amazon_River",
+                "https://en.wikipedia.org/wiki/Amazon_basin",
+            ],
+        ]
+        wiki_summary_1 = {
+            "extract": "The Amazon River flows through South America.",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_River"}},
+        }
+        wiki_summary_2 = {
+            "extract": "The Amazon basin is the largest drainage basin.",
+            "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Amazon_basin"}},
+        }
         wiki_search = _requests_mock(wiki_data)
         wiki_summary_resp_1 = _requests_mock(wiki_summary_1)
         wiki_summary_resp_2 = _requests_mock(wiki_summary_2)
         wm_data = ["q", ["Amazon (novel)"], [""], ["https://en.wikipedia.org/wiki/Amazon_(novel)"]]
         wm_resp = _requests_mock(wm_data)
-        rss_entries = [FakeFeedEntry("Amazon expedition", "Scientists explore the Amazon", "https://news.example.com/exp")]
+        rss_entries = [
+            FakeFeedEntry(
+                "Amazon expedition", "Scientists explore the Amazon", "https://news.example.com/exp"
+            )
+        ]
         fake_fdp = MagicMock()
         fake_fdp.parse.return_value = FakeFeed(rss_entries)
         config = {
@@ -412,8 +487,13 @@ class TestEndToEnd:
                 "user_agent": "VideoAI-Test",
             }
         }
-        with patch("requests.get", side_effect=[wiki_search, wiki_summary_resp_1, wiki_summary_resp_2, wm_resp]) as mock_get, \
-             patch.dict("sys.modules", {"feedparser": fake_fdp}):
+        with (
+            patch(
+                "requests.get",
+                side_effect=[wiki_search, wiki_summary_resp_1, wiki_summary_resp_2, wm_resp],
+            ) as mock_get,
+            patch.dict("sys.modules", {"feedparser": fake_fdp}),
+        ):
             items = research_topic("amazon", config)
         assert len(items) == 4
         assert mock_get.call_count == 4

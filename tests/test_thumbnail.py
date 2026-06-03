@@ -1,4 +1,5 @@
 """test_thumbnail.py - Tests for D3: thumbnail generation."""
+
 import sys
 from pathlib import Path
 
@@ -26,11 +27,24 @@ def test_thumbnail_path_in_manifest(tmp_path):
     thumbnail_path = None
     if config.get("video", {}).get("generate_thumbnail", False):
         import subprocess as _sp
+
         with patch("subprocess.run", side_effect=fake_subprocess_run):
             _sp.run(
-                ["ffmpeg", "-y", "-i", str(final_video), "-ss", "0", "-vframes", "1",
-                 "-vf", "scale=1280:720", str(thumb_out)],
-                capture_output=True, timeout=60
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(final_video),
+                    "-ss",
+                    "0",
+                    "-vframes",
+                    "1",
+                    "-vf",
+                    "scale=1280:720",
+                    str(thumb_out),
+                ],
+                capture_output=True,
+                timeout=60,
             )
         if thumb_out.exists():
             thumbnail_path = str(thumb_out)
@@ -60,7 +74,7 @@ def test_thumbnail_hero_frame_selection(tmp_path):
     images_dir = tmp_path / "images"
     images_dir.mkdir()
     for i in range(3):
-        (images_dir / f"scene_{i+1:02d}_abc.png").write_bytes(b"fake_img")
+        (images_dir / f"scene_{i + 1:02d}_abc.png").write_bytes(b"fake_img")
 
     images = sorted(images_dir.glob("*.png"))
     hero = images[0] if images else None

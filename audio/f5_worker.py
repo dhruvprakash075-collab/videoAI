@@ -29,11 +29,13 @@ from pathlib import Path
 def _maybe_align(wav_path: str) -> str | None:
     try:
         from config import load_config
+
         cfg = load_config()
         align = cfg.get("tts", {}).get("alignment", {})
         if not align.get("enabled", True):
             return None
         from audio.tts_alignment import align_audio
+
         result = align_audio(
             Path(wav_path),
             model_name=align.get("model", "base"),
@@ -43,6 +45,7 @@ def _maybe_align(wav_path: str) -> str | None:
         return str(result) if result else None
     except Exception:
         return None
+
 
 # Quiet HF progress bars in worker subprocess
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -78,17 +81,24 @@ def _install_torchaudio_soundfile_patch():
         import torch
         import torchaudio
 
-        def _sf_load(filepath, frame_offset=0, num_frames=-1, normalize=True,
-                     channels_first=True, *args, **kwargs):
+        def _sf_load(
+            filepath,
+            frame_offset=0,
+            num_frames=-1,
+            normalize=True,
+            channels_first=True,
+            *args,
+            **kwargs,
+        ):
             # soundfile gives [T, C]; honor torchaudio's load() contract.
             data, sr = sf.read(str(filepath), dtype="float32", always_2d=True)
             if frame_offset:
-                data = data[int(frame_offset):]
+                data = data[int(frame_offset) :]
             if num_frames is not None and num_frames > 0:
-                data = data[:int(num_frames)]
+                data = data[: int(num_frames)]
             tensor = torch.from_numpy(data.copy())  # [T, C]
             if channels_first:
-                tensor = tensor.T.contiguous()       # [C, T]
+                tensor = tensor.T.contiguous()  # [C, T]
             return tensor, sr
 
         torchaudio.load = _sf_load
@@ -195,9 +205,11 @@ def _detect_dit_config(ckpt_file: str) -> dict:
     base = {"dim": 1024, "depth": 22, "heads": 16, "ff_mult": 2, "text_dim": 512, "conv_layers": 4}
     try:
         import torch
+
         sd = None
         if ckpt_file.endswith(".safetensors"):
             from safetensors.torch import load_file
+
             sd = load_file(ckpt_file)
         else:
             obj = torch.load(ckpt_file, map_location="cpu", weights_only=False)
@@ -237,15 +249,29 @@ def _detect_dit_config(ckpt_file: str) -> dict:
         # heads: standard F5 uses dim/64 heads (1024->16, 768->12)
         heads = max(1, dim // 64)
 
-        return {"dim": dim, "depth": depth, "heads": heads, "ff_mult": 2,
-                    "text_dim": 512, "conv_layers": 4}
+        return {
+            "dim": dim,
+            "depth": depth,
+            "heads": heads,
+            "ff_mult": 2,
+            "text_dim": 512,
+            "conv_layers": 4,
+        }
     except Exception:
         return base
 
 
-def _synthesize(model, vocoder, device, text: str, output: str,
-                voice_sample: str = "", ref_text: str = "",
-                nfe_step: int = 16, speed: float = 1.0) -> str:
+def _synthesize(
+    model,
+    vocoder,
+    device,
+    text: str,
+    output: str,
+    voice_sample: str = "",
+    ref_text: str = "",
+    nfe_step: int = 16,
+    speed: float = 1.0,
+) -> str:
     """Generate one audio file using F5-TTS. Returns output path (str)."""
     import soundfile as sf
     from f5_tts.infer.utils_infer import infer_process, preprocess_ref_audio_text
@@ -272,6 +298,7 @@ def _synthesize(model, vocoder, device, text: str, output: str,
     else:
         # No reference — use a silent 1s clip (generic voice, no cloning)
         import numpy as np
+
         _sr = 24000
         _silence = np.zeros(int(_sr * 1.0), dtype=np.float32)
         _tmp = str(out_path.with_suffix(".ref_tmp.wav"))
@@ -330,7 +357,9 @@ def _run_persistent(model_path: str):
             if not text and req.get("text_file"):
                 text = Path(req["text_file"]).read_text(encoding="utf-8").strip()
             wav = _synthesize(
-                model, vocoder, device,
+                model,
+                vocoder,
+                device,
                 text=text,
                 output=req.get("output", "tts_output"),
                 voice_sample=req.get("voice_sample", ""),
@@ -339,7 +368,12 @@ def _run_persistent(model_path: str):
                 speed=float(req.get("speed", 1.0)),
             )
             word_timestamps = _maybe_align(wav)
-            print(json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}), flush=True)
+            print(
+                json.dumps(
+                    {"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}
+                ),
+                flush=True,
+            )
         except Exception as e:
             print(json.dumps({"status": "error", "message": str(e)}), flush=True)
 
@@ -351,7 +385,9 @@ def _run_oneshot(args):
         resolved_path = _resolve_model_path(args.model_path)
         model, vocoder, device = _load_model(resolved_path)
         wav = _synthesize(
-            model, vocoder, device,
+            model,
+            vocoder,
+            device,
             text=text,
             output=args.output,
             voice_sample=args.voice_sample,
@@ -360,7 +396,9 @@ def _run_oneshot(args):
             speed=args.speed,
         )
         word_timestamps = _maybe_align(wav)
-        print(json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps}))
+        print(
+            json.dumps({"status": "success", "wav_path": wav, "word_timestamps": word_timestamps})
+        )
         sys.exit(0)
     except Exception as e:
         print(json.dumps({"status": "error", "message": str(e)}))
@@ -369,19 +407,31 @@ def _run_oneshot(args):
 
 def main():
     parser = argparse.ArgumentParser(description="F5-TTS worker")
-    parser.add_argument("--serve", action="store_true",
-                        help="Persistent mode: load model once, serve stdin JSON requests")
-    parser.add_argument("--model-path", dest="model_path",
-                        default="hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main",
-                        help="Path to F5-TTS model directory")
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Persistent mode: load model once, serve stdin JSON requests",
+    )
+    parser.add_argument(
+        "--model-path",
+        dest="model_path",
+        default="hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/main",
+        help="Path to F5-TTS model directory",
+    )
     parser.add_argument("--text-file", dest="text_file")
     parser.add_argument("--output", default="tts_output")
-    parser.add_argument("--voice-sample", dest="voice_sample", default="",
-                        help="Reference audio for voice cloning")
-    parser.add_argument("--ref-text", dest="ref_text", default="",
-                        help="Transcript of reference clip (skips ASR, saves VRAM)")
-    parser.add_argument("--nfe-step", dest="nfe_step", type=int, default=16,
-                        help="Denoising steps (lower = faster)")
+    parser.add_argument(
+        "--voice-sample", dest="voice_sample", default="", help="Reference audio for voice cloning"
+    )
+    parser.add_argument(
+        "--ref-text",
+        dest="ref_text",
+        default="",
+        help="Transcript of reference clip (skips ASR, saves VRAM)",
+    )
+    parser.add_argument(
+        "--nfe-step", dest="nfe_step", type=int, default=16, help="Denoising steps (lower = faster)"
+    )
     parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
 
@@ -389,8 +439,14 @@ def main():
         _run_persistent(args.model_path)
     else:
         if not args.text_file or not args.output:
-            print(json.dumps({"status": "error",
-                              "message": "one-shot mode requires --text-file and --output"}))
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "one-shot mode requires --text-file and --output",
+                    }
+                )
+            )
             sys.exit(1)
         _run_oneshot(args)
 

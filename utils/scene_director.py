@@ -18,23 +18,21 @@ _CAMERA_MOVES = {
 
 # Curated base negative prompts per mood (fallback when Ollama is unavailable)
 _MOOD_NEGATIVE_PROMPTS = {
-    "action":     "blurry, soft focus, pastel colors, chibi, deformed hands, static pose, peaceful, serene, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
-    "horror":     "bright sunny day, cheerful, colorful, smiling, happy, cute, kawaii, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "action": "blurry, soft focus, pastel colors, chibi, deformed hands, static pose, peaceful, serene, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "horror": "bright sunny day, cheerful, colorful, smiling, happy, cute, kawaii, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
     "mysterious": "overexposed, flat lighting, mundane, ordinary, cheerful, bright, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
-    "dramatic":   "bland, flat, boring composition, symmetrical, unlit, low contrast, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
-    "calm":       "violent, dark, gory, intense, war, battle, explosion, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
-    "epic":       "mundane, ordinary, small scale, cramped, indoor only, claustrophobic, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
-    "intimate":   "crowd, wide angle, empty space, distant, impersonal, cold lighting, "
-                  "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "dramatic": "bland, flat, boring composition, symmetrical, unlit, low contrast, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "calm": "violent, dark, gory, intense, war, battle, explosion, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "epic": "mundane, ordinary, small scale, cramped, indoor only, claustrophobic, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
+    "intimate": "crowd, wide angle, empty space, distant, impersonal, cold lighting, "
+    "photorealistic, 3d render, lowres, bad anatomy, watermark",
 }
-
-_OLLAMA_PING_TIMEOUT = 3  # seconds (kept for backward compat; no longer used)
 
 
 def _cap_tokens(text: str, max_tokens: int = 65) -> str:
@@ -91,7 +89,9 @@ def get_dynamic_negative_prompt(mood: str, script: str, config: dict) -> str:
     return capped
 
 
-def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | None = None) -> tuple[str, str]:
+def enrich_prompts(
+    raw_prompts: str, script: str, config: dict, plan: dict | None = None
+) -> tuple[str, str]:
     """Add camera directions and visual style to raw image prompts.
 
     Also generates a dynamic, contextually relevant negative prompt via
@@ -127,7 +127,9 @@ def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | Non
         _elements = style.get("elements", [])
         style = f"{_tone}, {', '.join(_elements)}" if _elements else (_tone or "Gothic Horror")
 
-    is_anime_style = any(kw in style.lower() for kw in ["anime", "2d", "webtoon", "visual novel", "manga", "drawing"])
+    is_anime_style = any(
+        kw in style.lower() for kw in ["anime", "2d", "webtoon", "visual novel", "manga", "drawing"]
+    )
 
     if plan is None:
         plan = {}
@@ -162,8 +164,8 @@ def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | Non
         # B4: read token budget from config (falls back to safe defaults)
         _tb = config.get("image_gen", {}).get("token_budget", {})
         _identity_budget = int(_tb.get("identity", 25))
-        _style_budget    = int(_tb.get("style", 20))
-        _scene_budget    = int(_tb.get("scene", 32))
+        _style_budget = int(_tb.get("style", 20))
+        _scene_budget = int(_tb.get("scene", 32))
         # Total budget = identity + style + scene, capped at 70 to leave 7-token headroom.
         # assemble_prompt* internally allocate identity/scene/style shares from this.
         _total_budget = min(70, _identity_budget + _style_budget + _scene_budget)
@@ -176,7 +178,7 @@ def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | Non
                 pattern = re.compile(re.escape(desc), re.IGNORECASE)
                 prompt = pattern.sub("grand scenery", prompt)
             for name in char_names:
-                pattern = re.compile(r'\b' + re.escape(name) + r'\b', re.IGNORECASE)
+                pattern = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
                 prompt = pattern.sub("empty landscape", prompt)
         elif max_weight < 0.7:
             move = f"medium shot, character in environment, {camera}"
@@ -191,7 +193,7 @@ def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | Non
                     name = c_data.get("name", "")
                     # P1-12 fix: skip stop-words/articles; use full name with word-boundary regex only
                     if name and name.lower() not in _STOP_WORDS and len(name) > 3:
-                        pattern = re.compile(r'\b' + re.escape(name) + r'\b', re.IGNORECASE)
+                        pattern = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
                         prompt = pattern.sub("someone", prompt)
 
         # Vary camera slightly for first/last frames if no presence map was provided (backward compatibility)
@@ -299,8 +301,9 @@ def enrich_prompts(raw_prompts: str, script: str, config: dict, plan: dict | Non
     return result, neg_prompt
 
 
-def assemble_prompt_multi(identity_list: list, scene_tokens: str,
-                          style_tokens: str, budget: int = 70) -> str:
+def assemble_prompt_multi(
+    identity_list: list, scene_tokens: str, style_tokens: str, budget: int = 70
+) -> str:
     """Build a CLIP-safe prompt supporting MULTIPLE characters in interaction scenes.
 
     When a frame has 2-3 characters with cw >= 0.3, all their identity tokens must
@@ -317,6 +320,7 @@ def assemble_prompt_multi(identity_list: list, scene_tokens: str,
     Returns:
         A single comma-separated prompt string within the token budget.
     """
+
     def _count(text: str) -> int:
         """Fast word-based token approximation (1 word ≈ 1.3 tokens)."""
         return max(1, int(len(text.split()) * 1.3)) if text.strip() else 0
@@ -382,7 +386,7 @@ def assemble_prompt_multi(identity_list: list, scene_tokens: str,
         else:
             words = scene_tokens.split()
             remaining = max(0, budget - used)
-            trimmed = " ".join(words[:int(remaining / 1.3)])
+            trimmed = " ".join(words[: int(remaining / 1.3)])
             if trimmed:
                 parts.append(trimmed)
                 used += _count(trimmed)
@@ -406,8 +410,9 @@ def assemble_prompt_multi(identity_list: list, scene_tokens: str,
     return ", ".join(p for p in parts if p)
 
 
-def assemble_prompt(identity_tokens: str, scene_tokens: str,
-                    style_tokens: str, budget: int = 70) -> str:
+def assemble_prompt(
+    identity_tokens: str, scene_tokens: str, style_tokens: str, budget: int = 70
+) -> str:
     """Build a CLIP-safe prompt with identity tokens first (B4 fix).
 
     Places character identity tokens at the start so they survive the ~77-token
@@ -424,6 +429,7 @@ def assemble_prompt(identity_tokens: str, scene_tokens: str,
     Returns:
         A single comma-separated prompt string within the token budget.
     """
+
     def _count(text: str) -> int:
         """Fast word-based token approximation (1 word ≈ 1.3 tokens)."""
         return max(1, int(len(text.split()) * 1.3)) if text.strip() else 0
@@ -460,7 +466,7 @@ def assemble_prompt(identity_tokens: str, scene_tokens: str,
             # Trim scene tokens to fit
             words = scene_tokens.split()
             remaining = max(0, budget - used)
-            trimmed = " ".join(words[:int(remaining / 1.3)])
+            trimmed = " ".join(words[: int(remaining / 1.3)])
             if trimmed:
                 parts.append(trimmed)
                 used += _count(trimmed)
@@ -490,25 +496,59 @@ def _detect_mood(script: str) -> str:
     script_lower = script.lower()
 
     mood_keywords = {
-        "horror": ["dark", "shadow", "fear", "terror", "nightmare", "monster",
-                   "scream", "blood", "death", "haunt", "ghost"],
-        "action": ["battle", "fight", "chase", "explosion", "attack", "rush",
-                   "charge", "strike", "pursue"],
-        "mysterious": ["mystery", "unknown", "secret", "strange", "puzzle",
-                       "enigma", "curious", "unseen"],
-        "dramatic": ["reveal", "betrayal", "discover", "confront", "intense",
-                     "powerful", "transform"],
-        "calm": ["peace", "quiet", "serene", "gentle", "soft", "warm",
-                 "tranquil", "still"],
-        "epic": ["legend", "destiny", "ancient", "prophecy", "epic",
-                 "mighty", "vast", "eternal"],
-        "intimate": ["whisper", "embrace", "touch", "close", "personal",
-                     "private", "gentle"],
+        "horror": [
+            "dark",
+            "shadow",
+            "fear",
+            "terror",
+            "nightmare",
+            "monster",
+            "scream",
+            "blood",
+            "death",
+            "haunt",
+            "ghost",
+        ],
+        "action": [
+            "battle",
+            "fight",
+            "chase",
+            "explosion",
+            "attack",
+            "rush",
+            "charge",
+            "strike",
+            "pursue",
+        ],
+        "mysterious": [
+            "mystery",
+            "unknown",
+            "secret",
+            "strange",
+            "puzzle",
+            "enigma",
+            "curious",
+            "unseen",
+        ],
+        "dramatic": [
+            "reveal",
+            "betrayal",
+            "discover",
+            "confront",
+            "intense",
+            "powerful",
+            "transform",
+        ],
+        "calm": ["peace", "quiet", "serene", "gentle", "soft", "warm", "tranquil", "still"],
+        "epic": ["legend", "destiny", "ancient", "prophecy", "epic", "mighty", "vast", "eternal"],
+        "intimate": ["whisper", "embrace", "touch", "close", "personal", "private", "gentle"],
     }
 
     scores = {}
     for mood, keywords in mood_keywords.items():
-        scores[mood] = sum(1 for kw in keywords if re.search(r'\b' + re.escape(kw) + r'\b', script_lower))
+        scores[mood] = sum(
+            1 for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", script_lower)
+        )
 
     if not scores or max(scores.values()) == 0:
         return "mysterious"

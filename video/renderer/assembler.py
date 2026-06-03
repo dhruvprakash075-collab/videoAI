@@ -17,6 +17,7 @@ _whisper_backend = None  # "faster" or "openai"
 # Thread lock to serialize access to the shared cleanup manifest JSON file
 _manifest_lock = threading.Lock()
 
+
 def _get_whisper_model(is_final: bool = False):
     """Load whisper model. Prefers faster-whisper (CTranslate2, 4-8x faster), falls back to openai-whisper.
 
@@ -31,6 +32,7 @@ def _get_whisper_model(is_final: bool = False):
         if _whisper_model is None:
             try:
                 from config import load_config
+
                 cfg = load_config()
                 perf = cfg.get("performance", {})
                 if is_final:
@@ -41,6 +43,7 @@ def _get_whisper_model(is_final: bool = False):
                 else:
                     model_name = perf.get("whisper_model", "tiny")
                     import torch as _torch
+
                     _device = "cuda" if _torch.cuda.is_available() else "cpu"
                     _compute = "float16" if _device == "cuda" else "int8"
             except Exception:
@@ -51,13 +54,17 @@ def _get_whisper_model(is_final: bool = False):
             # Try faster-whisper first (CTranslate2 — 4-8x faster, GPU FP16)
             try:
                 from faster_whisper import WhisperModel as FasterWhisperModel
-                _whisper_model = FasterWhisperModel(model_name, device=_device, compute_type=_compute)
+
+                _whisper_model = FasterWhisperModel(
+                    model_name, device=_device, compute_type=_compute
+                )
                 _whisper_backend = "faster"
                 log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
             except Exception as e:
                 log.warning(f"faster-whisper failed ({e}), falling back to openai-whisper")
                 try:
                     import whisper
+
                     _whisper_model = whisper.load_model(model_name)
                     _whisper_backend = "openai"
                     log.info(f"Whisper: openai-whisper ({model_name})")
@@ -79,6 +86,7 @@ _whisper_lock = threading.Lock()
 
 _cached_codec = None
 
+
 def _get_video_codec() -> list:
     """Return GPU encoder if available, fall back to CPU libx264. Cached after first call."""
     global _cached_codec
@@ -88,18 +96,42 @@ def _get_video_codec() -> list:
         try:
             # Check for NVIDIA NVENC
             result = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-encoders"],
-                capture_output=True, text=True, timeout=5
+                ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=5
             )
             if "h264_nvenc" in result.stdout:
                 log.debug("Hardware acceleration: h264_nvenc detected")
-                _cached_codec = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19",
-                                 "-spatial-aq", "1", "-temporal-aq", "1", "-pix_fmt", "yuv420p"]
+                _cached_codec = [
+                    "-c:v",
+                    "h264_nvenc",
+                    "-preset",
+                    "p5",
+                    "-rc",
+                    "vbr",
+                    "-cq",
+                    "19",
+                    "-spatial-aq",
+                    "1",
+                    "-temporal-aq",
+                    "1",
+                    "-pix_fmt",
+                    "yuv420p",
+                ]
                 return _cached_codec
             log.warning("h264_nvenc not found -- falling back to libx264")
         except Exception:
             log.warning("FFmpeg check failed -- falling back to libx264")
-    _cached_codec = ["-threads", "0", "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p"]
+    _cached_codec = [
+        "-threads",
+        "0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+    ]
     return _cached_codec
 
 
@@ -116,27 +148,47 @@ def _encoder_args(config: dict) -> list:
     preset = config.get("video", {}).get("encoder_preset", "p5")
     bitrate = config.get("video", {}).get("video_bitrate", "8M")
     if enc == "h264_nvenc":
-        args = ["-c:v", "h264_nvenc", "-preset", preset, "-b:v", bitrate,
-                "-rc", "vbr", "-cq", "19", "-pix_fmt", "yuv420p"]
+        args = [
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            preset,
+            "-b:v",
+            bitrate,
+            "-rc",
+            "vbr",
+            "-cq",
+            "19",
+            "-pix_fmt",
+            "yuv420p",
+        ]
         # Parse Ada NVENC quality flags from config
         extra = config.get("video", {}).get("encoder_extra", "")
         if extra:
             import shlex
+
             args.extend(shlex.split(extra))
         return args
     return _get_video_codec()
 
 
-def create_segment_mp4(seg_num: int, audio: Path, script: str,
-                       out_dir: Path, config: dict, images: list | None = None,
-                       word_timestamps_json: Path | None = None,
-                       is_final: bool = True) -> Path:
+def create_segment_mp4(
+    seg_num: int,
+    audio: Path,
+    script: str,
+    out_dir: Path,
+    config: dict,
+    images: list | None = None,
+    word_timestamps_json: Path | None = None,
+    is_final: bool = True,
+) -> Path:
     import shutil
+
     out_dir.mkdir(parents=True, exist_ok=True)
     mp4 = out_dir / f"segment_{seg_num:02d}.mp4"
     srt = out_dir / f"segment_{seg_num:02d}.srt"
 
-    duration    = get_audio_duration(audio)
+    duration = get_audio_duration(audio)
 
     # Write to a flat safe temporary path to bypass FFmpeg's single-quote escaping issues on Windows
     # Use UUID to prevent cross-contamination between concurrent pipeline runs
@@ -172,17 +224,26 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
         else:
             ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=2,Shadow=1,Alignment=2"
 
-        _write_srt(script, temp_srt, duration, audio=audio, format_style=format_style,
-                   word_timestamps_json=word_timestamps_json, is_final=is_final)
-        res         = config["video"].get("resolution", "1920x1080")
-        fps         = config["video"].get("fps", 24)
+        _sub_lang = sub_cfg.get("language", "en")
+        _write_srt(
+            script,
+            temp_srt,
+            duration,
+            audio=audio,
+            format_style=format_style,
+            word_timestamps_json=word_timestamps_json,
+            is_final=is_final,
+            subtitle_language=_sub_lang,
+        )
+        res = config["video"].get("resolution", "1920x1080")
+        fps = config["video"].get("fps", 24)
         # Bug 6: Escape paths for FFmpeg filtergraph on Windows correctly
         # Escape backslashes, colons (FFmpeg filter separator), and single quotes for filtergraph
         srt_path_str = str(temp_srt).replace("\\", "/").replace(":", "\\\\:").replace("'", "\\\\'")
         log.info(f"Seg {seg_num}: {duration:.1f}s | images={len(images) if images else 0}")
 
         if images:
-            w, h    = res.split("x")
+            w, h = res.split("x")
             total_frames = round(duration * fps)
             n_images = len(images)
             frames_per_image = total_frames // n_images
@@ -194,7 +255,9 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
             for idx, img in enumerate(images):
                 img_frames = frames_per_image + (1 if idx < rem else 0)
                 img_dur = img_frames / fps
-                cmd.extend(["-loop", "1", "-framerate", str(fps), "-t", f"{img_dur:.6f}", "-i", str(img)])
+                cmd.extend(
+                    ["-loop", "1", "-framerate", str(fps), "-t", f"{img_dur:.6f}", "-i", str(img)]
+                )
 
             # Add audio input
             audio_idx = len(images)
@@ -219,7 +282,7 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
                     kb_fps = min(12, fps)
                     kb_frames = max(1, int(img_dur_for_kb * kb_fps))
                     vf = (
-                        f"[{idx}:v]scale={int(int(w)*1.25)}:{int(int(h)*1.25)},"
+                        f"[{idx}:v]scale={int(int(w) * 1.25)}:{int(int(h) * 1.25)},"
                         f"zoompan=z='min(zoom+0.0005,1.2)'"
                         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                         f":d={kb_frames}:s={w}x{h}:fps={kb_fps},"
@@ -236,7 +299,7 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
                     # "light" (default): upscale 10% then center-crop — fast, no per-frame work
                     # Produces a gentle "zoomed-in" look without any CPU zoompan computation.
                     vf = (
-                        f"[{idx}:v]scale={int(int(w)*1.1)}:-1,"
+                        f"[{idx}:v]scale={int(int(w) * 1.1)}:-1,"
                         f"crop={w}:{h}:(iw-ow)/2:(ih-oh)/2,"
                         f"setsar=1[v{idx}]"
                     )
@@ -254,8 +317,7 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
                 for xf_idx in range(1, len(images)):
                     # Offset = cumulative duration of all previous clips minus crossfade overlaps
                     _prev_frames = sum(
-                        frames_per_image + (1 if j < rem else 0)
-                        for j in range(xf_idx)
+                        frames_per_image + (1 if j < rem else 0) for j in range(xf_idx)
                     )
                     _prev_dur = _prev_frames / fps
                     # Subtract accumulated crossfade overlaps from previous transitions
@@ -311,19 +373,29 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
             _real_video_dur = duration  # video now matches audio
             # Feature: Cinematic Fade-in / Fade-out per segment
             fade_out_start = max(0.0, _real_video_dur - 0.5)
-            filter_parts.append(f"[v_concat]fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start:.2f}:d=0.5[v_faded]")
+            filter_parts.append(
+                f"[v_concat]fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start:.2f}:d=0.5[v_faded]"
+            )
 
-            filter_parts.append(f"[v_faded]subtitles='{srt_path_str}':force_style='{ass_style}'[v_final]")
+            filter_parts.append(
+                f"[v_faded]subtitles='{srt_path_str}':force_style='{ass_style}'[v_final]"
+            )
 
             filter_complex = ";".join(filter_parts)
 
             filter_threads = config.get("performance", {}).get("ffmpeg_threads", 0)
-            cmd.extend([
-                "-filter_threads", str(filter_threads),
-                "-filter_complex", filter_complex,
-                "-map", "[v_final]",
-                "-map", f"{audio_idx}:a"
-            ])
+            cmd.extend(
+                [
+                    "-filter_threads",
+                    str(filter_threads),
+                    "-filter_complex",
+                    filter_complex,
+                    "-map",
+                    "[v_final]",
+                    "-map",
+                    f"{audio_idx}:a",
+                ]
+            )
 
             cmd.extend(_encoder_args(config))
             # D2: audio fade-out at segment end to smooth joins (fade-in handled by next segment)
@@ -331,19 +403,22 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
             _xfade_s = _xfade_ms / 1000.0
             if _xfade_s > 0:
                 _fade_start = max(0.0, duration - _xfade_s)
-                cmd.extend([
-                    "-c:a", "aac", "-b:a", "128k",
-                    "-af", f"afade=t=out:st={_fade_start:.3f}:d={_xfade_s:.3f},"
-                           f"afade=t=in:st=0:d={_xfade_s:.3f}",
-                    "-movflags", "+faststart",
-                    str(mp4)
-                ])
+                cmd.extend(
+                    [
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "128k",
+                        "-af",
+                        f"afade=t=out:st={_fade_start:.3f}:d={_xfade_s:.3f},"
+                        f"afade=t=in:st=0:d={_xfade_s:.3f}",
+                        "-movflags",
+                        "+faststart",
+                        str(mp4),
+                    ]
+                )
             else:
-                cmd.extend([
-                    "-c:a", "aac", "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    str(mp4)
-                ])
+                cmd.extend(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(mp4)])
 
             log.info("Executing single-pass complex filtergraph for Ken Burns assembly...")
             # Scale timeout to video length and Ken Burns mode:
@@ -356,7 +431,29 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
             _run(cmd, timeout=_assembly_timeout)
 
         else:
-            _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=black:s={res}:d={duration}", "-r", str(fps), "-i", str(audio), *_encoder_args(config), "-c:a", "aac", "-b:a", "128k", "-vf", f"subtitles='{srt_path_str}':force_style='{ass_style}'", str(mp4)], timeout=300)
+            _run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"color=c=black:s={res}:d={duration}",
+                    "-r",
+                    str(fps),
+                    "-i",
+                    str(audio),
+                    *_encoder_args(config),
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-vf",
+                    f"subtitles='{srt_path_str}':force_style='{ass_style}'",
+                    str(mp4),
+                ],
+                timeout=300,
+            )
 
         # Copy temporary SRT back to its destination directory and clean up
         if temp_srt.exists():
@@ -371,18 +468,33 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
         with _manifest_lock:
             try:
                 import json as _json
+
                 manifest_path = out_dir.parent / "cleanup_manifest.json"
                 manifest = {}
                 if manifest_path.exists():
                     manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest.setdefault("pending_cleanup", []).extend([
-                    {"type": "audio", "path": str(audio)} if audio and audio.exists() else None,
-                    *([{"type": "image", "path": str(Path(img))} for img in (images or []) if Path(img).exists()]),
-                    {"type": "srt", "path": str(srt)} if srt.exists() else None,
-                ])
-                manifest["pending_cleanup"] = [e for e in manifest["pending_cleanup"] if e is not None]
-                manifest_path.write_text(_json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-                log.debug(f"Assets tracked for deferred cleanup: {len(manifest['pending_cleanup'])} files")
+                manifest.setdefault("pending_cleanup", []).extend(
+                    [
+                        {"type": "audio", "path": str(audio)} if audio and audio.exists() else None,
+                        *(
+                            [
+                                {"type": "image", "path": str(Path(img))}
+                                for img in (images or [])
+                                if Path(img).exists()
+                            ]
+                        ),
+                        {"type": "srt", "path": str(srt)} if srt.exists() else None,
+                    ]
+                )
+                manifest["pending_cleanup"] = [
+                    e for e in manifest["pending_cleanup"] if e is not None
+                ]
+                manifest_path.write_text(
+                    _json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+                log.debug(
+                    f"Assets tracked for deferred cleanup: {len(manifest['pending_cleanup'])} files"
+                )
             except Exception as cleanup_err:
                 log.debug(f"Cleanup manifest write failed: {cleanup_err}")
 
@@ -394,6 +506,7 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
             pass
         try:
             import shutil as _shutil
+
             _shutil.rmtree(temp_srt_dir, ignore_errors=True)
         except Exception:
             pass
@@ -402,9 +515,9 @@ def create_segment_mp4(seg_num: int, audio: Path, script: str,
     return mp4
 
 
-def concatenate_segments(segments: list[Path], output: Path,
-                          music: Path | None = None,
-                          config: dict | None = None) -> Path:
+def concatenate_segments(
+    segments: list[Path], output: Path, music: Path | None = None, config: dict | None = None
+) -> Path:
     """Concatenate rendered segment MP4s into the final video.
 
     A3: When audio_fx.program_loudnorm is true, runs a 2-pass EBU R128 loudnorm
@@ -420,7 +533,9 @@ def concatenate_segments(segments: list[Path], output: Path,
     _target_lufs = float(_audio_fx.get("target_lufs", -14))
 
     concat = output.parent / f"concat_list_{uuid.uuid4().hex[:8]}.txt"
-    concat.write_text("\n".join(f"file '{p.absolute().as_posix()}'" for p in segments), encoding="utf-8")
+    concat.write_text(
+        "\n".join(f"file '{p.absolute().as_posix()}'" for p in segments), encoding="utf-8"
+    )
     log.info(f"Concatenating {len(segments)} segments -> {output}")
 
     # ── Intermediate output (before loudnorm) ─────────────────────────────
@@ -443,45 +558,106 @@ def concatenate_segments(segments: list[Path], output: Path,
         try:
             if _do_ducking:
                 log.info(f"[D5] Music ducking enabled (ratio={_comp_ratio:.1f}:1)")
-                _run([
-                    "ffmpeg", "-y",
-                    "-f", "concat", "-safe", "0", "-i", str(concat),
-                    "-stream_loop", "-1", "-i", str(music),
-                    "-filter_threads", "0",
-                    "-filter_complex",
-                    # D5: asplit voice into mix copy + sidechain key;
-                    # sidechaincompress ducks music under narration;
-                    # amix blends ducked music with voice.
-                    "[0:a]asplit=2[voice_mix][voice_key];"
-                    "[1:a]volume=0.15,afade=t=in:st=0:d=3[music_in];"
-                    f"[music_in][voice_key]sidechaincompress="
-                    f"threshold=0.05:ratio={_comp_ratio:.1f}:attack=20:release=300[ducked];"
-                    "[voice_mix][ducked]amix=inputs=2:duration=first:normalize=0[outa]",
-                    "-map", "0:v", "-map", "[outa]",
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(_concat_out),
-                ], timeout=900)
+                _run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(concat),
+                        "-stream_loop",
+                        "-1",
+                        "-i",
+                        str(music),
+                        "-filter_threads",
+                        "0",
+                        "-filter_complex",
+                        # D5: asplit voice into mix copy + sidechain key;
+                        # sidechaincompress ducks music under narration;
+                        # amix blends ducked music with voice.
+                        "[0:a]asplit=2[voice_mix][voice_key];"
+                        "[1:a]volume=0.15,afade=t=in:st=0:d=3[music_in];"
+                        f"[music_in][voice_key]sidechaincompress="
+                        f"threshold=0.05:ratio={_comp_ratio:.1f}:attack=20:release=300[ducked];"
+                        "[voice_mix][ducked]amix=inputs=2:duration=first:normalize=0[outa]",
+                        "-map",
+                        "0:v",
+                        "-map",
+                        "[outa]",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
+                        str(_concat_out),
+                    ],
+                    timeout=900,
+                )
             else:
-                _run([
-                    "ffmpeg", "-y",
-                    "-f", "concat", "-safe", "0", "-i", str(concat),
-                    "-stream_loop", "-1", "-i", str(music),
-                    "-filter_threads", "0",
-                    "-filter_complex",
-                    "[1:a]volume=0.15,afade=t=in:st=0:d=3[bg];[0:a][bg]amix=inputs=2:duration=first[outa]",
-                    "-map", "0:v", "-map", "[outa]",
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(_concat_out),
-                ], timeout=900)
+                _run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(concat),
+                        "-stream_loop",
+                        "-1",
+                        "-i",
+                        str(music),
+                        "-filter_threads",
+                        "0",
+                        "-filter_complex",
+                        "[1:a]volume=0.15,afade=t=in:st=0:d=3[bg];[0:a][bg]amix=inputs=2:duration=first[outa]",
+                        "-map",
+                        "0:v",
+                        "-map",
+                        "[outa]",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
+                        str(_concat_out),
+                    ],
+                    timeout=900,
+                )
         finally:
             with contextlib.suppress(Exception):
                 concat.unlink(missing_ok=True)
     else:
         log.info("No music provided, concatenating directly with homogenized audio...")
         try:
-            _run([
-                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                "-i", str(concat), "-c:v", "copy",
-                "-c:a", "aac", "-ar", "48000", "-b:a", "192k", str(_concat_out),
-            ], timeout=600)
+            _run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat),
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "48000",
+                    "-b:a",
+                    "192k",
+                    str(_concat_out),
+                ],
+                timeout=600,
+            )
         finally:
             with contextlib.suppress(Exception):
                 concat.unlink(missing_ok=True)
@@ -491,25 +667,37 @@ def concatenate_segments(segments: list[Path], output: Path,
         log.info(f"[A3] Running 2-pass loudnorm (target {_target_lufs} LUFS)...")
         try:
             # Pass 1: measure
-            _measure_filter = (
-                f"loudnorm=I={_target_lufs}:TP=-1.5:LRA=11:print_format=json"
-            )
+            _measure_filter = f"loudnorm=I={_target_lufs}:TP=-1.5:LRA=11:print_format=json"
             _p1 = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(_temp_concat),
-                 "-af", _measure_filter, "-f", "null", "-"],
-                capture_output=True, text=True, encoding="utf-8", timeout=600
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(_temp_concat),
+                    "-af",
+                    _measure_filter,
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=600,
             )
             # Parse measured values from stderr JSON block
             import re as _re
+
             _json_match = _re.search(r'\{[^{}]*"input_i"[^{}]*\}', _p1.stderr, _re.DOTALL)
             if _json_match:
                 import json as _json
+
                 _measured = _json.loads(_json_match.group(0))
-                _mi   = _measured.get("input_i", "-70")
-                _mtp  = _measured.get("input_tp", "-2")
+                _mi = _measured.get("input_i", "-70")
+                _mtp = _measured.get("input_tp", "-2")
                 _mlra = _measured.get("input_lra", "7")
-                _mth  = _measured.get("input_thresh", "-80")
-                _off  = _measured.get("target_offset", "0")
+                _mth = _measured.get("input_thresh", "-80")
+                _off = _measured.get("target_offset", "0")
                 # Pass 2: apply with linear=true
                 _apply_filter = (
                     f"loudnorm=I={_target_lufs}:TP=-1.5:LRA=11"
@@ -517,25 +705,50 @@ def concatenate_segments(segments: list[Path], output: Path,
                     f":measured_LRA={_mlra}:measured_thresh={_mth}"
                     f":offset={_off}:linear=true"
                 )
-                _run([
-                    "ffmpeg", "-y", "-i", str(_temp_concat),
-                    "-af", _apply_filter,
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                    str(output),
-                ], timeout=600)
+                _run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(_temp_concat),
+                        "-af",
+                        _apply_filter,
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
+                        str(output),
+                    ],
+                    timeout=600,
+                )
                 log.info(f"[A3] Loudnorm applied: {_mi} LUFS → {_target_lufs} LUFS")
             else:
                 # Couldn't parse — fall back to single-pass
                 log.warning("[A3] Could not parse loudnorm measurement; using single-pass fallback")
-                _run([
-                    "ffmpeg", "-y", "-i", str(_temp_concat),
-                    "-af", f"loudnorm=I={_target_lufs}:TP=-1.5:LRA=11:linear=true",
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                    str(output),
-                ], timeout=600)
+                _run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(_temp_concat),
+                        "-af",
+                        f"loudnorm=I={_target_lufs}:TP=-1.5:LRA=11:linear=true",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
+                        str(output),
+                    ],
+                    timeout=600,
+                )
         except Exception as _ln_err:
             log.warning(f"[A3] Loudnorm failed ({_ln_err}), using pre-norm output")
             import shutil as _shutil
+
             _shutil.copy2(str(_temp_concat), str(output))
         finally:
             with contextlib.suppress(Exception):
@@ -547,9 +760,17 @@ def concatenate_segments(segments: list[Path], output: Path,
 
 # -- INTERNAL ---------------------------------------------------------------
 
-def _write_srt(script: str, path: Path, duration: float, audio: Path | None = None,
-               format_style: str = "classic", word_timestamps_json: Path | None = None,
-               is_final: bool = True) -> None:
+
+def _write_srt(
+    script: str,
+    path: Path,
+    duration: float,
+    audio: Path | None = None,
+    format_style: str = "classic",
+    word_timestamps_json: Path | None = None,
+    is_final: bool = True,
+    subtitle_language: str = "auto",
+) -> None:
     """Write an SRT subtitle file for a segment.
 
     Timing priority (applies to ALL formats — tiktok and classic):
@@ -566,11 +787,18 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
 
     # ------------------------------------------------------------------ #
     # Step 1: Try word_timestamps_json (real audio timing, all formats)   #
+    # Skip this path when subtitle_language != "auto" and != source lang  #
+    # (e.g. subtitle_language="en" + audio is Hindi) because the JSON     #
+    # contains source-language text. Fall through to Whisper translate.   #
     # ------------------------------------------------------------------ #
-    if word_timestamps_json and word_timestamps_json.exists():
+    _wants_translation = subtitle_language and subtitle_language != "auto"
+    if word_timestamps_json and word_timestamps_json.exists() and not _wants_translation:
         try:
-            log.info(f"Using provided word timestamps JSON for subtitles ({format_style}): {word_timestamps_json.name}")
+            log.info(
+                f"Using provided word timestamps JSON for subtitles ({format_style}): {word_timestamps_json.name}"
+            )
             import json as _json
+
             word_data = _json.loads(word_timestamps_json.read_text(encoding="utf-8"))
             if word_data:
                 lines = _words_to_srt_lines(word_data, format_style, CLASSIC_WORDS_PER_BLOCK)
@@ -599,9 +827,19 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
                     raise RuntimeError("No whisper model available")
 
                 if _whisper_backend == "faster":
-                    segments_gen, _info = model.transcribe(
-                        str(audio), beam_size=1, word_timestamps=True, vad_filter=True
-                    )
+                    if subtitle_language and subtitle_language != "auto":
+                        segments_gen, _info = model.transcribe(
+                            str(audio),
+                            beam_size=1,
+                            word_timestamps=True,
+                            vad_filter=True,
+                            task="translate",
+                            language=subtitle_language,
+                        )
+                    else:
+                        segments_gen, _info = model.transcribe(
+                            str(audio), beam_size=1, word_timestamps=True, vad_filter=True
+                        )
                     raw_words = [
                         {"word": (w.word or "").strip(), "start": w.start, "end": w.end}
                         for seg in segments_gen
@@ -609,9 +847,21 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
                         if (w.word or "").strip()
                     ]
                 else:
-                    result = model.transcribe(str(audio), word_timestamps=True)
+                    if subtitle_language and subtitle_language != "auto":
+                        result = model.transcribe(
+                            str(audio),
+                            word_timestamps=True,
+                            task="translate",
+                            language=subtitle_language,
+                        )
+                    else:
+                        result = model.transcribe(str(audio), word_timestamps=True)
                     raw_words = [
-                        {"word": w.get("word", "").strip(), "start": w.get("start", 0.0), "end": w.get("end", 0.0)}
+                        {
+                            "word": w.get("word", "").strip(),
+                            "start": w.get("start", 0.0),
+                            "end": w.get("end", 0.0),
+                        }
                         for seg in result.get("segments", [])
                         for w in seg.get("words", [])
                         if w.get("word", "").strip()
@@ -623,7 +873,9 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
                     path.write_text("\n".join(lines), encoding="utf-8-sig")
                     return
         except Exception as e:
-            log.warning(f"Whisper word-level subtitle generation failed: {e}. Falling back to proportional split.")
+            log.warning(
+                f"Whisper word-level subtitle generation failed: {e}. Falling back to proportional split."
+            )
 
     # ------------------------------------------------------------------ #
     # Step 3: Proportional split — last resort (no real timing available) #
@@ -631,7 +883,9 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
     # Split into sentences, group into up to 8 subtitle blocks, allocate  #
     # time proportional to each block's word count.                       #
     # ------------------------------------------------------------------ #
-    log.info(f"Using proportional split for subtitles ({format_style}) — no real timestamps available")
+    log.info(
+        f"Using proportional split for subtitles ({format_style}) — no real timestamps available"
+    )
     sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?=\s|$)|[!?।]+", script) if s.strip()]
     if not sentences:
         sentences = [script.strip()] if script.strip() else []
@@ -645,13 +899,15 @@ def _write_srt(script: str, path: Path, duration: float, audio: Path | None = No
     raw_chunks: list[str] = []
     i = 0
     while i < len(sentences):
-        group = sentences[i: i + chunk_size]
+        group = sentences[i : i + chunk_size]
         raw_chunks.append(". ".join(group))
         i += chunk_size
     chunks = raw_chunks[:MAX_BLOCKS]
 
     # Convert English periods in chunks back to mixed punctuation for Hindi
-    chunks = [ch.replace(". ", " ") + "." if not any(d in ch for d in "।?!") else ch for ch in chunks]
+    chunks = [
+        ch.replace(". ", " ") + "." if not any(d in ch for d in "।?!") else ch for ch in chunks
+    ]
 
     word_counts = [len(c.split()) for c in chunks]
     total_words = sum(word_counts) or 1
@@ -702,7 +958,7 @@ def _words_to_srt_lines(word_data: list, format_style: str, words_per_block: int
     else:
         # Group into blocks of words_per_block words — sentence-sized chunks
         for block_start in range(0, len(words), words_per_block):
-            block = words[block_start: block_start + words_per_block]
+            block = words[block_start : block_start + words_per_block]
             text = " ".join(w["word"].strip() for w in block)
             start_str = _ts(block[0].get("start", 0.0))
             end_str = _ts(block[-1].get("end", 0.0))
@@ -711,12 +967,13 @@ def _words_to_srt_lines(word_data: list, format_style: str, words_per_block: int
 
     return lines
 
+
 def _ts(s: float) -> str:
     # Validate input
     if not isinstance(s, (int, float)):
         log.warning(f"Invalid timestamp value: {s}")
         return "00:00:00,000"
-    if s < 0 or math.isnan(s) or s == float('inf'):  # NaN or Inf check
+    if s < 0 or math.isnan(s) or s == float("inf"):  # NaN or Inf check
         log.warning(f"Invalid timestamp: {s}")
         return "00:00:00,000"
 
@@ -736,11 +993,11 @@ def _run(cmd: list, timeout: int = 300) -> None:
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
         if result.returncode != 0:
-            stderr = result.stderr.decode(errors='replace')
+            stderr = result.stderr.decode(errors="replace")
             # Only suppress purely deprecation warnings (no other error indicators)
-            critical_indicators = ['error', 'failed', 'unable', 'invalid', 'no such', 'cannot']
+            critical_indicators = ["error", "failed", "unable", "invalid", "no such", "cannot"]
             is_critical = any(ind in stderr.lower() for ind in critical_indicators)
-            if is_critical or 'deprecated' not in stderr.lower():
+            if is_critical or "deprecated" not in stderr.lower():
                 raise RuntimeError(f"ffmpeg error: {stderr[-1000:]}")
             else:
                 log.warning(f"FFmpeg deprecation warning (non-fatal): {stderr[:200]}")

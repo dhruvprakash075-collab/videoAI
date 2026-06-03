@@ -100,6 +100,7 @@ def run_eval(out_dir: Path | None = None, image: bool = True, tts: bool = True) 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
     from config import load_config
+
     config = load_config()
 
     if out_dir is None:
@@ -109,7 +110,7 @@ def run_eval(out_dir: Path | None = None, image: bool = True, tts: bool = True) 
     summary = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "image_model": config.get("image_gen", {}).get("sd_model_path")
-                       or config.get("image_gen", {}).get("sd_model", "unknown"),
+        or config.get("image_gen", {}).get("sd_model", "unknown"),
         "tts_engine": config.get("tts", {}).get("engine", "unknown"),
         "acceleration": (config.get("image_gen", {}).get("acceleration") or {}).get("type", "none"),
         "upscaler": (config.get("image_gen", {}).get("upscaler") or {}).get("model", "none"),
@@ -151,7 +152,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate current image model and TTS engine")
     parser.add_argument("--image-only", action="store_true", help="Only generate sample images")
     parser.add_argument("--tts-only", action="store_true", help="Only generate TTS sample")
-    parser.add_argument("--out-dir", default=None, help="Output directory (default: model_eval/TIMESTAMP)")
+    parser.add_argument(
+        "--out-dir", default=None, help="Output directory (default: model_eval/TIMESTAMP)"
+    )
     args = parser.parse_args()
 
     out = Path(args.out_dir) if args.out_dir else None

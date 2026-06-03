@@ -8,6 +8,7 @@ Covers:
   - Error paths: missing video, auth timeout (no upload-icon), other exceptions
   - The "Checks complete" progress loop is broken on first iteration
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ── Fixture: mocked Playwright stack ────────────────────────────────────────
+
 
 @pytest.fixture
 def mock_pw():
@@ -62,8 +64,10 @@ def mock_pw():
     page.keyboard.press.return_value = None
     fc_info.value.set_files.return_value = None
 
-    with patch("utils.youtube_uploader.sync_playwright", sp), \
-         patch("utils.youtube_uploader.time.sleep", lambda *_a, **_k: None):
+    with (
+        patch("utils.youtube_uploader.sync_playwright", sp),
+        patch("utils.youtube_uploader.time.sleep", lambda *_a, **_k: None),
+    ):
         yield {"sp": sp, "p": p, "browser": browser, "page": page, "fc": fc_info}
 
 
@@ -75,15 +79,20 @@ def _fake_video(tmp_path: Path) -> Path:
 
 # ── Happy path ──────────────────────────────────────────────────────────────
 
+
 class TestUploadToYoutubeHappyPath:
     def test_returns_true(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
-        result = upload_to_youtube(v, "My Title", "Desc", ["a", "b"], profile_dir=str(tmp_path / "profile"))
+        result = upload_to_youtube(
+            v, "My Title", "Desc", ["a", "b"], profile_dir=str(tmp_path / "profile")
+        )
         assert result is True
 
     def test_persistent_context_called(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         profile = str(tmp_path / "my_profile")
         upload_to_youtube(v, "T", "D", [], profile_dir=profile)
@@ -94,47 +103,57 @@ class TestUploadToYoutubeHappyPath:
 
     def test_navigates_to_studio(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         mock_pw["page"].goto.assert_any_call("https://studio.youtube.com/")
 
     def test_waits_for_upload_icon(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         mock_pw["page"].wait_for_selector.assert_any_call("a#upload-icon", timeout=10000)
 
     def test_clicks_upload_icon(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         mock_pw["page"].click.assert_any_call("a#upload-icon")
 
     def test_file_chooser_sets_video(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         mock_pw["fc"].value.set_files.assert_called_once_with(str(v.resolve()))
 
     def test_fills_title_truncated(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         long_title = "x" * 200
         upload_to_youtube(v, long_title, "D", [], profile_dir=str(tmp_path))
-        loc_calls = [c for c in mock_pw["page"].locator.call_args_list
-                     if c.args and c.args[0] == "div#textbox"]
+        loc_calls = [
+            c
+            for c in mock_pw["page"].locator.call_args_list
+            if c.args and c.args[0] == "div#textbox"
+        ]
         assert loc_calls
         title_box = loc_calls[0]
         assert title_box is not None
 
     def test_fills_tags(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", ["tag1", "tag2", "tag3"], profile_dir=str(tmp_path))
         assert mock_pw["page"].keyboard.press.called
 
     def test_visibility_default_is_private(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         loc_calls = [str(c) for c in mock_pw["page"].locator.call_args_list]
@@ -142,6 +161,7 @@ class TestUploadToYoutubeHappyPath:
 
     def test_visibility_public(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], visibility="public", profile_dir=str(tmp_path))
         loc_calls = [str(c) for c in mock_pw["page"].locator.call_args_list]
@@ -149,6 +169,7 @@ class TestUploadToYoutubeHappyPath:
 
     def test_visibility_unlisted(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], visibility="unlisted", profile_dir=str(tmp_path))
         loc_calls = [str(c) for c in mock_pw["page"].locator.call_args_list]
@@ -156,6 +177,7 @@ class TestUploadToYoutubeHappyPath:
 
     def test_visibility_unknown_falls_back_to_private(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], visibility="garbage", profile_dir=str(tmp_path))
         loc_calls = [str(c) for c in mock_pw["page"].locator.call_args_list]
@@ -163,32 +185,43 @@ class TestUploadToYoutubeHappyPath:
 
     def test_closes_browser_on_success(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         mock_pw["browser"].close.assert_called()
 
     def test_next_button_clicked_three_times(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
-        next_calls = [c for c in mock_pw["page"].click.call_args_list
-                      if c.args and c.args[0] == "ytcp-button#next-button"]
+        next_calls = [
+            c
+            for c in mock_pw["page"].click.call_args_list
+            if c.args and c.args[0] == "ytcp-button#next-button"
+        ]
         assert len(next_calls) == 3
 
     def test_done_button_clicked(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
-        done_calls = [c for c in mock_pw["page"].click.call_args_list
-                      if c.args and c.args[0] == "ytcp-button#done-button"]
+        done_calls = [
+            c
+            for c in mock_pw["page"].click.call_args_list
+            if c.args and c.args[0] == "ytcp-button#done-button"
+        ]
         assert len(done_calls) == 1
 
 
 # ── Headless flag ───────────────────────────────────────────────────────────
 
+
 class TestHeadless:
     def test_headless_true_by_default(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
         _args, kwargs = mock_pw["p"].chromium.launch_persistent_context.call_args
@@ -196,6 +229,7 @@ class TestHeadless:
 
     def test_headless_false_passed_through(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path), headless=False)
         _args, kwargs = mock_pw["p"].chromium.launch_persistent_context.call_args
@@ -204,9 +238,11 @@ class TestHeadless:
 
 # ── Error paths ─────────────────────────────────────────────────────────────
 
+
 class TestErrorPaths:
     def test_video_not_found_returns_false(self, mock_pw):
         from utils.youtube_uploader import upload_to_youtube
+
         result = upload_to_youtube("/nonexistent/video.mp4", "T", "D", [])
         assert result is False
         mock_pw["p"].chromium.launch_persistent_context.assert_not_called()
@@ -215,8 +251,9 @@ class TestErrorPaths:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         from utils.youtube_uploader import upload_to_youtube
-        mock_pw["page"].wait_for_selector.side_effect = (
-            lambda *a, **k: (_ for _ in ()).throw(PlaywrightTimeoutError("no upload-icon"))
+
+        mock_pw["page"].wait_for_selector.side_effect = lambda *a, **k: (_ for _ in ()).throw(
+            PlaywrightTimeoutError("no upload-icon")
         )
         v = _fake_video(tmp_path)
         result = upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
@@ -225,6 +262,7 @@ class TestErrorPaths:
 
     def test_generic_exception_returns_false(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         mock_pw["page"].goto.side_effect = Exception("navigate failed")
         v = _fake_video(tmp_path)
         result = upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
@@ -232,6 +270,7 @@ class TestErrorPaths:
 
     def test_video_path_resolved(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(str(v), "T", "D", [], profile_dir=str(tmp_path))
         called_path = mock_pw["fc"].value.set_files.call_args.args[0]
@@ -240,9 +279,11 @@ class TestErrorPaths:
 
 # ── Progress loop ───────────────────────────────────────────────────────────
 
+
 class TestProgressLoop:
     def test_progress_label_visible_completes(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         loc_progress = MagicMock()
         loc_progress.is_visible.return_value = True
         loc_progress.inner_text.return_value = "Checks complete"
@@ -271,6 +312,7 @@ class TestProgressLoop:
 
     def test_done_button_visible_breaks_loop(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         loc_done = MagicMock()
         loc_done.is_visible.return_value = True
         loc_done.get_attribute.return_value = ""
@@ -300,11 +342,14 @@ class TestProgressLoop:
 
 # ── Tag skipping ────────────────────────────────────────────────────────────
 
+
 class TestTagsEmpty:
     def test_no_tag_fill_when_empty(self, mock_pw, tmp_path):
         from utils.youtube_uploader import upload_to_youtube
+
         v = _fake_video(tmp_path)
         upload_to_youtube(v, "T", "D", [], profile_dir=str(tmp_path))
-        tag_loc_calls = [c for c in mock_pw["page"].locator.call_args_list
-                         if c.args and "Tags" in c.args[0]]
+        tag_loc_calls = [
+            c for c in mock_pw["page"].locator.call_args_list if c.args and "Tags" in c.args[0]
+        ]
         assert not tag_loc_calls

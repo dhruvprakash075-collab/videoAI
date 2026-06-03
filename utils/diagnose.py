@@ -29,17 +29,22 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+
 def log_info(msg: str):
     print(f"{BLUE}[INFO]{RESET} {msg}")
+
 
 def log_success(msg: str):
     print(f"{GREEN}[OK] {msg}{RESET}")
 
+
 def log_warn(msg: str):
     print(f"{YELLOW}[WARN] {msg}{RESET}")
 
+
 def log_error(msg: str):
     print(f"{RED}[ERROR] {msg}{RESET}")
+
 
 def check_ffmpeg() -> bool:
     """Verify if ffmpeg and ffprobe are available in the system path."""
@@ -50,7 +55,9 @@ def check_ffmpeg() -> bool:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
+
 # ── GPU & VRAM Diagnostics ──────────────────────────────────────────────────
+
 
 def diagnose_gpu():
     print(f"\n{BOLD}{CYAN}=== GPU & VRAM Diagnostics ==={RESET}")
@@ -58,6 +65,7 @@ def diagnose_gpu():
     # 1. PyTorch & CUDA Support
     try:
         import torch
+
         cuda_avail = torch.cuda.is_available()
         log_success(f"PyTorch imported successfully (v{torch.__version__})")
         if cuda_avail:
@@ -67,8 +75,8 @@ def diagnose_gpu():
             # Memory Info
             try:
                 free_b, total_b = torch.cuda.mem_get_info()
-                free_gb = free_b / (1024 ** 3)
-                total_gb = total_b / (1024 ** 3)
+                free_gb = free_b / (1024**3)
+                total_gb = total_b / (1024**3)
                 used_gb = total_gb - free_gb
 
                 print(f"  - Total VRAM: {total_gb:.2f} GB")
@@ -77,9 +85,13 @@ def diagnose_gpu():
 
                 # Check VRAM limits (Video.AI 6GB threshold checks)
                 if total_gb < 5.5:
-                    log_warn(f"Running on a sub-6GB VRAM budget ({total_gb:.1f}GB). Serialization is highly recommended.")
+                    log_warn(
+                        f"Running on a sub-6GB VRAM budget ({total_gb:.1f}GB). Serialization is highly recommended."
+                    )
                 elif total_gb <= 6.5:
-                    log_info("Running on a 6GB VRAM budget (RTX 4050 typical). Eviction-based staged loop active.")
+                    log_info(
+                        "Running on a 6GB VRAM budget (RTX 4050 typical). Eviction-based staged loop active."
+                    )
                 else:
                     log_success(f"Plenty of VRAM available ({total_gb:.1f}GB).")
             except Exception as mem_err:
@@ -92,8 +104,14 @@ def diagnose_gpu():
     # 2. NVIDIA System Monitor (nvidia-smi)
     try:
         res = subprocess.run(
-            ["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu,memory.used,memory.free,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, check=True
+            [
+                "nvidia-smi",
+                "--query-gpu=temperature.gpu,utilization.gpu,memory.used,memory.free,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         parts = [p.strip() for p in res.stdout.split(",")]
         if len(parts) >= 5:
@@ -101,19 +119,24 @@ def diagnose_gpu():
             print(f"\n{BOLD}NVIDIA System Stats (System Level):{RESET}")
             print(f"  - GPU Temperature: {temp}°C")
             print(f"  - GPU Utilization: {util}%")
-            print(f"  - Memory Used:     {float(used_mb)/1024:.2f} GB")
-            print(f"  - Memory Free:     {float(free_mb)/1024:.2f} GB")
-            print(f"  - Memory Total:    {float(total_mb)/1024:.2f} GB")
+            print(f"  - Memory Used:     {float(used_mb) / 1024:.2f} GB")
+            print(f"  - Memory Free:     {float(free_mb) / 1024:.2f} GB")
+            print(f"  - Memory Total:    {float(total_mb) / 1024:.2f} GB")
     except (subprocess.CalledProcessError, FileNotFoundError):
         log_warn("nvidia-smi not available or GPU driver not found.")
 
     # 3. Ollama Server & Resident Models
     diagnose_ollama()
 
+
 def diagnose_ollama():
     print(f"\n{BOLD}Ollama Resident Model Check:{RESET}")
     # Load config host if possible, else check env
-    ollama_host = os.environ.get("OLLAMA_HOST") or os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
+    ollama_host = (
+        os.environ.get("OLLAMA_HOST")
+        or os.environ.get("OLLAMA_BASE_URL")
+        or "http://localhost:11434"
+    )
     ollama_host = ollama_host.rstrip("/")
 
     # Check connection
@@ -138,16 +161,22 @@ def diagnose_ollama():
                 log_warn(f"{len(resident)} model(s) currently resident in VRAM:")
                 for m in resident:
                     name = m.get("name", "unknown")
-                    size_gb = m.get("size", 0) / (1024 ** 3)
-                    vram_gb = m.get("size_vram", 0) / (1024 ** 3)
-                    print(f"    * {BOLD}{name}{RESET} (Resident Size: {size_gb:.2f} GB, VRAM allocation: {vram_gb:.2f} GB)")
-                print(f"  {YELLOW}Note: Active text pipelines must evict these models (keep_alive=0) before GPU/SD phases to avoid OOM.{RESET}")
+                    size_gb = m.get("size", 0) / (1024**3)
+                    vram_gb = m.get("size_vram", 0) / (1024**3)
+                    print(
+                        f"    * {BOLD}{name}{RESET} (Resident Size: {size_gb:.2f} GB, VRAM allocation: {vram_gb:.2f} GB)"
+                    )
+                print(
+                    f"  {YELLOW}Note: Active text pipelines must evict these models (keep_alive=0) before GPU/SD phases to avoid OOM.{RESET}"
+                )
             else:
                 log_success("No models are currently resident in VRAM. GPU memory is clean.")
     except Exception as e:
         log_warn(f"Failed to retrieve active model list (/api/ps): {e}")
 
+
 # ── Media File Diagnostics ─────────────────────────────────────────────────
+
 
 def diagnose_media(file_path_str: str):
     file_path = Path(file_path_str)
@@ -166,8 +195,11 @@ def diagnose_media(file_path_str: str):
     elif suffix in (".mp4", ".mkv", ".avi", ".mov"):
         diagnose_video(file_path)
     else:
-        log_warn(f"Unsupported media format '{suffix}' for detailed probing. Attempting generic ffprobe...")
+        log_warn(
+            f"Unsupported media format '{suffix}' for detailed probing. Attempting generic ffprobe..."
+        )
         run_generic_probe(file_path)
+
 
 def diagnose_audio(path: Path):
     if not check_ffmpeg():
@@ -176,8 +208,19 @@ def diagnose_audio(path: Path):
 
     try:
         res = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:stream=sample_rate,channels,codec_name", "-of", "json", str(path)],
-            capture_output=True, text=True, check=True
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration,bit_rate:stream=sample_rate,channels,codec_name",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         data = json.loads(res.stdout)
 
@@ -198,21 +241,28 @@ def diagnose_audio(path: Path):
 
             print(f"  - Codec:      {codec}")
             print(f"  - Sample Rate:{sample_rate} Hz")
-            print(f"  - Channels:   {channels} ({'Mono' if channels == 1 else 'Stereo' if channels == 2 else 'Multichannel'})")
+            print(
+                f"  - Channels:   {channels} ({'Mono' if channels == 1 else 'Stereo' if channels == 2 else 'Multichannel'})"
+            )
 
             # Video.AI specific rules
             if sample_rate not in {44100, 24000}:
-                log_warn(f"Non-standard sample rate ({sample_rate}Hz). Active pipelines expect 24000Hz (raw OmniVoice) or 44100Hz (post-processed).")
+                log_warn(
+                    f"Non-standard sample rate ({sample_rate}Hz). Active pipelines expect 24000Hz (raw OmniVoice) or 44100Hz (post-processed)."
+                )
             else:
                 log_success(f"Sample rate conforms to project standards ({sample_rate}Hz).")
 
             if channels > 1:
-                log_info("Stereo audio detected. Voice cloning typically processes raw mono and upmixes later.")
+                log_info(
+                    "Stereo audio detected. Voice cloning typically processes raw mono and upmixes later."
+                )
         else:
             log_warn("No streams found in the audio file format container.")
 
     except Exception as e:
         log_error(f"Failed to probe audio file: {e}")
+
 
 def diagnose_video(path: Path):
     if not check_ffmpeg():
@@ -221,8 +271,19 @@ def diagnose_video(path: Path):
 
     try:
         res = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=width,height,avg_frame_rate,codec_name,codec_type", "-of", "json", str(path)],
-            capture_output=True, text=True, check=True
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration:stream=width,height,avg_frame_rate,codec_name,codec_type",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         data = json.loads(res.stdout)
 
@@ -257,12 +318,16 @@ def diagnose_video(path: Path):
             if w == 1920 and h == 1080:
                 log_success("Resolution matches final target output (1080p).")
             elif w == 768 and h == 432:
-                log_info("Raw segment resolution detected (768x432 SD). Concat stage will upscale this to 1080p.")
+                log_info(
+                    "Raw segment resolution detected (768x432 SD). Concat stage will upscale this to 1080p."
+                )
             else:
                 log_warn(f"Non-standard canvas resolution: {w}x{h}")
 
             if abs(fps - 24.0) > 0.1 and abs(fps - 12.0) > 0.1:
-                log_warn(f"Non-standard frame rate: {fps:.2f} fps. Rendering expects 24fps (classic) or 12fps (cheaper zoompan).")
+                log_warn(
+                    f"Non-standard frame rate: {fps:.2f} fps. Rendering expects 24fps (classic) or 12fps (cheaper zoompan)."
+                )
         else:
             log_error("No video stream found inside the file container.")
 
@@ -274,17 +339,22 @@ def diagnose_video(path: Path):
     except Exception as e:
         log_error(f"Failed to probe video file: {e}")
 
+
 def run_generic_probe(path: Path):
     try:
         res = subprocess.run(
             ["ffprobe", "-v", "error", "-show_format", str(path)],
-            capture_output=True, text=True, check=True
+            capture_output=True,
+            text=True,
+            check=True,
         )
         print(res.stdout)
     except Exception as e:
         log_error(f"Generic probe failed: {e}")
 
+
 # ── General System Sanity Check ─────────────────────────────────────────────
+
 
 def diagnose_system():
     print(f"\n{BOLD}{CYAN}=== Environment & System Sanity Check ==={RESET}")
@@ -317,7 +387,9 @@ def diagnose_system():
     else:
         log_warn("requirements.txt missing.")
 
+
 # ── Main CLI Flow ──────────────────────────────────────────────────────────
+
 
 def main():
     if len(sys.argv) < 2:
@@ -342,6 +414,7 @@ def main():
         log_error(f"Unknown diagnostic command: {cmd}")
         print(f"Usage: python {sys.argv[0]} [gpu | media <file_path> | system | all]")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

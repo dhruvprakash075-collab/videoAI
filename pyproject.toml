@@ -28,7 +28,6 @@ extend-exclude = [
     "node_modules",
     "dashboard",          # has its own ESLint setup (npm run lint)
     "dashboard/**",
-    "_archive",           # moved-out code; not part of active surface
     "ffmpeg-8.1.1-essentials_build",
     "hf_cache",
     "studio_outputs",     # runtime artifacts
@@ -38,7 +37,6 @@ extend-exclude = [
     "logs",
     "temp_srt_files",
     "static",
-    "tts_audiobook",      # under _archive but explicit
     "build",
     "dist",
     ".ruff_cache",
@@ -155,10 +153,6 @@ ignore = [
     "PLR0904",# too-many-public-methods
 ]
 "agents/decision_engine.py" = ["E402"]
-"agents/executive_agent.py" = [
-    "E402",
-    "F401",   # re-exports for backward compat
-]
 "config/__init__.py" = [
     "F401",   # re-exports for the public config API (`from config import ...`)
 ]
@@ -170,9 +164,6 @@ ignore = [
 ]
 "utils/compatibility.py" = [
     "F401",   # `try: import X except ImportError` is the explicit pattern here
-]
-"utils/tui_theme_tester.py" = [
-    "F401",   # same — optional-dep availability checks
 ]
 "studio_tui.py" = [
     "E402",
@@ -248,16 +239,19 @@ docstring-code-format = false
 
 # ── Coverage config ───────────────────────────────────────────────────────
 [tool.coverage.run]
-# Track only the first-party code; skip venv, _archive, dashboard, tests.
+# Track only the first-party code; skip venv, dashboard, tests.
 source = ["agents", "audio", "config", "core", "memory", "utils", "video"]
 omit = [
     "venv/*",
     "dashboard/*",
-    "_archive/*",
     "tests/*",
-    "**/__pycache__/*",
     "studio_*/",
     "*/compat.py",
+    "audio/*_worker.py",
+    "utils/local_ui.py",
+    "utils/diagnose.py",
+    "utils/map_codebase.py",
+    "utils/media_analyzer.py",
 ]
 branch = true
 # Concurrency-safe: data_file in .coverage_cache so CI / local don't collide.

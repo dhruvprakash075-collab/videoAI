@@ -1,4 +1,5 @@
 """test_degradation_ledger.py - Tests for B2: degradation ledger."""
+
 import sys
 from pathlib import Path
 
@@ -12,7 +13,11 @@ def test_add_degradation_appends():
     UIState.degradations = []
     UIState.add_degradation(1, "sfx_skip", "no SFX files found")
     assert len(UIState.degradations) == 1
-    assert UIState.degradations[0] == {"seg": 1, "stage": "sfx_skip", "reason": "no SFX files found"}
+    assert UIState.degradations[0] == {
+        "seg": 1,
+        "stage": "sfx_skip",
+        "reason": "no SFX files found",
+    }
 
 
 def test_add_degradation_multiple():
@@ -44,6 +49,7 @@ def test_conftest_resets_degradations():
 def test_add_degradation_thread_safe():
     """Concurrent add_degradation calls should not corrupt the list."""
     import threading
+
     UIState.degradations = []
     threads = []
     for i in range(20):

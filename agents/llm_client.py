@@ -68,8 +68,13 @@ class DirectorLlmClient:
 
     # ── transport ───────────────────────────────────────────────────────────
 
-    def _call_ollama(self, prompt: str, model_type: str = "director",
-                     format_json: bool = False, seed: int | None = None) -> str:
+    def _call_ollama(
+        self,
+        prompt: str,
+        model_type: str = "director",
+        format_json: bool = False,
+        seed: int | None = None,
+    ) -> str:
         """Call Ollama with retry and validation.
 
         B1: delegates to the centralized OllamaClient (one retry policy + per-model
@@ -79,16 +84,21 @@ class DirectorLlmClient:
         m = self._resolve_model(model_type)
         try:
             from utils.ollama_client import get_ollama_client
+
             client = get_ollama_client(self.llm_config if isinstance(self.llm_config, dict) else {})
             return client.generate(prompt, model=m, format_json=format_json, seed=seed)
         except Exception as e:
             log.exception(f"[OLLAMA] {model_type} client.generate failed: {e}")
             return ""  # BUG-396 FIX: Never return None
 
-    def _call_ollama_chat(self, prompt: str, model_type: str = "translator",
-                          system_msg: str = "You are a professional translator. "
-                          "Translate the given text to Hindi (Devanagari script). "
-                          "Output only the translation.") -> str:
+    def _call_ollama_chat(
+        self,
+        prompt: str,
+        model_type: str = "translator",
+        system_msg: str = "You are a professional translator. "
+        "Translate the given text to Hindi (Devanagari script). "
+        "Output only the translation.",
+    ) -> str:
         """Call Ollama using /api/chat for models that require chat templates.
 
         B1: delegates to the centralized OllamaClient. Returns cleaned text,
@@ -97,6 +107,7 @@ class DirectorLlmClient:
         m = self._resolve_model(model_type)
         try:
             from utils.ollama_client import get_ollama_client
+
             client = get_ollama_client(self.llm_config if isinstance(self.llm_config, dict) else {})
             return client.chat(
                 [{"role": "user", "content": prompt}],
@@ -116,8 +127,11 @@ class DirectorLlmClient:
         """
         from agents.ui_state import UIState  # lazy: avoid circular import
 
-        host = self.llm_config.get("ollama", {}).get("host", "http://localhost:11434") \
-            if isinstance(self.llm_config, dict) else "http://localhost:11434"
+        host = (
+            self.llm_config.get("ollama", {}).get("host", "http://localhost:11434")
+            if isinstance(self.llm_config, dict)
+            else "http://localhost:11434"
+        )
         model = self._resolve_model()
 
         full: list[str] = []
@@ -125,13 +139,19 @@ class DirectorLlmClient:
         for attempt in range(1, 4):
             full.clear()
             tokens = 0
-            payload = json.dumps({
-                "model": model, "prompt": prompt, "format": "json", "stream": True,
-                "options": {"temperature": 0.0}
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "model": model,
+                    "prompt": prompt,
+                    "format": "json",
+                    "stream": True,
+                    "options": {"temperature": 0.0},
+                }
+            ).encode("utf-8")
             request = urllib.request.Request(
                 f"{host.rstrip('/')}/api/generate",
-                data=payload, headers={"Content-Type": "application/json"},
+                data=payload,
+                headers={"Content-Type": "application/json"},
             )
             try:
                 with urllib.request.urlopen(request, timeout=300) as resp:
@@ -156,13 +176,14 @@ class DirectorLlmClient:
                             return "".join(full).strip()
             except Exception as e:
                 if attempt < 3:
-                    time.sleep(2.0 ** attempt)
+                    time.sleep(2.0**attempt)
                 else:
                     raise RuntimeError(f"Streaming failed after 3 attempts: {e}") from e
         return "".join(full).strip()
 
     def _prewarm_ollama(self) -> None:
         """Pre-warm the Director and Writer models in background (parallel threads)."""
+
         def _warm(model_type: str) -> None:
             try:
                 self._call_ollama("Hello", model_type=model_type)
@@ -171,4 +192,4 @@ class DirectorLlmClient:
                 pass
 
         threading.Thread(target=_warm, args=("director",), daemon=True).start()
-        threading.Thread(target=_warm, args=("writer",),   daemon=True).start()
+        threading.Thread(target=_warm, args=("writer",), daemon=True).start()

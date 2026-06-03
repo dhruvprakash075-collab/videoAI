@@ -9,6 +9,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_pla
 
 log = logging.getLogger(__name__)
 
+
 def upload_to_youtube(
     video_path: str | Path,
     title: str,
@@ -16,7 +17,7 @@ def upload_to_youtube(
     tags: list[str],
     visibility: str = "private",
     profile_dir: str | Path = "chrome_profile",
-    headless: bool = True
+    headless: bool = True,
 ) -> bool:
     """Upload a video to YouTube using a persistent Chrome profile.
 
@@ -45,7 +46,7 @@ def upload_to_youtube(
             browser = p.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
                 headless=headless,
-                args=["--disable-blink-features=AutomationControlled"]
+                args=["--disable-blink-features=AutomationControlled"],
             )
 
             page = browser.new_page()
@@ -56,7 +57,9 @@ def upload_to_youtube(
             try:
                 page.wait_for_selector("a#upload-icon", timeout=10000)
             except PlaywrightTimeoutError:
-                log.error("[YouTube] Authentication failed! Please run setup_youtube_profile.py to log in.")
+                log.error(
+                    "[YouTube] Authentication failed! Please run setup_youtube_profile.py to log in."
+                )
                 browser.close()
                 return False
 
@@ -115,12 +118,26 @@ def upload_to_youtube(
             else:
                 page.locator("tp-yt-paper-radio-button[name='PRIVATE']").click()
 
-            log.info("[YouTube] Waiting for video processing checks to complete... (this may take a few minutes)")
+            log.info(
+                "[YouTube] Waiting for video processing checks to complete... (this may take a few minutes)"
+            )
             while True:
-                progress = page.locator("span.progress-label").inner_text() if page.locator("span.progress-label").is_visible() else ""
-                if "Checks complete" in progress or "Upload complete" in progress or "Processing up to" in progress:
+                progress = (
+                    page.locator("span.progress-label").inner_text()
+                    if page.locator("span.progress-label").is_visible()
+                    else ""
+                )
+                if (
+                    "Checks complete" in progress
+                    or "Upload complete" in progress
+                    or "Processing up to" in progress
+                ):
                     break
-                if page.locator("ytcp-button#done-button").is_visible() and "disabled" not in page.locator("ytcp-button#done-button").get_attribute("class"):
+                if page.locator(
+                    "ytcp-button#done-button"
+                ).is_visible() and "disabled" not in page.locator(
+                    "ytcp-button#done-button"
+                ).get_attribute("class"):
                     break
                 time.sleep(5)
 
@@ -128,7 +145,11 @@ def upload_to_youtube(
             page.click("ytcp-button#done-button")
 
             page.wait_for_selector("ytcp-video-share-dialog", timeout=30000)
-            video_link = page.locator("a.ytcp-video-info").inner_text() if page.locator("a.ytcp-video-info").is_visible() else "Unknown"
+            video_link = (
+                page.locator("a.ytcp-video-info").inner_text()
+                if page.locator("a.ytcp-video-info").is_visible()
+                else "Unknown"
+            )
 
             log.info(f"[YouTube] Upload complete! Video link: {video_link}")
             browser.close()
