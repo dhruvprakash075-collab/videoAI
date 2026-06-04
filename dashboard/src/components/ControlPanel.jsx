@@ -5,6 +5,7 @@ import ToggleRow from './ToggleRow.jsx';
 
 const VOICE_ENGINES = [
   { id: 'omnivoice', label: 'OmniVoice (Default)', description: 'Ultra-expressive local cloning.' },
+  { id: 'supertonic', label: 'Supertonic 3',       description: 'CPU-only, 31 languages, custom voice JSON.' },
   { id: 'edge',      label: 'Edge TTS',           description: 'Fast, reliable cloud voices.' },
 ];
 

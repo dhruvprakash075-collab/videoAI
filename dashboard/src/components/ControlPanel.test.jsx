@@ -31,6 +31,24 @@ async function clickSave(onClose) {
   await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
 }
 
+async function testConfigLoad(voiceEngine) {
+  const fetchMock = mockGetFetch({
+    voiceEngine: voiceEngine,
+    dynamicSubtitles: false,
+    uncappedScaling: true,
+    maxImagesPerSegment: 9
+  });
+  render(<ControlPanel onClose={onClose} />);
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', voiceEngine === 'omnivoice' ? 'true' : 'false');
+    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', voiceEngine === 'supertonic' ? 'true' : 'false');
+    expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', voiceEngine === 'edge' ? 'true' : 'false');
+  });
+}
+
 describe('ControlPanel', () => {
   let onClose;
 
@@ -52,30 +70,53 @@ describe('ControlPanel', () => {
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
   });
 
-  it('renders both voice engine buttons with the active one pressed', () => {
+  it('renders all three voice engine buttons with the active one pressed', () => {
     render(<ControlPanel onClose={onClose} />);
     const omnivoice = screen.getByRole('button', { name: /OmniVoice/i });
+    const supertonic = screen.getByRole('button', { name: /Supertonic 3/i });
     const edge = screen.getByRole('button', { name: /Edge TTS/i });
     expect(omnivoice).toHaveAttribute('aria-pressed', 'true');
+    expect(supertonic).toHaveAttribute('aria-pressed', 'false');
     expect(edge).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('switches the active engine when a different engine is clicked', async () => {
+  it('switches the active engine when Supertonic is clicked', async () => {
+    const user = userEvent.setup();
+    render(<ControlPanel onClose={onClose} />);
+    await user.click(screen.getByRole('button', { name: /Supertonic 3/i }));
+    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('switches the active engine when Edge TTS is clicked', async () => {
     const user = userEvent.setup();
     render(<ControlPanel onClose={onClose} />);
     await user.click(screen.getByRole('button', { name: /Edge TTS/i }));
     expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('loads config from /api/config on mount', async () => {
+  it('loads config from /api/config on mount and sets the active voice engine (edge)', async () => {
     const fetchMock = mockGetFetch({ voiceEngine: 'edge', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 });
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    });
-    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'false');
       expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
+
+  it('sets the active voice engine to Supertonic when loaded from config', async () => {
+    const fetchMock = mockGetFetch({ voiceEngine: 'supertonic', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 });
+    render(<ControlPanel onClose={onClose} />);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'false');
     });
   });
 
