@@ -6,17 +6,37 @@ import { API_BASE } from '../lib/api.js';
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
+function okJson(data = {}) {
+  return { json: () => Promise.resolve(data) };
+}
+
+function mockSaveFetch({ saveResult = { status: 'success' }, getResult = {} } = {}) {
+  const fetchMock = vi.fn().mockImplementation((url, opts) => {
+    if (!opts || !opts.method) return Promise.resolve(okJson(getResult));
+    return Promise.resolve(okJson(saveResult));
+  });
+  global.fetch = fetchMock;
+  return fetchMock;
+}
+
+function mockGetFetch(data) {
+  const fetchMock = vi.fn().mockResolvedValue(okJson(data));
+  global.fetch = fetchMock;
+  return fetchMock;
+}
+
+async function clickSave(onClose) {
+  const user = userEvent.setup();
+  render(<ControlPanel onClose={onClose} />);
+  await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
+}
+
 describe('ControlPanel', () => {
   let onClose;
-  let fetchMock;
 
   beforeEach(() => {
     onClose = vi.fn();
-    fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({}),
-    });
-    global.fetch = fetchMock;
+    mockGetFetch({});
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -49,9 +69,7 @@ describe('ControlPanel', () => {
   });
 
   it('loads config from /api/config on mount', async () => {
-    fetchMock.mockResolvedValue({
-      json: () => Promise.resolve({ voiceEngine: 'edge', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 }),
-    });
+    const fetchMock = mockGetFetch({ voiceEngine: 'edge', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 });
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
@@ -62,18 +80,17 @@ describe('ControlPanel', () => {
   });
 
   it('ignores config response that includes a "status" key (error payload)', async () => {
-    fetchMock.mockResolvedValue({
-      json: () => Promise.resolve({ status: 'error', message: 'nope' }),
-    });
+    mockGetFetch({ status: 'error', message: 'nope' });
     render(<ControlPanel onClose={onClose} />);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('logs (but does not throw) when the config fetch fails with a non-Abort error', async () => {
     const err = new Error('boom');
     err.name = 'NetworkError';
-    fetchMock.mockRejectedValue(err);
+    const fetchMock = vi.fn().mockRejectedValue(err);
+    global.fetch = fetchMock;
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => {
@@ -83,7 +100,8 @@ describe('ControlPanel', () => {
   });
 
   it('does not log when the config fetch is aborted on unmount', async () => {
-    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const fetchMock = vi.fn().mockImplementation(() => new Promise(() => {}));
+    global.fetch = fetchMock;
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { unmount } = render(<ControlPanel onClose={onClose} />);
     unmount();
@@ -118,30 +136,16 @@ describe('ControlPanel', () => {
   });
 
   it('calls onClose and POSTs the config on save success', async () => {
-    fetchMock.mockImplementation((url, opts) => {
-      if (!opts || !opts.method) {
-        return Promise.resolve({ json: () => Promise.resolve({}) });
-      }
-      return Promise.resolve({ json: () => Promise.resolve({ status: 'success' }) });
-    });
-    const user = userEvent.setup();
-    render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
+    mockSaveFetch({ saveResult: { status: 'success' } });
+    await clickSave(onClose);
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
   });
 
   it('alerts when the save response reports a non-success status', async () => {
-    fetchMock.mockImplementation((url, opts) => {
-      if (!opts || !opts.method) {
-        return Promise.resolve({ json: () => Promise.resolve({}) });
-      }
-      return Promise.resolve({ json: () => Promise.resolve({ status: 'error', message: 'bad config' }) });
-    });
-    const user = userEvent.setup();
-    render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
+    mockSaveFetch({ saveResult: { status: 'error', message: 'bad config' } });
+    await clickSave(onClose);
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Failed to save settings/));
     });
@@ -149,16 +153,13 @@ describe('ControlPanel', () => {
   });
 
   it('alerts on thrown save error and does not call onClose', async () => {
-    fetchMock.mockImplementation((url, opts) => {
-      if (!opts || !opts.method) {
-        return Promise.resolve({ json: () => Promise.resolve({}) });
-      }
+    const fetchMock = vi.fn().mockImplementation((url, opts) => {
+      if (!opts || !opts.method) return Promise.resolve(okJson());
       return Promise.reject(new Error('save blew up'));
     });
+    global.fetch = fetchMock;
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const user = userEvent.setup();
-    render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
+    await clickSave(onClose);
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith('Save failed: save blew up');
     });

@@ -6,19 +6,19 @@ import useABJob from '../hooks/useABJob.js';
 
 vi.mock('../hooks/useABJob.js', () => ({ default: vi.fn() }));
 
-describe('ABPlayground', () => {
-  let startMock;
-  let pickMock;
+const EMPTY_IMAGES = { a: [], b: [] };
+const READY_IMAGES = { a: ['/a1.png'], b: ['/b1.png'] };
 
+function mockUseABJob({ status = 'idle', images = EMPTY_IMAGES } = {}) {
+  const start = vi.fn();
+  const pick = vi.fn();
+  useABJob.mockReturnValue({ status, images, start, pick });
+  return { start, pick };
+}
+
+describe('ABPlayground', () => {
   beforeEach(() => {
-    startMock = vi.fn();
-    pickMock = vi.fn();
-    useABJob.mockReturnValue({
-      status: 'idle',
-      images: { a: [], b: [] },
-      start: startMock,
-      pick: pickMock,
-    });
+    mockUseABJob();
   });
 
   it('renders the heading and a button to run A/B comparison', () => {
@@ -36,30 +36,21 @@ describe('ABPlayground', () => {
   });
 
   it('calls start with the prompts when the run button is clicked', async () => {
+    const { start } = mockUseABJob();
     const user = userEvent.setup();
     render(<ABPlayground />);
     await user.click(screen.getByRole('button', { name: /Run A\/B Comparison/i }));
-    expect(startMock).toHaveBeenCalledWith(1, expect.stringMatching(/futuristic/), expect.stringMatching(/raining/));
+    expect(start).toHaveBeenCalledWith(1, expect.stringMatching(/futuristic/), expect.stringMatching(/raining/));
   });
 
   it('disables the run button while running', () => {
-    useABJob.mockReturnValue({
-      status: 'running',
-      images: { a: [], b: [] },
-      start: startMock,
-      pick: pickMock,
-    });
+    mockUseABJob({ status: 'running' });
     render(<ABPlayground />);
     expect(screen.getByRole('button', { name: /Generating Images/i })).toBeDisabled();
   });
 
   it('disables the run button while starting', () => {
-    useABJob.mockReturnValue({
-      status: 'starting',
-      images: { a: [], b: [] },
-      start: startMock,
-      pick: pickMock,
-    });
+    mockUseABJob({ status: 'starting' });
     render(<ABPlayground />);
     expect(screen.getByRole('button', { name: /Generating Images/i })).toBeDisabled();
   });
@@ -71,28 +62,18 @@ describe('ABPlayground', () => {
   });
 
   it('renders variant panels after images arrive', () => {
-    useABJob.mockReturnValue({
-      status: 'ready',
-      images: { a: ['/a1.png'], b: ['/b1.png'] },
-      start: startMock,
-      pick: pickMock,
-    });
+    mockUseABJob({ status: 'ready', images: READY_IMAGES });
     render(<ABPlayground />);
     expect(screen.getByText('Output A')).toBeInTheDocument();
     expect(screen.getByText('Output B')).toBeInTheDocument();
   });
 
   it('forwards the commit click from variant panel to pick', async () => {
+    const { pick } = mockUseABJob({ status: 'ready', images: READY_IMAGES });
     const user = userEvent.setup();
-    useABJob.mockReturnValue({
-      status: 'ready',
-      images: { a: ['/a1.png'], b: ['/b1.png'] },
-      start: startMock,
-      pick: pickMock,
-    });
     render(<ABPlayground />);
     await user.click(screen.getByRole('button', { name: /Commit A/i }));
-    expect(pickMock).toHaveBeenCalledWith('a', 1);
+    expect(pick).toHaveBeenCalledWith('a', 1);
   });
 
   it('updates prompt A value when typed into', async () => {

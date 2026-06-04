@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import UploadZone from './UploadZone.jsx';
 import { apiSend } from '../lib/api.js';
 
@@ -14,67 +13,54 @@ function makeFile(name = 'sample.wav', type = 'audio/wav', size = 1024) {
   return file;
 }
 
-describe('UploadZone', () => {
-  let onUploaded;
-  let onCharacterNameChange;
+function renderZone(props = {}) {
+  const onUploaded = props.onUploaded ?? vi.fn().mockResolvedValue(undefined);
+  const onCharacterNameChange = props.onCharacterNameChange ?? vi.fn();
+  render(
+    <UploadZone
+      characterName={props.characterName ?? 'alice'}
+      onCharacterNameChange={onCharacterNameChange}
+      onUploaded={onUploaded}
+    />
+  );
+  return { onUploaded, onCharacterNameChange, fileInput: document.querySelector('input[type="file"]') };
+}
 
+function pickFile(fileInput, file) {
+  fireEvent.change(fileInput, { target: { files: [file] } });
+}
+
+describe('UploadZone', () => {
   beforeEach(() => {
-    onUploaded = vi.fn().mockResolvedValue(undefined);
-    onCharacterNameChange = vi.fn();
     apiSend.mockReset();
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
   it('renders the character name input with placeholder', () => {
-    render(
-      <UploadZone
-        characterName=""
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    const input = screen.getByPlaceholderText('e.g. lumian_lee');
-    expect(input).toBeInTheDocument();
+    render(<UploadZone characterName="" onCharacterNameChange={vi.fn()} onUploaded={vi.fn()} />);
+    expect(screen.getByPlaceholderText('e.g. lumian_lee')).toBeInTheDocument();
   });
 
   it('renders the drop zone and instruction text', () => {
-    render(
-      <UploadZone
-        characterName="bob"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
+    const { onCharacterNameChange, onUploaded } = renderZone({ characterName: 'bob' });
     expect(screen.getByText(/Drop raw voice sample here/i)).toBeInTheDocument();
     expect(screen.getByText(/WAV or MP3 up to 10MB/i)).toBeInTheDocument();
+    expect(onCharacterNameChange).toBeDefined();
+    expect(onUploaded).toBeDefined();
   });
 
   it('calls onCharacterNameChange when typing in the name field', async () => {
-    const user = userEvent.setup();
-    render(
-      <UploadZone
-        characterName=""
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    await user.type(screen.getByPlaceholderText('e.g. lumian_lee'), 'alice');
+    const { onCharacterNameChange } = renderZone({ characterName: '' });
+    const input = screen.getByPlaceholderText('e.g. lumian_lee');
+    await (await import('@testing-library/user-event')).default.setup().type(input, 'alice');
     expect(onCharacterNameChange).toHaveBeenCalled();
     expect(onCharacterNameChange.mock.calls[0][0]).toBe('a');
   });
 
   it('alerts and does not upload when character name is empty', async () => {
     apiSend.mockResolvedValue({ ok: true });
-    render(
-      <UploadZone
-        characterName="   "
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    const fileInput = document.querySelector('input[type="file"]');
-    const file = makeFile();
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    const { fileInput, onUploaded } = renderZone({ characterName: '   ' });
+    pickFile(fileInput, makeFile());
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith('Please enter a character name first.');
     });
@@ -84,16 +70,8 @@ describe('UploadZone', () => {
 
   it('uploads the file, calls onUploaded, and clears the name on success', async () => {
     apiSend.mockResolvedValue({ ok: true });
-    render(
-      <UploadZone
-        characterName="alice"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    const fileInput = document.querySelector('input[type="file"]');
-    const file = makeFile();
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    const { fileInput, onUploaded, onCharacterNameChange } = renderZone();
+    pickFile(fileInput, makeFile());
     await waitFor(() => {
       expect(apiSend).toHaveBeenCalledWith('/api/upload_voice', expect.any(FormData));
     });
@@ -105,15 +83,8 @@ describe('UploadZone', () => {
 
   it('alerts on upload failure', async () => {
     apiSend.mockResolvedValue({ ok: false });
-    render(
-      <UploadZone
-        characterName="alice"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    const fileInput = document.querySelector('input[type="file"]');
-    fireEvent.change(fileInput, { target: { files: [makeFile()] } });
+    const { fileInput, onUploaded } = renderZone();
+    pickFile(fileInput, makeFile());
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith('Upload failed.');
     });
@@ -123,15 +94,8 @@ describe('UploadZone', () => {
   it('alerts on thrown error from apiSend', async () => {
     apiSend.mockRejectedValue(new Error('network down'));
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    render(
-      <UploadZone
-        characterName="alice"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
-    const fileInput = document.querySelector('input[type="file"]');
-    fireEvent.change(fileInput, { target: { files: [makeFile()] } });
+    const { fileInput } = renderZone();
+    pickFile(fileInput, makeFile());
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith('Upload error.');
     });
@@ -140,11 +104,7 @@ describe('UploadZone', () => {
 
   it('toggles isDragging styles on dragenter and dragleave', () => {
     const { container } = render(
-      <UploadZone
-        characterName="alice"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
+      <UploadZone characterName="alice" onCharacterNameChange={vi.fn()} onUploaded={vi.fn()} />
     );
     const dropZone = container.querySelector('.aspect-video');
     fireEvent.dragOver(dropZone);
@@ -154,19 +114,13 @@ describe('UploadZone', () => {
   });
 
   it('alerts when dropped file fails voice validation', () => {
-    render(
-      <UploadZone
-        characterName="alice"
-        onCharacterNameChange={onCharacterNameChange}
-        onUploaded={onUploaded}
-      />
-    );
+    const { onUploaded } = renderZone();
     const dropZone = document.querySelector('.aspect-video');
     const badFile = new File(['x'], 'sample.txt', { type: 'text/plain' });
     Object.defineProperty(badFile, 'size', { value: 1024 });
-    const dt = { files: [badFile] };
-    fireEvent.drop(dropZone, { dataTransfer: dt });
+    fireEvent.drop(dropZone, { dataTransfer: { files: [badFile] } });
     expect(window.alert).toHaveBeenCalled();
     expect(apiSend).not.toHaveBeenCalled();
+    expect(onUploaded).not.toHaveBeenCalled();
   });
 });

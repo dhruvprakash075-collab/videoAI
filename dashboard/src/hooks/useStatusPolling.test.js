@@ -67,41 +67,30 @@ describe('useStatusPolling', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('keeps last known state when polling throws', async () => {
+  async function testPollingErrorResilience(prevStateValue, errorResponse) {
     fetchMock
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ status: 'running', logs: ['a'], output_video: null, active_question: null }),
+        json: async () => ({ status: prevStateValue, logs: prevStateValue === 'running' ? ['a'] : [], output_video: null, active_question: null }),
       })
-      .mockRejectedValueOnce(new Error('boom'));
-
+      .mockImplementationOnce(errorResponse);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const { result } = renderHook(() => useStatusPolling());
     await flush();
-    expect(result.current[0].state).toBe('running');
-
+    expect(result.current[0].state).toBe(prevStateValue);
     await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.current[0].state).toBe('running');
+    expect(result.current[0].state).toBe(prevStateValue);
+    return result;
+  }
+
+  it('keeps last known state when polling throws', async () => {
+    const result = await testPollingErrorResilience('running', () => Promise.reject(new Error('boom')));
     expect(result.current[0].logs).toEqual(['a']);
   });
 
   it('keeps last known state when response is not ok', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ status: 'paused', logs: [], output_video: null, active_question: null }),
-      })
-      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
-
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    const { result } = renderHook(() => useStatusPolling());
-    await flush();
-    expect(result.current[0].state).toBe('paused');
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.current[0].state).toBe('paused');
+    await testPollingErrorResilience('paused', () => Promise.resolve({ ok: false, status: 500, json: async () => ({}) }));
   });
 
   it('clears the interval on unmount', async () => {

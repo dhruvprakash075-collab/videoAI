@@ -14,12 +14,8 @@ export default function useVoices() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    apiGet('/api/voices')
-      .then((data) => { if (!cancelled) setVoices(data.voices || []); })
-      .catch(() => console.error('Failed to fetch voices'));
-    return () => { cancelled = true; };
-  }, []);
+    refresh();
+  }, [refresh]);
 
   return { voices, refresh };
 }
