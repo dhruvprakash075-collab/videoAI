@@ -101,13 +101,23 @@ class ProjectStore:
 
     # ── Characters ────────────────────────────────────────────────────────
 
-    def log_character(self, name: str, visual_description: str, voice_reference: str = "") -> None:
+    def log_character(
+        self,
+        name: str,
+        visual_description: str,
+        voice_reference: str = "",
+        portrait_prompt: str = "",
+    ) -> None:
         with self._lock:
             key = name.lower().replace(" ", "_")
+            existing = self._data["characters"].get(key, {})
             self._data["characters"][key] = {
                 "name": name,
                 "visual_description": visual_description,
                 "voice_reference": voice_reference,
+                "portrait_prompt": portrait_prompt or existing.get("portrait_prompt", ""),
+                "master_portrait_path": existing.get("master_portrait_path", ""),
+                "master_portrait_hash": existing.get("master_portrait_hash", ""),
                 "updated_at": time.time(),
             }
             log.info(f"[ProjectStore] Character logged: {name}")
@@ -120,6 +130,61 @@ class ProjectStore:
             if entry is None:
                 return None
             return dict(entry)
+
+    # ── Master portrait (Bonsai IP-Adapter reference) ────────────────────
+
+    def set_master_portrait(
+        self,
+        char_key: str,
+        path: str,
+        content_hash: str = "",
+    ) -> None:
+        """Store the path (and optional content hash) of a character's master portrait.
+
+        The hash is used in cache keys so regenerating the portrait invalidates
+        all cached frames that referenced the previous portrait.
+        """
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if char is None:
+                log.warning(
+                    f"[ProjectStore] set_master_portrait skipped — unknown char '{char_key}'"
+                )
+                return
+            char["master_portrait_path"] = path
+            char["master_portrait_hash"] = content_hash
+            char["updated_at"] = time.time()
+            log.info(f"[ProjectStore] Master portrait set for '{char_key}': {path}")
+            self._save()
+
+    def get_master_portrait_path(self, char_key: str) -> str:
+        """Return the path (relative or absolute) of the master portrait, or ''."""
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if not char:
+                return ""
+            return char.get("master_portrait_path", "")
+
+    def get_master_portrait_hash(self, char_key: str) -> str:
+        """Return the content hash of the master portrait, or '' if not set."""
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if not char:
+                return ""
+            return char.get("master_portrait_hash", "")
+
+    def set_portrait_prompt(self, char_key: str, prompt: str) -> None:
+        """Set the structured portrait-generation prompt for a character."""
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if char is None:
+                log.warning(
+                    f"[ProjectStore] set_portrait_prompt skipped — unknown char '{char_key}'"
+                )
+                return
+            char["portrait_prompt"] = prompt
+            char["updated_at"] = time.time()
+            self._save()
 
     # ── Motifs ────────────────────────────────────────────────────────────
 
@@ -463,15 +528,27 @@ class PermanentMemoryLog:
 
     # ── Public API (unchanged from original PermanentMemoryLog) ───────────
 
-    def log_character(self, name: str, visual_description: str, voice_reference: str) -> None:
+    def log_character(
+        self,
+        name: str,
+        visual_description: str,
+        voice_reference: str,
+        portrait_prompt: str = "",
+    ) -> None:
         if self._project:
-            self._project.log_character(name, visual_description, voice_reference)
+            self._project.log_character(
+                name, visual_description, voice_reference, portrait_prompt=portrait_prompt
+            )
         else:
             key = name.lower().replace(" ", "_")
+            existing = self.data["characters"].get(key, {})
             self.data["characters"][key] = {
                 "name": name,
                 "visual_description": visual_description,
                 "voice_reference": voice_reference,
+                "portrait_prompt": portrait_prompt or existing.get("portrait_prompt", ""),
+                "master_portrait_path": existing.get("master_portrait_path", ""),
+                "master_portrait_hash": existing.get("master_portrait_hash", ""),
             }
             # One-time mode: persist to story store and dedicated checkpoint
             with self._lock:

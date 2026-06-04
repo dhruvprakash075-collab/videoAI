@@ -9,7 +9,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.pre_production import (
-    _run_studio_session,
     _seed_director_memory,
     run_pre_production,
     run_preflight_checks,
@@ -43,69 +42,52 @@ def test_run_preflight_checks_edge_cases(monkeypatch):
             run_preflight_checks(config={}, dry_run=False)
 
 
-def test_run_studio_session_edge_cases(tmp_path):
-    ck_dir = tmp_path / "checkpoints"
-    ck_dir.mkdir()
+def test_generate_master_portrait_edge_cases(tmp_path, monkeypatch):
+    """Master portrait gen: short prompt skipped, no prompt falls back, all-fail returns None."""
+    from core.pre_production import generate_master_portrait
 
-    config = {
-        "checkpoint": {"dir": str(ck_dir)},
-        "characters": {
-            "char_non_visual": {
-                "name": "Non Visual Character",
-                "description": "very smart and intellectual and wise and helpful and a great reader of many old books and stories",
-            },
-            "char_existing_lora": {
-                "name": "Existing Lora",
-                "description": "detailed face portrait with black hair and green eyes and long dark coat, standing in front of building",
-            },
-            "char_gen_fail": {
-                "name": "Gen Fail",
-                "description": "detailed face portrait with brown eyes and black hair and blue shirt, close-up photo in the street",
-            },
-            "char_fewer_images": {
-                "name": "Fewer Images",
-                "description": "detailed face portrait with blue eyes and black hair and red scarf, highly focused studio lighting",
-            },
-            "char_train_fail": {
-                "name": "Train Fail",
-                "description": "detailed face portrait with green eyes and brown hair and yellow jacket, beautiful digital artwork",
-            },
-        },
-    }
+    fake_ps = MagicMock()
+    fake_ps.get_character.return_value = {"name": "H", "visual_description": "long desc of hero"}
+    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
 
-    existing_lora_file = ck_dir / "protagonist_existing_lora_lora.safetensors"
-    existing_lora_file.touch()
+    def fake_load_bonsai(model_id):
+        # All attempts raise -> generate_master_portrait returns None
+        def _raise(*a, **kw):
+            raise Exception("simulated gen fail")
 
-    mock_scheduler = MagicMock()
+        pipe = MagicMock(side_effect=_raise)
+        pipe.load_ip_adapter = MagicMock()
+        return pipe
 
-    def mock_gen_images(prompts, ref_dir, seg_config):
-        if "brown eyes" in prompts:
-            raise Exception("gen fail")
-        if "blue eyes" in prompts:
-            return ["img1.png"]
-        return ["img1.png", "img2.png", "img3.png", "img4.png", "img5.png"]
+    monkeypatch.setattr(
+        "video.image_gen.image_gen._load_bonsai_pipeline", fake_load_bonsai
+    )
 
-    def mock_train_lora(image_paths, char_name, output_dir, char_description, mock):
-        if char_name == "Train Fail":
-            return None
-        return Path("dummy_lora.safetensors")
+    cfg = {"image_gen": {"steps": 4, "guidance_scale": 3.5}}
 
-    with (
-        patch("video.image_gen.image_gen.generate_images", side_effect=mock_gen_images),
-        patch("train_lora.train_protagonist_lora", side_effect=mock_train_lora),
-        patch("video.image_gen.image_gen.unload_sd_pipeline"),
-    ):
-        res = _run_studio_session(
-            config=config,
-            out_base=Path("dummy_out_base"),
-            dry_run=True,
-            global_scheduler=mock_scheduler,
-        )
-        assert "char_non_visual" not in res
-        assert "char_existing_lora" in res
-        assert "char_gen_fail" not in res
-        assert "char_fewer_images" not in res
-        assert "char_train_fail" not in res
+    # char_non_visual: no portrait_prompt -> still attempts generation
+    res1 = generate_master_portrait(
+        "char_non_visual",
+        "proj1",
+        {"name": "Non Visual", "visual_description": "smart and intellectual reader"},
+        cfg,
+        dry_run=False,
+    )
+    assert res1 is None  # all candidates failed
+
+    # char_no_prompt: dict with no portrait_prompt/description -> no usable prompt
+    res2 = generate_master_portrait(
+        "char_no_prompt",
+        "proj1",
+        {"name": "Empty"},  # nothing
+        cfg,
+        dry_run=False,
+    )
+    assert res2 is None  # no prompt to generate from
+
+
+# Old test_run_studio_session_edge_cases removed (Bonsai uses lazy portrait gen)
+# Replaced by test_generate_master_portrait_edge_cases above.
 
 
 def test_seed_director_memory_edge_cases(tmp_path):

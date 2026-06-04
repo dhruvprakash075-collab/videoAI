@@ -12,7 +12,7 @@ All tests run locally using mock-heavy patterns — no GPU, Ollama server, or ex
   ```powershell
   venv\Scripts\python.exe -m pytest tests/ -q
   ```
-  **Current status**: **1,743 passing tests**, 1 skipped, 0 failing (verified 2026-06-03).
+  **Current status**: **1,745 passing tests**, 1 skipped, 0 failing (verified 2026-06-03).
   Runtime: ~3 minutes on warm cache.
 
   > **Windows note**: After the run you may see a `PermissionError: [WinError 5]` about `pytest-current` symlink cleanup in `%TEMP%`. This is a **benign** Windows/pytest interaction — all tests passed. Not your bug.
@@ -31,6 +31,23 @@ Key test modules include:
 - `test_critic.py` (51 tests) — 5-dim rubric + rewrite loop
 - `test_segment_runner_helpers.py` — per-segment loop logic
 - `test_2026_06_fixes.py` (25 tests) — regression coverage for P5-1..4, P4-8, P4-23
+- Supertonic 3 TTS (CPU ONNX) is integrated in `audio/supertonic_worker.py` and
+  dispatched via `audio/audio_proxy.py::tts_generate()` (engine = `supertonic`).
+  Not yet covered by pytest — end-to-end smoke test in `docs/AGENTS.md`
+  § "Supertonic 3 TTS integration".
+- **Bonsai 4B image gen (2026-06-04)** is covered by:
+  - `test_image_gen.py` (19 tests) — OOM ledger, `unload_bonsai_pipeline`,
+    `_prompt_cache_key` (incl. `master_portrait_hash` invalidation),
+    `_resolve_dominant_char`, `generate_images` dispatch.
+  - `test_image_gen_extended.py` (6 tests) — IP-Adapter attach, lazy
+    portrait trigger, skip-when-portrait-exists, cache-key
+    portrait-change invalidation, model-change pipe reload, OOM
+    event recording.
+  - `test_pre_production.py` (3 new tests) — `generate_master_portrait`
+    dry-run, no-prompt fallback, no-candidates → None.
+  - `test_pre_production_extended.py` (1 new test) — portrait edge cases.
+  - **NOT** in pytest: full Bonsai inference (requires 4B model on HF +
+    gemlite kernel + ~3.5 GB VRAM). End-to-end smoke is manual.
 
 ### Important Notes
 - **26 DeprecationWarnings** appear every run — all from `crewai` internals (`function_calling_llm`, `reasoning`, `planning_config`). These are harmless and not your bug.

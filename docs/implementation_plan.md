@@ -16,6 +16,31 @@
 
 ---
 
+## Status: Milestone Tracker (2026-06-04)
+
+| Milestone | Status | Date | Reference |
+|---|---|---|---|
+| Phase 0 hygiene (8 fixes) | ✅ Done | 2026-06-02 | §3.3 below |
+| Phase 0.5 TTS timestamp fix | ✅ Done | 2026-06-02 | §3.4 below |
+| v6 Phase 1: source loader | ✅ Done | 2026-06-02 | `test_source_loader.py` (57 tests) |
+| v6 Phase 2: source splitter | ✅ Done | 2026-06-02 | `test_source_splitter.py` (57 tests) |
+| v6 Phase 3: researcher | ✅ Done | 2026-06-02 | `test_researcher.py` (31 tests) |
+| v6 Phase 4: critic + bypass | ✅ Done | 2026-06-02 | `test_critic.py` (51 tests) |
+| v6 Phase 5: SEO generator | ✅ Done | 2026-06-02 | `test_seo_generator_extended.py` (58 tests) |
+| v6 Phase 6: YouTube upload | ✅ Done | 2026-06-02 | `test_youtube_uploader.py` (24) + `test_youtube_profile_setup.py` (10) |
+| **Dashboard refactor + Vitest** | ✅ Done | 2026-06-03 | 163 tests, 96.04% coverage |
+| **Supertonic 3 TTS integration** | ✅ Done | 2026-06-03 | `audio/supertonic_worker.py` |
+| **Supertonic 3 = default TTS** | ✅ Done | 2026-06-04 | `config/config.yaml:31` |
+| **3 DIY voice JSONs** | ✅ Done | 2026-06-04 | `character_voices/dhruv_voice_*.json` |
+| **P6-1..3 bug fixes** | ✅ Done | 2026-06-04 | `bug_resolution_history.md` |
+| TTS fallback chain | ✅ Done | 2026-06-04 | `audio/audio_proxy.py::tts_generate()` |
+| Production 3-hour video | ⏳ Pending | — | Bottleneck now = image gen, not TTS |
+| DMD2/LCM image acceleration | 🔜 Next | — | Would cut image gen 50% |
+| FramePack motion | 🔜 Tier 2 | — | `RESEARCH_WHAT_TO_ADD.md` |
+| Real-ESRGAN upscaler | 🔜 Tier 2 | — | Replaces Lanczos |
+
+---
+
 ## Table of Contents
 
 - [§1 Plan — Video.AI v6 Unified Pipeline](#1-plan--videoai-v6-unified-pipeline)
@@ -85,8 +110,10 @@ You confirmed: **only 2 text models**, plus image + voice:
 | **Director** | `hermes-director` (8B Q4) | Pre-production planning, story outline, SEO | No — evicts before GPU tasks |
 | **Writer** | `zephyr-writer` (7B Q4) | Writes scripts **and** self-critiques via prompt swap | No — evicts before GPU tasks |
 | ~~Critic~~ | ~~`script-reviewer`~~ | **REMOVED** — never created, was auto-approving everything | — |
-| Image | SD 1.5 + LoRA | Image generation | Yes (own VRAM) |
-| Voice | OmniVoice Hindi | TTS | Yes (own VRAM) |
+| **Image (2026-06-04)** | **Bonsai 4B ternary + IP-Adapter FLUX v2** | Image generation — FLUX-quality on 6GB VRAM, lazy per-character master portrait | Yes (~3.5 GB peak) |
+| **Voice (2026-06-04)** | **Supertonic 3 + DIY Hindi clone** | TTS — **CPU ONNX, 0 VRAM**, can run concurrent with SD | CPU only |
+| Voice (fallback 1) | OmniVoice Hindi | Higher-quality GPU fallback | ~2 GB VRAM |
+| Voice (fallback 2) | Edge TTS (Azure neural) | Last-resort cloud-free neural | 0 VRAM (network) |
 
 **Why this justifies the hybrid node (Req #3):** the writer does both roles via
 a prompt swap, not a model swap. Same model, same VRAM, one graph node —
@@ -118,7 +145,7 @@ prompt swap is strictly better than a fake critic.
       │      ▼ approved                     │                            │
       │  [Translate: Sarvam → Devanagari]    │                            │
       │  [TTS: OmniVoice Hindi clone]        │                            │
-      │  [SD Image Gen: LoRA face-lock]      │                            │
+      │  [Image Gen: Bonsai + IP-Adapter]    │                            │
       │  [FFmpeg Render: Ken Burns + SRT]    │                            │
       └──────────────────────────────────────────────────────────────┘
                                                            │
@@ -163,7 +190,7 @@ building anything new**, so we have a clean baseline.
 | 5 | Zero tests for new code | `tests/test_*.py` | Add `test_pipeline_graph.py` + `test_youtube_uploader.py` + `test_seo_generator.py` |
 | 6 | SEO description + chapter timestamps missing | `utils/seo_generator.py` | Add 2 new fields, prompt Ollama for them |
 | 7 | `critic_node` calls a non-existent model (auto-approves everything) | `core/segment_runner.py:491` + `config.yaml:18` | **Remove `script-reviewer` from config and the reviewer call from segment_runner** — replaced by writer self-critique (see v6.1 model roster) |
-| 8 | `config_schema.py` referenced in plan, but actual file is `config_schemas.py` (plural) | plan doc | Update all references |
+| 8 | ~~`config_schema.py` referenced in plan, but actual file is `config_schemas.py` (plural)~~ | plan doc + `docs/AGENTS.md:380, 558, 590` | **DONE 2026-06-04** — all references updated to `config_schemas.py` (plural) |
 
 **Phase 0 effort:** ~2–3 hours. **No new functionality**, just hygiene.
 
@@ -506,8 +533,8 @@ graph TD
         direction TB
         Hybrid[Writer+Director Hybrid Node<br/>writer writes → self-critiques via prompt swap<br/>Req #3: same model = single node is correct]
         Translate[Translate to Devanagari<br/>Sarvam]
-        TTS[OmniVoice TTS<br/>Hindi voice clone]
-        SD[SD Image Gen<br/>LoRA face-lock]
+        TTS[Supertonic 3 TTS<br/>DIY Hindi voice clone<br/>2026-06-04]
+        SD[Bonsai 4B Image Gen<br/>+ IP-Adapter v2<br/>2026-06-04]
         Render[FFmpeg Render<br/>Ken Burns + SRT]
 
         Hybrid -->|critic_approved| Translate
@@ -549,8 +576,8 @@ graph TD
 | Pre-Production Director | `core/pre_production.py` (existing) | No | Yes |
 | **Writer+Director Hybrid** | `core/pipeline_graph.py` (Phase 4) | No | **Yes (2–6 calls)** |
 | Translate (Sarvam) | `core/pipeline_graph.py` (existing `translate_node`) | No | Yes |
-| TTS (OmniVoice) | `core/segment_runner.py` (existing) | **Yes** | No |
-| SD Image Gen (LoRA) | `core/segment_runner.py` (existing) | **Yes** | No |
+| TTS (Supertonic 3) | `core/segment_runner.py` (existing) | No (CPU) | No |
+| **Image Gen (Bonsai + IP-Adapter)** | `core/segment_runner.py` (existing) | **Yes** | No |
 | FFmpeg Render | `core/segment_runner.py` (existing) | No | No |
 | Post-Production | `core/post_production.py` (existing) | No | No |
 | SEO Generator | `utils/seo_generator.py` (extend Phase 5) | No | Yes |
@@ -603,8 +630,9 @@ nodes would force a `route_after_critic` conditional edge and lose the
 ## 3.0 Project Context
 
 **Project:** Video.AI — a local-only video generation pipeline. Topic → story
-plan → Hindi voiceover (OmniVoice TTS) → Stable Diffusion images with LoRA
-face-lock → Ken Burns MP4 with Devanagari subtitles. All local on a Windows 11
+plan → Hindi voiceover (Supertonic 3 TTS, 2026-06-04) → Bonsai 4B images with
+IP-Adapter FLUX v2 face-lock (2026-06-04) → Ken Burns MP4 with Devanagari
+subtitles. All local on a Windows 11
 RTX 4050 (6 GB VRAM) + 16 GB RAM box. Python 3.12.13 in `venv/`.
 
 **Working directory:** `C:\Video.AI`
@@ -1419,7 +1447,7 @@ Single sentence describing the implementation sequence.
 Numbered steps showing logical order:
 1. Inspect current `utils/local_ui.py` code paths for `/api/status` and A/B generation worker (confirm response shapes and current validation).
 2. Implement thread-safe `UIState.logs` copying in `get_system_status()` using `UIState._log_lock` when available; keep fallback behavior if lock is missing.
-3. Implement VRAM/LLM eviction safety in the A/B worker before Stable Diffusion generation, using `core.segment_runner.evict_ollama_models(config, reason="UI-AB")` and best-effort CUDA cache clearing fallback.
+3. Implement VRAM/LLM eviction safety in the A/B worker before Bonsai image generation, using `core.segment_runner.evict_ollama_models(config, reason="UI-AB")` and best-effort CUDA cache clearing fallback.
 4. Run `ruff check .` and `pytest tests/ -q` to confirm no regressions.
 5. Execute a minimal runtime smoke test for `/api/status` and `/api/ab/*` endpoints (manual curl/Invoke-RestMethod), verifying response shapes and error codes.
 

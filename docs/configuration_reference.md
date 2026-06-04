@@ -15,7 +15,12 @@ Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown ke
 | `models` | `director` | `"hermes-director"` | Planning / translation LLM |
 | `models` | `writer` | `"zephyr-writer"` | Script generation LLM |
 | `tts.omnivoice` | `num_step` | `16` | Was 24 — reduced for speed |
-| `tts` | `engine` | `"omnivoice"` | Primary TTS; edge-tts is fallback |
+| `tts` | `engine` | **"supertonic"** | **Active default (2026-06-04)**. Fallback chain: `supertonic → omnivoice → edge-tts` |
+| `tts.supertonic` | `voice` | `"character_voices/dhruv_voice_polished.json"` | DIY extract, 18s polished, loss 0.2721 |
+| `tts.supertonic` | `steps` | **16** | Was 8 — A/B winner 2026-06-04 (less hiss) |
+| `tts.supertonic` | `speed` | **1.0** | Was 1.05 — A/B winner 2026-06-04 (natural pace) |
+| `tts.supertonic` | `silence_duration` | **0.1** | Was 0.3 — modern snappy |
+| `tts.supertonic` | `max_chunk_length` | `150` | Force chunking before danda fix (P6-1) |
 | `script` | `words_per_segment` | `100` | Was 130 — stale in old docs |
 | `performance` | `staged_loop` | `true` | C1 staged loop enabled |
 | `performance` | `vram_sd_threshold_gb` | `4.5` | Min VRAM before SD loads |
@@ -25,6 +30,32 @@ Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown ke
 | `whisper_model_final` | — | `"base"` | Final subtitle render |
 | `loudnorm_two_pass` | — | `true` | Two-pass Loudnorm enabled |
 | `target_lufs` | — | `-14` | LUFS target for mastering |
+
+### TTS engine fallback chain (2026-06-04)
+
+When `tts.engine == "supertonic"` and synthesis fails (e.g. ONNX OOM,
+crashed worker, missing voice JSON), `audio/audio_proxy.py::tts_generate()`
+auto-tries:
+1. **supertonic** (active) — CPU ONNX, 4.5x faster than OmniVoice
+2. **omnivoice** — GPU DiT, 1.2x realtime, richer timbre
+3. **edge-tts** — Cloud-free Azure neural TTS, last resort
+
+The chain mirrors the F5 fallback pattern. To force a specific engine,
+set `tts.engine` directly.
+
+### DIY voice style JSONs (Supertonic 3)
+
+Three extracted voices persist in `character_voices/`. All use the same
+WavLM-Large Layer 3 perceptual loss against `narration_voice.wav`:
+
+| File | Source | Loss | Status |
+|---|---|---|---|
+| `dhruv_voice_polished.json` (289KB) | 17.77s polished (HP 80Hz, trim, normalize, fade) | 0.2721 | **ACTIVE default** |
+| `dhruv_voice_v3_9s.json` (290KB) | 9s raw auto-trim from `narration_ref_9s_mono24k.wav` | 0.2399 | Backup (richer timbre) |
+| `dhruv_voice_v3.json` (289KB) | 71.94s merged (18s real + 0.5s silence + 55s OmniVoice-synth Hindi) | 0.2388 | Empirical ceiling reference |
+
+To switch: edit `tts.supertonic.voice` in `config/config.yaml`. See
+`docs/voice_cloning.md` for extraction commands.
 
 ### v6 Pipeline Sections
 - **`source:`** — Source ingestion config (v6 Phase 1): max file size, allowed extensions.
@@ -47,19 +78,62 @@ Holds all LLM system prompts and task templates:
 
 ## 3. Visual Styles (`styles.yaml` + `style_resolver.py`)
 
-Preset rendering anchors applied to Stable Diffusion prompts. The [style_resolver.py](file:///c:/Video.AI/style_resolver.py) (3-layer resolver) picks the matching preset at generation time.
+Preset rendering anchors applied to Bonsai image prompts. The [style_resolver.py](file:///c:/Video.AI/style_resolver.py) (3-layer resolver) picks the matching preset at generation time.
+
+> **2026-06-04:** `negative` fields are accepted for back-compat with old
+> prompts but Bonsai ignores them (FLUX-style models do not use negative
+> prompts).
 
 **Format example**:
 ```yaml
 styles:
   cinematic:
     positive: "cinematic style, 8k resolution, photorealistic, dramatic lighting"
-    negative: "cartoon, anime, drawings, low quality, text, watermark"
+    negative: "cartoon, anime, drawings, low quality, text, watermark"  # ignored by Bonsai
 ```
 
 ---
 
-## 4. Adding / Changing Config
+## 4. Image Generation (`image_gen` block, 2026-06-04)
+
+Bonsai 4B ternary + IP-Adapter FLUX v2 is the only image backend. No
+Stable Diffusion, no LoRA — character face consistency is via
+IP-Adapter referencing per-character master portraits.
+
+```yaml
+image_gen:
+  backend: "bonsai"                              # always "bonsai" — no other backends
+  bonsai_model: "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
+  height: 1024
+  width: 1024
+  steps: 4                                       # Bonsai is distilled; more steps is slower, not better
+  guidance_scale: 3.5                            # 3.0–4.0 sweet spot; <3 loose, >4 oversaturated
+  ip_adapter_scale: 0.8                         # 0.0–1.0; balance between prompt adherence and face lock
+  lock_seed: true                                # same seed + same prompt = same image
+  preview_steps: 4                              # preview renders use this step count
+  oom_recovery: true                             # 2-tier ladder (see runtime_safety_guide.md §4)
+  upscaler: { model: "none", model_path: "", scale: 4 }  # opt into Real-ESRGAN if needed
+
+  # Character portrait generation (lazy, on first frame with char_presence ≥ 0.3)
+  # No "negative_prompt" — FLUX-style models do not use them
+  # No "lora_*" — LoRA removed; consistency is via IP-Adapter
+  # No "xformers" / "channels_last" / "cpu_offload" — sequential VRAM keeps peak ~3.5GB
+  # No "acceleration" — Bonsai is already distilled and fast
+```
+
+**Character data** in the Director overlay may include an optional
+`portrait_prompt` field. If absent, `visual_description` is prefixed
+with `"portrait, "` and used as the prompt. Master portraits are
+stored at `studio_projects/{project_id}/characters/{char_key}/master.png`.
+
+**OOM report** is written to
+`studio_outputs/{project}/oom_report.json` and accessible via
+`image_gen.get_oom_report()`. The frame cache key includes
+`master_portrait_hash` so portrait regen invalidates stale frames.
+
+---
+
+## 5. Adding / Changing Config
 
 1. Add key to `config/config.yaml`.
 2. Add a matching Pydantic field to `config/config_schemas.py`.

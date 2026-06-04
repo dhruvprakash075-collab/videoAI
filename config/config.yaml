@@ -28,9 +28,16 @@ ollama:
 
 # ── TTS Configuration ─────────────────────────────────────────────
 tts:
-  engine: "omnivoice"       # Reverted to OmniVoice: SPRINGLab F5-Hindi clones poorly (gurgly/straw artifact). OmniVoice = correct Hindi + good clone (slower). Set to "f5" to use F5 again.
+  engine: "supertonic"      # 2026-06-04: Supertonic 3 promoted to default (was omnivoice). 4.5x faster, zero VRAM. Fallback chain: supertonic → omnivoice → edge-tts.
   lang: "hi"
   slow: false
+
+  supertonic:               # 2026-06-04 A/B winners; see docs/supertonic_pipeline.md §4
+    voice: "character_voices/dhruv_voice_polished.json"   # DIY-extracted polished 18s (loss 0.2721); 3 voice JSONs compared in docs/voice_cloning.md
+    steps: 16               # was 8 (hissy) — A/B winner
+    speed: 1.0              # was 1.05 (too fast) — A/B winner
+    silence_duration: 0.1   # was 0.3 (slow) — modern snappy
+    max_chunk_length: 150   # defense vs P6-1 danda bug (forces chunking before synthesis)
 
   f5:
     model_path: "hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/488556290bc8e35d3883554662f77eda413a7eb4"   # HF hub cache path (set by setup_f5.ps1)
@@ -90,55 +97,28 @@ video:
   motion_seconds_per_image: 3  # V1: seconds of motion per image when motion_engine = framepack
 
 # ── Image Generation ─────────────────────────────────────────────
+# Bonsai 4B ternary (gemlite 2-bit) is the only image backend.
+# Character face consistency is achieved via IP-Adapter FLUX v2
+# (XLabs-AI/flux-ip-adapter-v2) referencing per-character master portraits.
 image_gen:
-  backend: "stable_diffusion"
-  sd_model: "anyLoRA"
-  sd_model_path: "Lykon/AnyLoRA"
-  dtype: "float16"
-  enable_xformers: true
-  attention_slicing: true
-  vae_tiling: true               # splits large images into tiles; prevents VAE OOM on 6GB
-  model_cpu_offload: false       # set true if OOM at 768x432; adds ~20% latency
-  group_offload: false           # granular leaf-level offload with stream overlap; less latency than model_cpu_offload
-  channels_last: true            # NHWC memory format; ~10% faster on Ada GPUs
-  height: 432                    # proper 16:9 widescreen
-  width: 768                     # float16+xformers+vae_tiling fits in 4GB on RTX 4050
-  steps: 12                      # DPM++ 2M Karras sweet-spot; 12 steps ≈ 20 steps quality (was 10)
-  guidance_scale: 6.0            # sweet spot for DPM++ 2M at 12 steps; 7.0 oversaturates at low steps
-  negative_prompt: "photorealistic, real life, 3d, 3d render, render, photograph, photography, real-world textures, digital clay, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry"
-  lock_seed: true                # A2: derive stable base seed from topic hash for visual consistency
-  preview_steps: 12              # A4: use this many steps in dry_run/preview_mode (faster iteration)
-  oom_recovery: true             # D1: enable OOM auto-recovery ladder (full→reduced steps→lower res→cpu→black frame)
-  oom_min_resolution: "640x360"  # D1: minimum resolution to try before CPU fallback
-  token_budget:                  # B4: CLIP 77-token budget allocation
-    identity: 25                 # tokens reserved for character identity
-    style: 20                    # tokens reserved for visual style
-    scene: 32                    # tokens reserved for scene description
+  backend: "bonsai"
+  bonsai_model: "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
+  height: 1024
+  width: 1024
+  steps: 4
+  guidance_scale: 3.5
+  # No negative_prompt — FLUX-style models do not use them
+  # No acceleration block — Bonsai is already a distilled, fast model
+  # No xformers / channels_last / cpu_offload — sequential VRAM keeps peak ~3.5GB
+  # No LoRA — character consistency is via IP-Adapter
+  ip_adapter_scale: 0.8         # 0.0–1.0; default 0.8 is balanced
+  lock_seed: true
+  preview_steps: 4
+  oom_recovery: true
 
-  # ── Acceleration adapter (off by default — evaluate before enabling) ──────
-  # type: "none" | "dmd2" | "hyper_sd" | "lcm"
-  # lora_path: path to the distillation LoRA .safetensors file
-  # lora_scale: fusion strength (1.0 = full strength)
-  # steps: inference steps when acceleration is active (4-8 recommended)
-  # guidance_scale: MUST be low for distilled models (LCM/DMD2: 1.0-2.0, NOT 6.0)
-  # To enable: set type, provide lora_path, then test on hardware before production.
-  acceleration:
-    type: "none"
-    lora_path: ""
-    lora_scale: 1.0
-    steps: 6
-    guidance_scale: 1.5
-
-  # ── Upscaler (enabled: sharpen generated frames up to true 1080p) ────────
-  # model: "none" | "4x-UltraSharp" | "realesrgan"
-  #   - "4x-UltraSharp"/"realesrgan": uses Real-ESRGAN IF basicsr+realesrgan and
-  #     the model weights are installed; otherwise auto-falls back to Lanczos.
-  #   - With packages/weights absent (current state) this performs a high-quality
-  #     Lanczos resize to target_width/height — no downloads, no VRAM cost.
-  # To upgrade to true neural upscaling later: pip install realesrgan basicsr,
-  #   download 4x-UltraSharp.pth, and set model_path below.
+  # ── Upscaler (Lanczos-only fallback by default; opt into Real-ESRGAN) ───
   upscaler:
-    model: "4x-UltraSharp"
+    model: "none"
     model_path: ""
     scale: 4
     target_width: 1920

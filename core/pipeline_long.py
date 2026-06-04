@@ -82,7 +82,6 @@ except Exception:
 # ── Re-exports for backwards compatibility (tests, TUI, etc.) ────────────
 from core.pre_production import (
     _deep_merge,
-    _run_studio_session,
     _sanitize_narration,  # noqa: F401  (used by tests)
     _seed_director_memory,
     format_chapters_time,  # noqa: F401
@@ -289,16 +288,11 @@ def run_long_pipeline(
     mp4s: list[Path | None] = [None] * n_segs
     mp4s_lock = threading.Lock()
 
-    # Upfront LoRA Studio Session
+    # Master portraits are generated lazily on first character appearance
+    # (triggered inside image_gen._bonsai()). No upfront session needed.
+    # `trained_loras` is retained as a variable name for downstream callers
+    # that expect it; it is always empty now that LoRA is removed.
     trained_loras: dict[str, Any] = {}
-    try:
-        from train_lora import train_protagonist_lora
-    except ImportError:
-        train_protagonist_lora = None
-    if train_protagonist_lora:
-        trained_loras = _run_studio_session(config, out_base, dry_run, global_scheduler)
-    else:
-        log.debug("train_lora not available — LoRA Face-Lock disabled")
 
     completed_segs_counter_holder = [0]
     completed_segs_lock = threading.Lock()
@@ -678,11 +672,12 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n[FAILED] Pipeline interrupted by user")
         try:
-            from video.image_gen.image_gen import unload_sd_pipeline
+            from video.image_gen.image_gen import unload_bonsai_pipeline
+            from video.image_gen.ip_adapter import unload_ip_adapter
 
-            if unload_sd_pipeline is not None:
-                unload_sd_pipeline()
-                log.info("Gracefully released GPU Image Generation models.")
+            unload_bonsai_pipeline()
+            unload_ip_adapter()
+            log.info("Gracefully released GPU Image Generation models.")
         except Exception as e:
             log.debug(f"Error during graceful shutdown: {e}")
         sys.exit(1)

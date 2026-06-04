@@ -735,15 +735,16 @@ def make_process_segment(
         if isinstance(enrich_result, tuple):
             seg_config["image_gen"]["negative_prompt"] = enrich_result[1]
 
-        evict_ollama_models(config, reason="StableDiffusion")
+        evict_ollama_models(config, reason="ImageGeneration")
 
-        with global_scheduler.task("heavy", f"Seg{i}:StableDiffusion"):
+        with global_scheduler.task("heavy", f"Seg{i}:ImageGeneration"):
             images = generate_images(
                 enriched_prompts,
                 out_base / "images",
                 seg_config,
                 lora_paths=trained_loras,
                 char_presence=plan.get("char_presence"),
+                project_id=topic,
             )
 
         img_paths = [str(p) for p in images] if images else []

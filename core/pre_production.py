@@ -257,146 +257,202 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
             )
 
 
-# ── Upfront LoRA Studio Session ───────────────────────────────────────────
+# ── Master Portrait Generation (lazy, per-character) ─────────────────────
+#
+# Replaces the old LoRA-studio session. Bonsai generates a master portrait
+# for each character on first appearance in any frame (lazy trigger lives
+# inside image_gen._bonsai()). This module provides the helper that the
+# lazy trigger calls into.
+#
+# Best-of-3 auto-selection: generate 3 candidates, score each with CLIP
+# image-text similarity, pick the highest. The CLIP scorer is loaded
+# on-demand and unloaded after scoring (sequential VRAM).
 
 
-def _run_studio_session(
-    config: dict, out_base: Path, dry_run: bool = False, global_scheduler=None
-) -> dict:
-    """Pre-train Face-Lock LoRAs for all characters before video generation."""
+def generate_master_portrait(
+    char_key: str,
+    project_id: str,
+    char_data: dict,
+    config: dict,
+    dry_run: bool = False,
+) -> Path | None:
+    """Generate (or regenerate) a master portrait for one character.
+
+    Pipeline:
+    1. Resolve portrait_prompt from char_data or project_store
+    2. Load Bonsai (cached if already loaded)
+    3. Generate 3 candidates with different seeds
+    4. Score with CLIP image-text similarity
+    5. Save best to studio_projects/{project_id}/characters/{char_key}/master.png
+    6. Update project_store with path + SHA256 hash
+    7. Unload Bonsai (free VRAM for the next lazy gen or frame gen)
+
+    Returns the saved Path, or None on failure.
+    """
+    from video.image_gen.image_gen import (
+        _load_bonsai_pipeline,
+        unload_bonsai_pipeline,
+    )
+
+    char_name = char_data.get("name", char_key)
+    portrait_prompt = char_data.get("portrait_prompt", "")
+    if not portrait_prompt:
+        # Try project_store (in case Writer emitted it via the char_data flow
+        # but it isn't on this dict shape).
+        try:
+            from memory.project_store import ProjectStore
+
+            ps = ProjectStore(project_id or "_default")
+            entry = ps.get_character(char_key) or {}
+            portrait_prompt = entry.get("portrait_prompt", "")
+        except Exception:
+            portrait_prompt = ""
+
+    if not portrait_prompt:
+        log.warning(
+            f"[Portrait] No portrait_prompt for {char_name} — using visual_description"
+        )
+        portrait_prompt = char_data.get(
+            "visual_description", char_data.get("description", char_name)
+        )
+    if not portrait_prompt.lower().startswith("portrait"):
+        portrait_prompt = f"portrait, {portrait_prompt}, neutral background, centered, looking at camera"
+
+    cfg = config.get("image_gen") or {}
+    if dry_run:
+        # Save a placeholder PNG so the rest of the pipeline can proceed
+        out_dir = Path("studio_projects") / project_id / "characters" / char_key
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "master.png"
+        try:
+            from PIL import Image
+
+            Image.new("RGB", (512, 512), (128, 128, 128)).save(out_path, "PNG")
+            log.info(f"[Portrait][dry_run] placeholder saved: {out_path}")
+            _record_portrait_to_store(char_key, project_id, out_path)
+            return out_path
+        except Exception as e:
+            log.warning(f"[Portrait][dry_run] placeholder failed: {e}")
+            return None
+
     try:
-        from train_lora import train_protagonist_lora
-        from video.image_gen.image_gen import generate_images, unload_sd_pipeline
+        import torch
+
+        model_id = cfg.get("bonsai_model", "prism-ml/bonsai-image-ternary-4B-gemlite-2bit")
+        pipe = _load_bonsai_pipeline(model_id)
+    except Exception as e:
+        log.exception(f"[Portrait] Could not load Bonsai: {e}")
+        return None
+
+    import torch
+
+    candidates: list[tuple[float, object]] = []  # (clip_score, pil_image)
+    out_dir = Path("studio_projects") / project_id / "characters" / char_key
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "master.png"
+
+    log.info(f"[Portrait] Generating 3 candidates for {char_name}...")
+    for k in range(3):
+        try:
+            with torch.inference_mode():
+                img = pipe(
+                    prompt=portrait_prompt,
+                    height=1024,
+                    width=1024,
+                    num_inference_steps=int(cfg.get("steps", 4)),
+                    guidance_scale=float(cfg.get("guidance_scale", 3.5)),
+                ).images[0]
+        except Exception as e:
+            log.warning(f"[Portrait] Candidate {k + 1}/3 failed for {char_name}: {e}")
+            continue
+        score = _score_with_clip(img, portrait_prompt)
+        candidates.append((score, img))
+        log.info(f"[Portrait] Candidate {k + 1}/3 CLIP score: {score:.4f}")
+
+    if not candidates:
+        log.error(f"[Portrait] All 3 candidates failed for {char_name}")
+        return None
+
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    best_score, best_img = candidates[0]
+    try:
+        best_img.save(str(out_path), "PNG")
+    except Exception as e:
+        log.exception(f"[Portrait] Could not save master.png: {e}")
+        return None
+
+    log.info(
+        f"[Portrait] Saved {char_name} master (score={best_score:.4f}) -> {out_path}"
+    )
+    _record_portrait_to_store(char_key, project_id, out_path)
+    return out_path
+
+
+def _score_with_clip(pil_image, prompt: str) -> float:
+    """Score a PIL image against a text prompt using CLIP. Returns float.
+
+    Loads CLIP on first call, caches it for the process, and frees the
+    processor/model after use. Sequential VRAM means this is safe to do
+    interleaved with Bonsai loads.
+    """
+    global _clip_model, _clip_processor
+    try:
+        from transformers import CLIPModel, CLIPProcessor  # type: ignore
     except ImportError:
-        return {}
+        log.warning("[CLIP] transformers not installed — falling back to score 0.0")
+        return 0.0
+    try:
+        if _clip_model is None or _clip_processor is None:
+            model_id = "openai/clip-vit-base-patch32"
+            _clip_processor = CLIPProcessor.from_pretrained(model_id)
+            _clip_model = CLIPModel.from_pretrained(model_id)
+            import torch
 
-    trained_loras: dict[str, Any] = {}
-    chars = config.get("characters", {})
-    if not chars:
-        return trained_loras
+            if torch.cuda.is_available():
+                _clip_model = _clip_model.to("cuda")
+        import torch
 
-    ck_dir = Path(config.get("checkpoint", {}).get("dir", "studio_checkpoints"))
-    ck_dir.mkdir(parents=True, exist_ok=True)
-
-    for c_key, c_data in chars.items():
-        char_name = c_data.get("name", c_key)
-        char_desc = c_data.get("description", "")
-
-        if len(char_desc) < 50:
-            log.info(
-                f"[Studio Session] Skipping {char_name} — description too short ({len(char_desc)} chars, need 50+)"
-            )
-            continue
-        desc_lower = char_desc.lower()
-        visual_terms = [
-            "hair",
-            "eye",
-            "wearing",
-            "cloak",
-            "armor",
-            "tall",
-            "short",
-            "beard",
-            "scar",
-            "muscular",
-            "slim",
-            "pale",
-            "dark",
-            "bright",
-            "hood",
-            "coat",
-            "sword",
-            "staff",
-            "mask",
-            "tattoo",
-            "mark",
-            "symbol",
-            "glove",
-            "boot",
-        ]
-        if not any(t in desc_lower for t in visual_terms):
-            log.info(
-                f"[Studio Session] Skipping {char_name} — no visual detail keywords in description"
-            )
-            continue
-        log.info(
-            f"[Studio Session] Description OK for {char_name}: {len(char_desc)} chars, visual terms found"
+        inputs = _clip_processor(
+            text=[prompt], images=[pil_image], return_tensors="pt", padding=True
         )
+        if torch.cuda.is_available():
+            inputs = {k: v.to("cuda") for k, v in inputs.items()}
+        with torch.inference_mode():
+            outputs = _clip_model(**inputs)
+            # cosine similarity between text and image embeddings
+            img_emb = outputs.image_embeds / outputs.image_embeds.norm(dim=-1, keepdim=True)
+            txt_emb = outputs.text_embeds / outputs.text_embeds.norm(dim=-1, keepdim=True)
+            sim = (img_emb * txt_emb).sum(dim=-1).item()
+        return float(sim)
+    except Exception as e:
+        log.warning(f"[CLIP] Scoring failed: {e}")
+        return 0.0
 
-        existing_loras = list(
-            ck_dir.glob(f"protagonist_{char_name.lower().replace(' ', '_')}*lora.safetensors")
-        )
-        if existing_loras:
-            log.info(
-                f"[Studio Session] LoRA already exists for {char_name}: {existing_loras[0].name}"
-            )
-            trained_loras[c_key] = existing_loras[0]
-            continue
 
-        log.info(f"[Studio Session] Generating reference images for {char_name}...")
+_clip_model = None
+_clip_processor = None
 
-        prompts = "; ".join([f"close up portrait, detailed face, {char_desc}"] * 5)
-        ref_dir = out_base.parent / "studio_refs" / c_key
-        ref_dir.mkdir(parents=True, exist_ok=True)
 
-        seg_config = dict(config)
-        seg_config["image_gen"] = dict(config.get("image_gen", {}))
-        seg_config["image_gen"]["negative_prompt"] = (
-            "photorealistic, real life, 3d, extra limbs, bad anatomy, disfigured, blurry"
-        )
+def _record_portrait_to_store(char_key: str, project_id: str, path: Path) -> None:
+    """Update ProjectStore with master_portrait_path + content hash."""
+    try:
+        import hashlib
 
-        if global_scheduler is not None:
-            with global_scheduler.task("heavy", f"Studio:{c_key}:gen"):
-                try:
-                    images = generate_images(prompts, ref_dir, seg_config)
-                except Exception as e:
-                    log.warning(f"[Studio Session] Image gen failed for {char_name}: {e}")
-                    continue
-        else:
-            try:
-                images = generate_images(prompts, ref_dir, seg_config)
-            except Exception as e:
-                log.warning(f"[Studio Session] Image gen failed for {char_name}: {e}")
-                continue
+        content_hash = ""
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            content_hash = h.hexdigest()
+        except Exception:
+            pass
+        from memory.project_store import ProjectStore
 
-        if not images or len(images) < 5:
-            log.warning(f"[Studio Session] Failed to generate 5 references for {char_name}")
-            continue
-
-        if global_scheduler is not None:
-            with global_scheduler.task("heavy", f"Studio:{c_key}:unload"):
-                unload_sd_pipeline()
-        else:
-            unload_sd_pipeline()
-
-        log.info(f"[Studio Session] Training Face-Lock LoRA for {char_name} (~2 min)...")
-        if global_scheduler is not None:
-            with global_scheduler.task("heavy", f"Studio:{c_key}:train"):
-                lora_path = train_protagonist_lora(
-                    image_paths=images[:5],
-                    char_name=char_name,
-                    output_dir=ck_dir,
-                    char_description=char_desc,
-                    mock=dry_run,
-                )
-        else:
-            lora_path = train_protagonist_lora(
-                image_paths=images[:5],
-                char_name=char_name,
-                output_dir=ck_dir,
-                char_description=char_desc,
-                mock=dry_run,
-            )
-
-        if lora_path:
-            trained_loras[c_key] = lora_path
-            log.info(
-                f"[Studio Session] Successfully trained LoRA for {char_name}: {lora_path.name}"
-            )
-        else:
-            log.warning(f"[Studio Session] LoRA training failed for {char_name}")
-
-    return trained_loras
+        ps = ProjectStore(project_id or "_default")
+        ps.set_master_portrait(char_key, str(path), content_hash=content_hash)
+    except Exception as e:
+        log.warning(f"[Portrait] Could not record to project store: {e}")
 
 
 # ── Director memory seeding ───────────────────────────────────────────────

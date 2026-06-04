@@ -271,47 +271,100 @@ def test_run_preflight_checks_missing_ffmpeg_raises():
             run_preflight_checks(config, dry_run=False)
 
 
-# ── _run_studio_session ────────────────────────────────────────────────────────
+# ── _run_studio_session is removed (Bonsai uses lazy portrait gen) ──────────
+# These tests are replaced by tests for `generate_master_portrait` below.
 
 
-def test_run_studio_session_skips_short_desc():
-    config = {"characters": {"hero": {"name": "Hero", "description": "Too short"}}}
-    from core.pre_production import _run_studio_session
+def test_generate_master_portrait_dry_run(tmp_path, monkeypatch):
+    """In dry_run mode, a placeholder PNG is saved and recorded in project store."""
+    from core.pre_production import generate_master_portrait
 
-    result = _run_studio_session(config, Path("/tmp"), dry_run=True)
-    assert result == {}
+    fake_ps = MagicMock()
+    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
+
+    char_data = {"name": "Hero", "portrait_prompt": "portrait, brown hair, green eyes"}
+    result = generate_master_portrait(
+        char_key="hero",
+        project_id="myproject",
+        char_data=char_data,
+        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
+        dry_run=True,
+    )
+    assert result is not None
+    assert result.exists()
+    assert result.name == "master.png"
+    # Project store was updated
+    fake_ps.set_master_portrait.assert_called_once()
+    call_args = fake_ps.set_master_portrait.call_args
+    assert call_args.args[0] == "hero"
+    assert str(result) in call_args.args[1]
 
 
-def test_run_studio_session_success():
-    config = {
-        "characters": {
-            "hero": {
-                "name": "Hero",
-                "description": "This is a very long description with visual details like brown hair and green eyes and a determined expression.",
-            }
-        },
-        "checkpoint": {"dir": "studio_checkpoints"},
-    }
-    with (
-        patch("train_lora.train_protagonist_lora", return_value=Path("lora.safetensors")),
-        patch(
-            "video.image_gen.image_gen.generate_images",
-            return_value=[
-                Path("img1.png"),
-                Path("img2.png"),
-                Path("img3.png"),
-                Path("img4.png"),
-                Path("img5.png"),
-            ],
-        ),
-        patch("video.image_gen.image_gen.unload_sd_pipeline"),
-        patch("pathlib.Path.exists", return_value=False),
-    ):  # Force new training
-        from core.pre_production import _run_studio_session
+def test_generate_master_portrait_no_prompt_falls_back_to_description(tmp_path, monkeypatch):
+    """If no portrait_prompt provided, prepend 'portrait, ' to visual_description."""
+    from core.pre_production import generate_master_portrait
 
-        result = _run_studio_session(config, Path("/tmp"), dry_run=True)
-        assert "hero" in result
-        assert result["hero"] == Path("lora.safetensors")
+    fake_ps = MagicMock()
+    fake_ps.get_character.return_value = {}
+    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
+
+    captured_prompt = []
+
+    def fake_pipe(prompt, **kw):
+        captured_prompt.append(prompt)
+        from PIL import Image
+
+        img = MagicMock()
+        img.save = MagicMock(side_effect=lambda p, *a, **kw: Image.new("RGB", (8, 8)).save(p))
+        result = MagicMock()
+        result.images = [img]
+        return result
+
+    fake_pipe_obj = MagicMock(side_effect=fake_pipe)
+    fake_pipe_obj.load_ip_adapter = MagicMock()
+    monkeypatch.setattr(
+        "video.image_gen.image_gen._load_bonsai_pipeline", lambda *a, **kw: fake_pipe_obj
+    )
+
+    char_data = {"name": "Hero", "visual_description": "tall, scar, dark cloak"}
+    result = generate_master_portrait(
+        char_key="hero",
+        project_id="myproject",
+        char_data=char_data,
+        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
+        dry_run=False,
+    )
+    assert result is not None
+    # Prompt was prefixed with 'portrait' and contained the description
+    assert captured_prompt
+    p = captured_prompt[0]
+    assert p.lower().startswith("portrait")
+    assert "scar" in p
+
+
+def test_generate_master_portrait_returns_none_on_no_candidates(tmp_path, monkeypatch):
+    """If all 3 candidates fail, return None."""
+    from core.pre_production import generate_master_portrait
+
+    fake_ps = MagicMock()
+    fake_ps.get_character.return_value = {}
+    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
+
+    fake_pipe = MagicMock(side_effect=Exception("always fails"))
+    fake_pipe.load_ip_adapter = MagicMock()
+    monkeypatch.setattr(
+        "video.image_gen.image_gen._load_bonsai_pipeline", lambda *a, **kw: fake_pipe
+    )
+
+    char_data = {"name": "Hero", "portrait_prompt": "portrait, scar"}
+    result = generate_master_portrait(
+        char_key="hero",
+        project_id="myproject",
+        char_data=char_data,
+        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
+        dry_run=False,
+    )
+    assert result is None
 
 
 # ── _seed_director_memory ──────────────────────────────────────────────────────
@@ -350,7 +403,7 @@ def test_run_pre_production():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production._run_studio_session"),
+        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
     ):
@@ -390,7 +443,7 @@ def test_run_pre_production_adaptation():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production._run_studio_session"),
+        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
         patch("pathlib.Path.exists", return_value=False),
@@ -438,7 +491,7 @@ def test_run_pre_production_series_resume():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production._run_studio_session"),
+        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
         patch("pathlib.Path.exists", return_value=True),
