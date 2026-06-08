@@ -27,7 +27,7 @@ export default function ControlPanel({ onClose }) {
     fetch(`${API_BASE}/api/config`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
-        if (data && !data.status) setConfig(data);
+        if (data && !data.status) setConfig((prev) => ({ ...prev, ...data }));
       })
       .catch((err) => {
         if (err.name !== 'AbortError') console.error('Failed to load configuration:', err);

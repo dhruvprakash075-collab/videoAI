@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import UploadZone from './UploadZone.jsx';
 import { apiSend } from '../lib/api.js';
 
@@ -27,7 +27,7 @@ function renderZone(props = {}) {
 }
 
 function pickFile(fileInput, file) {
-  fireEvent.change(fileInput, { target: { files: [file] } });
+  act(() => { fireEvent.change(fileInput, { target: { files: [file] } }); });
 }
 
 describe('UploadZone', () => {
@@ -107,9 +107,9 @@ describe('UploadZone', () => {
       <UploadZone characterName="alice" onCharacterNameChange={vi.fn()} onUploaded={vi.fn()} />
     );
     const dropZone = container.querySelector('.aspect-video');
-    fireEvent.dragOver(dropZone);
+    act(() => { fireEvent.dragOver(dropZone); });
     expect(dropZone.className).toMatch(/border-emerald-500/);
-    fireEvent.dragLeave(dropZone);
+    act(() => { fireEvent.dragLeave(dropZone); });
     expect(dropZone.className).not.toMatch(/border-emerald-500/);
   });
 
@@ -118,7 +118,7 @@ describe('UploadZone', () => {
     const dropZone = document.querySelector('.aspect-video');
     const badFile = new File(['x'], 'sample.txt', { type: 'text/plain' });
     Object.defineProperty(badFile, 'size', { value: 1024 });
-    fireEvent.drop(dropZone, { dataTransfer: { files: [badFile] } });
+    act(() => { fireEvent.drop(dropZone, { dataTransfer: { files: [badFile] } }); });
     expect(window.alert).toHaveBeenCalled();
     expect(apiSend).not.toHaveBeenCalled();
     expect(onUploaded).not.toHaveBeenCalled();

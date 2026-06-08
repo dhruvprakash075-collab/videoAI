@@ -32,8 +32,7 @@ describe('VariantPanel', () => {
   });
 
   it('falls back to index key when image src is empty', () => {
-    const { container } = render(<VariantPanel id="a" images={['', '/b.png']} onCommit={() => {}} />);
-    const imgs = container.querySelectorAll('img');
-    expect(imgs).toHaveLength(2);
+    render(<VariantPanel id="a" images={['', '/b.png']} onCommit={() => {}} />);
+    expect(screen.getByText('No image')).toBeInTheDocument();
   });
 });

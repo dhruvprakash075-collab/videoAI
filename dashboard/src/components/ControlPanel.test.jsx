@@ -44,16 +44,18 @@ describe('ControlPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the System Config header and all section titles', () => {
+  it('renders the System Config header and all section titles', async () => {
     render(<ControlPanel onClose={onClose} />);
+    await flush();
     expect(screen.getByText('System Config')).toBeInTheDocument();
     expect(screen.getByText('Voice Engine')).toBeInTheDocument();
     expect(screen.getByText('Visual Generation')).toBeInTheDocument();
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
   });
 
-  it('renders all three voice engine buttons with the active one pressed', () => {
+  it('renders all three voice engine buttons with the active one pressed', async () => {
     render(<ControlPanel onClose={onClose} />);
+    await flush();
     const omnivoice = screen.getByRole('button', { name: /OmniVoice/i });
     const supertonic = screen.getByRole('button', { name: /Supertonic 3/i });
     const edge = screen.getByRole('button', { name: /Edge TTS/i });
@@ -154,7 +156,9 @@ describe('ControlPanel', () => {
     render(<ControlPanel onClose={onClose} />);
     const slider = screen.getByRole('slider', { name: /Images per segment/i });
     expect(slider).toHaveValue('6');
-    fireEvent.change(slider, { target: { value: '11' } });
+    await act(async () => {
+      fireEvent.change(slider, { target: { value: '11' } });
+    });
     expect(screen.getByText('11')).toBeInTheDocument();
   });
 

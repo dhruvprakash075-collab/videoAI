@@ -38,12 +38,16 @@ export default function VariantPanel({ id, images, onCommit }) {
       </div>
       <div className="grid grid-cols-2 gap-3 flex-1">
         {images.map((src, i) => (
-          <div key={src || `${id}-${i}`} className="rounded-xl overflow-hidden border border-zinc-800/50">
-            <img
-              src={src}
-              alt={`Variant ${id.toUpperCase()} image ${i + 1}`}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-            />
+          <div key={src || `${id}-${i}`} className="rounded-xl overflow-hidden border border-zinc-800/50 bg-zinc-900/50 flex items-center justify-center">
+            {src ? (
+              <img
+                src={src}
+                alt={`Variant ${id.toUpperCase()} image ${i + 1}`}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+              />
+            ) : (
+              <span className="text-zinc-600 text-xs">No image</span>
+            )}
           </div>
         ))}
       </div>
