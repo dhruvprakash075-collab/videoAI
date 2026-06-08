@@ -6,7 +6,7 @@ This document describes the structure and execution flow of the **Video.AI** loc
 
 ## 1. Entry Points
 
-> **CRITICAL**: Always run through `bootstrap_pipeline.py`. Running `python -m core.pipeline_long` directly is **forbidden** — bootstrap applies Win32 UTF-8 patches, rich console fixes, FFmpeg PATH injection, CrewAI telemetry-off, `OPENAI_MAX_RETRIES=0`, runs preflight, and registers graceful shutdown (Ctrl-C Ollama eviction).
+> **CRITICAL**: Always run through `bootstrap_pipeline.py`. Running `python -m core.pipeline_long` directly is **forbidden** — bootstrap applies Win32 UTF-8 patches, rich console fixes, FFmpeg PATH injection, CrewAI telemetry-off, `OPENAI_MAX_RETRIES=0`, runs preflight, registers graceful shutdown (Ctrl-C Ollama eviction), and now enforces the **venv guard** (rejects system Python 3.14 — requires `venv\Scripts\python.exe`).
 
 | Entry Point | Purpose |
 |---|---|

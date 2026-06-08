@@ -2,6 +2,12 @@
 
 *Focus: Local, 6GB VRAM image-to-video motion generation*
 
+> **Project state (2026-06-08):** All critical bugs fixed. 1,682 Python tests
+> pass (clean exit). 165 Dashboard tests pass. `ruff check .` clean. `pip check`
+> clean. Pipeline hardening round (P8-1..15) complete — venv guard, pyarrow
+> atexit fix, director TTS normalization, dashboard vitest3/ESLint/stderr fixes.
+> See `docs/AGENTS.md` and `docs/bug_resolution_history.md` for full detail.
+
 ---
 
 ## 🔴 FramePack (Image-to-Video Motion)

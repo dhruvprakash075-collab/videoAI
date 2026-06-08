@@ -85,7 +85,43 @@ is enforced because peak is only ~3.5GB on RTX 4050 6GB.
 
 ---
 
-## 5. TTS Worker Subprocess Safety (2026-06-04)
+## 5. Python Environment Safety (2026-06-08)
+
+### Venv guard
+
+`bootstrap_pipeline.py` now enforces running inside the project virtual
+environment. If invoked with system Python (e.g. `python bootstrap_pipeline.py`
+instead of `venv\Scripts\python.exe bootstrap_pipeline.py`), it checks
+`sys.prefix != sys.base_prefix` and exits with:
+
+```
+ERROR: This pipeline must run inside the project virtual environment.
+Use: venv\Scripts\python.exe bootstrap_pipeline.py
+```
+
+This prevents cryptic `ModuleNotFoundError` crashes from missing
+dependencies (system Python is 3.14.5; the venv is 3.12.13).
+
+### Pyarrow stub (Windows atexit crash)
+
+On Windows, importing `pyarrow` triggers native DLL loading
+(`arrow_python.dll`, etc.). At process exit, CPython's module cleanup
+can unload these DLLs in an order that causes an access violation
+(0xC0000005) — a hard crash that masks the test exit code.
+
+**Fix (in `tests/conftest.py`):**
+1. `os.environ["PYARROW_IGNORE_CPP_SHUTDOWN"] = "1"` — tells pyarrow to
+   skip C++ shutdown on exit
+2. A module-level stub replaces `pyarrow` in `sys.modules` before any
+   real import can occur
+3. `cleanup_numbered_dir` monkeypatch wraps `os.rmdir` in
+   `contextlib.suppress(PermissionError)` — suppresses the benign
+   `PermissionError` from `pytest-current` symlink cleanup
+
+**If a test needs real pyarrow:** `del sys.modules["pyarrow"]` and
+import the real module inside that test only.
+
+## 6. TTS Worker Subprocess Safety (2026-06-04)
 
 All TTS engines (Supertonic 3, OmniVoice, F5, etc.) use a **persistent
 `--serve` worker subprocess** pattern — the parent process spawns the

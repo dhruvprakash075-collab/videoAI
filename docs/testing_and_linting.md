@@ -12,10 +12,12 @@ All tests run locally using mock-heavy patterns — no GPU, Ollama server, or ex
   ```powershell
   venv\Scripts\python.exe -m pytest tests/ -q
   ```
-  **Current status**: **1,745 passing tests**, 1 skipped, 0 failing (verified 2026-06-03).
-  Runtime: ~3 minutes on warm cache.
+  **Current status**: **1,682 passing tests**, 0 skipped, 0 failing (verified 2026-06-08).
+  Runtime: ~3 minutes on warm cache. **Clean exit** — no access violation, no PermissionError traceback.
 
-  > **Windows note**: After the run you may see a `PermissionError: [WinError 5]` about `pytest-current` symlink cleanup in `%TEMP%`. This is a **benign** Windows/pytest interaction — all tests passed. Not your bug.
+  > **Windows note**: The old `PermissionError: [WinError 5]` about `pytest-current`
+  > cleanup in `%TEMP%` has been suppressed via a monkeypatch on
+  > `_pytest.pathlib.cleanup_numbered_dir` in `tests/conftest.py`. See P8-8.
 
 * **Execute Specific Test Module**:
   ```powershell
@@ -50,8 +52,9 @@ Key test modules include:
     gemlite kernel + ~3.5 GB VRAM). End-to-end smoke is manual.
 
 ### Important Notes
-- **26 DeprecationWarnings** appear every run — all from `crewai` internals (`function_calling_llm`, `reasoning`, `planning_config`). These are harmless and not your bug.
+- **16 warnings** appear (torch jit deprecation, pydub audioop deprecation, CUDA expandable_segments) — all harmless.
 - `tests/conftest.py` has an **autouse fixture that resets `UIState`** between tests. If you add a new `UIState` class attribute, you **must** add it to `conftest.py` too (otherwise state bleeds between tests).
+- `tests/conftest.py` also contains a **pyarrow stub** (prevents native DLL loading on Windows, which causes atexit access violations) and a `cleanup_numbered_dir` **monkeypatch** (suppresses PermissionError on temp dir cleanup). These are **required** for clean test suite exit on Windows. See P8-8.
 
 ---
 
@@ -108,13 +111,23 @@ The React dashboard at `dashboard/` uses **Vitest** + **React Testing Library** 
 ```powershell
 cd dashboard
 npm test          # watch mode
-npm run test:run  # single-shot, CI mode
+npm run test:run  # single-shot, CI mode (Vitest 3.2.6)
 npm run test:coverage  # with v8 coverage report
 ```
 
+> **2026-06-08:** Vitest upgraded from `2.1.9` → `3.2.6` with
+> `@vitest/coverage-v8`. Build scripts use `cross-env NODE_OPTIONS=--no-deprecation`
+> to suppress Node.js deprecation warnings. The `esbuild: { jsx: 'automatic' }`
+> config is now conditional (`command !== 'build'`) to silence the Vite 8
+> "Both esbuild and oxc options were set" warning in production builds.
+
 ### Current Dashboard Test Inventory
 
-20 test files, **163 passing tests**, 0 failing (verified 2026-06-03). Coverage: **96.04%** statements, **93.48%** branches, **90.9%** functions across `dashboard/src/**`.
+20 test files, **165 passing tests**, 0 failing (verified 2026-06-08). Coverage: **96.04%** statements, **93.48%** branches, **90.9%** functions across `dashboard/src/**`.
+
+> Dashboard tests produce **zero stderr noise** — expected console errors from
+> network-failure tests are suppressed via `vi.spyOn(console, 'error').mockImplementation()`
+> in individual test files (P8-15).
 
 | Path | Tests | Notes |
 | --- | --- | --- |

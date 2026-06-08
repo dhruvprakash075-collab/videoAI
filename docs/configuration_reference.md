@@ -4,9 +4,15 @@ The system is configured entirely via YAML files. All live values are in `config
 
 ---
 
-## 1. Parameters (`config/config.yaml` — 292 lines)
+## 1. Parameters (`config/config.yaml` — 271 lines)
 
 Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown keys won't crash (schemas use `extra='allow'`) but lose validation.
+
+> **2026-06-08:** `normalize_tts_engine()` in `audio/audio_proxy.py` now
+> normalizes free-text engine names from the LLM (`chattts` → `edge`,
+> `xtts`/`coqui` → `f5`) before validation against the schema. This
+> prevents schema validation errors when the Director returns non-standard
+> TTS engine names.
 
 ### Key Sections & Ground-Truth Values
 
@@ -53,6 +59,11 @@ to extract additional profiles from reference audio.
 | `dhruv_voice_polished.json` (285KB) | Generic placeholder (F1 profile) | — | **ACTIVE default** — replace with real extract |
 | `dhruv_voice_v3_9s.json` | 9s raw auto-trim — **missing, needs extraction** | 0.2399 | Backup — see `docs/voice_cloning.md` |
 | `dhruv_voice_v3.json` | 71.94s merged — **missing, needs extraction** | 0.2388 | Empirical ceiling reference |
+
+> **Preflight check (P8-6, 2026-06-08):** The startup preflight now validates
+> the configured voice JSON exists on disk via `_check_supertonic_voice()` in
+> `utils/preflight.py`. If the file is missing, preflight warns (but pipeline
+> continues — TTS falls back to omnivoice).
 
 To switch or extract: edit `tts.supertonic.voice` in `config/config.yaml`.
 See `docs/voice_cloning.md` for extraction commands.

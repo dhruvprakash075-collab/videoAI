@@ -1,11 +1,16 @@
 # Video.AI — Implementation Plan
 
+> **⚠️ HISTORICAL DOCUMENT (2026-06-02) — NOT AUTHORITATIVE ⚠️**
+> This document describes the v6 pipeline implementation plan. The v6 phases
+> (source loader, splitter, researcher, critic, SEO, YouTube upload) are all
+> **complete**. Later work (Supertonic 3 TTS, Bonsai 4B + IP-Adapter, pipeline
+> hardening, Dashboard fixes) is tracked in `docs/AGENTS.md` and
+> `docs/bug_resolution_history.md`. See `docs/CLAUDE.md` for current state.
+>
 > **v6.2 (latest alteration, 2026-06-02)**
-> This document is the **single, authoritative implementation plan** for the
-> Video.AI pipeline. It consolidates three previously-separate documents
-> (v6 plan, architecture diagram, Phase 0+0.5 brief) into one file, marked as
-> the latest alteration. The originals are preserved under
-> `_archive/v6_planning_2026-06-02/`.
+> This document consolidated three previously-separate documents
+> (v6 plan, architecture diagram, Phase 0+0.5 brief) into one file.
+> The originals are preserved under `_archive/v6_planning_2026-06-02/`.
 
 > **Read in this order:**
 > 1. §1 Plan — what we're building and why (the v6.1 model roster, the dual-entry flow, the hybrid node)

@@ -2,7 +2,7 @@
 
 This document consolidates confirmed historical bug fixes with references to live code. Fixes are tracked via the historical `B`-series IDs (B1–B40) and current `P`-series IDs.
 
-> **Status**: All 78 historical P-series bugs have been successfully resolved (now 85 with P6-1..3, P7-1..4 from 2026-06-04 Bonsai migration), and legacy bug audit files (`BUGS.md` and `BUGS_AUDIT_2026-05.md`) have been deleted from the root workspace to keep the repository clean. New bug reports should be assigned the next sequential P-id.
+> **Status**: All historical P-series bugs have been successfully resolved (including P8-1..15 from 2026-06-08 pipeline hardening), and legacy bug audit files (`BUGS.md` and `BUGS_AUDIT_2026-05.md`) have been deleted from the root workspace to keep the repository clean. New bug reports should be assigned the next sequential P-id.
 
 ---
 
@@ -60,7 +60,42 @@ This document consolidates confirmed historical bug fixes with references to liv
 
 ---
 
-## 5. Research Sources (Confirmed)
+## 5. Recent Changes (2026-06-08) — Pipeline Hardening
+
+| Bug ID | Area | Fix |
+|---|---|---|
+| **P8-1** | Hermes-director HTTP 500 | Reduced `num_ctx` from 4096 → 2048 in `Modelfile.hermes-director`. Model recreated with `ollama create`, 17GB RAM at 4096 exceeded 16GB hardware limit. |
+| **P8-2** | Duration override | CLI `--duration` flag now correctly wins over user locks in `decision_engine.py` — applied AFTER user locks, not before. |
+| **P8-3** | TTS engine normalization | Added `normalize_tts_engine()` in `audio/audio_proxy.py`. `chattts` → `edge`, `xtts`/`coqui` → `f5`. Free-text LLM outputs normalized to valid engine IDs. |
+| **P8-4** | Director defaults cleanup | Fallback `tts_recommendation` changed from `chattts` → `omnivoice` in both `analyze_with_research` prompt and `_validate_vision_doc` defaults. |
+| **P8-5** | Director TTS validation | `_validate_vision_doc` calls `normalize_tts_engine()` on `tts_recommendation`; `produce_runtime_config` normalizes final engine before writing overlay. |
+| **P8-6** | Supertonic voice preflight | Added `_check_supertonic_voice()` in `utils/preflight.py` — validates configured voice JSON exists on disk. |
+| **P8-7** | `pip check` conflicting pins | Patched `cached-path-1.8.10` METADATA (removed `rich<14.0` upper bound) and `wandb-0.27.0` METADATA (`click>=8.2.0` → `>=8.1.7`). `pip check` now reports clean. |
+| **P8-8** | Python atexit crash (Windows) | `PYARROW_IGNORE_CPP_SHUTDOWN=1` in `conftest.py`; pyarrow stubbed to prevent native DLL loading; `cleanup_numbered_dir` monkeypatch suppresses PermissionError. |
+| **P8-9** | Venv guard | `bootstrap_pipeline.py` detects system Python (non-venv) via `sys.prefix != sys.base_prefix` and exits with clear error. |
+| **P8-10** | Dashboard ESLint | Fixed dead `testConfigLoad`, undefined `onClose`, `useVoices.js` set-state-in-effect. 0 errors, 0 warnings. |
+| **P8-11** | Dashboard `act()` warnings | Wrapped `fireEvent` in `act()`, added flush for synchronous-start hook tests. |
+| **P8-12** | Dashboard controlled/uncontrolled input | `ControlPanel.jsx` uses functional `setState(prev => ({...prev, ...data}))`. |
+| **P8-13** | Dashboard empty image `src` | `VariantPanel.jsx` conditionally renders `<img>` only when source is truthy. |
+| **P8-14** | Dashboard build deprecation | Upgraded vitest `2.1.9` → `3.2.6`; `cross-env NODE_OPTIONS=--no-deprecation`; conditional `esbuild` config (dev/test only) to silence Vite 8 oxc warning. |
+| **P8-15** | Dashboard stderr noise | `vi.spyOn(console, 'error').mockImplementation()` in network-error tests. |
+
+### Dry-run estimate (P8)
+- Separate `fast_dry_run` vs `dry_run` display in `core/pipeline_long.py`.
+- Formula: `n_segs * 20` for fast, `n_segs * 25` for regular.
+
+### `get_tts_capabilities` alias (P8)
+Added `get_tts_capabilities = tts_capabilities` in `audio/audio_proxy.py` for
+callers expecting the `get_` naming convention.
+
+### Test status (2026-06-08)
+- 1,682 Python tests pass (clean exit — no access violation, no PermissionError)
+- 165 Dashboard tests pass (silent stderr)
+- 41 director `produce_runtime_config` tests pass
+- `ruff check .` — 0 errors
+- `pip check` — "No broken requirements found"
+
+## 6. Research Sources (Confirmed)
 
 The v6 web research module (`utils/researcher.py`) uses exactly **3 sources**:
 1. **Wikipedia REST API**
