@@ -291,10 +291,6 @@ def run_long_pipeline(
 
     # Master portraits are generated lazily on first character appearance
     # (triggered inside image_gen._bonsai()). No upfront session needed.
-    # `trained_loras` is retained as a variable name for downstream callers
-    # that expect it; it is always empty now that LoRA is removed.
-    trained_loras: dict[str, Any] = {}
-
     completed_segs_counter_holder = [0]
     completed_segs_lock = threading.Lock()
 
@@ -468,7 +464,6 @@ def run_long_pipeline(
             ctx_mgr=ctx_mgr,
             director_agent_instance=director_agent_instance,
             writer_agent=writer_agent,
-            trained_loras=trained_loras,
             resume=resume,
             dry_run=dry_run or fast_dry_run,
             fast_dry_run=fast_dry_run,

@@ -8,11 +8,10 @@ The system is configured entirely via YAML files. All live values are in `config
 
 Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown keys won't crash (schemas use `extra='allow'`) but lose validation.
 
-> **2026-06-08:** `normalize_tts_engine()` in `audio/audio_proxy.py` now
-> normalizes free-text engine names from the LLM (`chattts` → `edge`,
-> `xtts`/`coqui` → `f5`) before validation against the schema. This
-> prevents schema validation errors when the Director returns non-standard
-> TTS engine names.
+> **2026-06-08:** `normalize_tts_engine()` in `audio/audio_proxy.py` normalizes
+> free-text engine names from the LLM to valid engines. Unknown engines default
+> to `supertonic`. Valid engines: `supertonic`, `omnivoice`, `f5`, `edge`.
+> Legacy aliases (`xtts`, `coqui`, `chattts`) removed.
 
 ### Key Sections & Ground-Truth Values
 

@@ -10,7 +10,7 @@
 
 ## Current State (VERIFIED 2026-06-08)
 
-- **All bugs from the 2026-06-04 audit and the 2026-06-08 pipeline hardening are FIXED.** 1,682 backend tests pass (clean exit). 165 dashboard tests pass (silent stderr). `ruff check .` clean. `pip check` clean.
+- **All bugs from the 2026-06-04 audit and the 2026-06-08 pipeline hardening are FIXED.** 1,644 backend tests pass (clean exit). 165 dashboard tests pass (silent stderr). `ruff check .` clean. `pip check` clean.
 - **Image backend migrated to Bonsai 4B** (was Stable Diffusion 1.5 + LoRA). Character consistency now via IP-Adapter FLUX v2 + master portraits. See `docs/system_architecture.md`.
 - **TTS promoted to Supertonic 3** as default (was OmniVoice). 4.5x faster, zero VRAM. See `docs/supertonic_pipeline.md`.
 - **Next major initiative: Director System V2** — chat-based AI orchestrator with 3 modes (production / build / off), 2-tier model (qwen2.5:0.5b collector + hermes-director reasoner), sqlite-vec RAG, permission system, builder with revert. See `docs/director_system.md`.

@@ -47,12 +47,12 @@ def _get_config() -> dict:
 
 
 # P1-7 fix: TTS engine normalization whitelist.
-# Vision docs and user responses can contain arbitrary strings (e.g. "chattts",
-# "xtts", "Calm, measured, storytelling voice"). Map everything to the four
+# Vision docs and user responses can contain arbitrary strings (e.g.
+# "Calm, measured, storytelling voice"). Map everything to the four
 # engine ids that tts_generate actually dispatches: "supertonic", "f5", "omnivoice", or "edge".
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
-_EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft", "chattts"})
-_F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts", "xtts", "coqui"})
+_EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft"})
+_F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts"})
 _SUPERTONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
 
 
@@ -62,8 +62,8 @@ def normalize_tts_engine(engine: str) -> str:
     Known supertonic aliases: "supertonic", "supertone", "supertonic3", "supertonic-3"
     Known f5 aliases:         "f5", "f5-tts", "f5tts", "f5_tts"
     Known omnivoice aliases:  "omnivoice", "omni", "voice_clone", "clone"
-    Known edge aliases:       "edge", "edge-tts", "edge_tts", "microsoft", "chattts"
-    Everything else (including free-text descriptions) → "f5" (default).
+    Known edge aliases:       "edge", "edge-tts", "edge_tts", "microsoft"
+    Everything else (including free-text descriptions) → "supertonic" (default).
 
     Args:
         engine: Raw engine string from vision doc, config overlay, or user input.
@@ -73,9 +73,9 @@ def normalize_tts_engine(engine: str) -> str:
     """
     if not isinstance(engine, str):
         log.warning(
-            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — defaulting to 'f5'"
+            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — defaulting to 'supertonic'"
         )
-        return "f5"
+        return "supertonic"
 
     normalized = engine.strip().lower()
     if normalized in _SUPERTONIC_ALIASES:
@@ -88,10 +88,10 @@ def normalize_tts_engine(engine: str) -> str:
         return "edge"
 
     log.warning(
-        f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'f5'. "
+        f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'supertonic'. "
         "Add an alias to normalize_tts_engine() if this is a valid engine."
     )
-    return "f5"
+    return "supertonic"
 
 
 def _call_edge_direct(

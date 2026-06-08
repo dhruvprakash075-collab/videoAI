@@ -85,7 +85,7 @@ These are the live values; if a doc disagrees, **the live values win**:
 
 | Item | Live value | Where |
 |---|---|---|
-| Backend test count | **1,682** passing, 0 skipped, 0 failing (16 warnings) | `pytest tests/ -q` |
+| Backend test count | **1,644** passing, 0 skipped, 0 failing (16 warnings) | `pytest tests/ -q` | |
 | Frontend test count | **165** passing, 0 failing (20 files, Vitest + RTL) | `cd dashboard && npm run test:run` |
 | Frontend coverage | **96.04%** stmts, **93.48%** branches, **90.9%** funcs | `cd dashboard && npm run test:coverage` |
 | Test runtime (backend) | ~3 min on warm cache | pytest output |
@@ -94,7 +94,7 @@ These are the live values; if a doc disagrees, **the live values win**:
 | `performance.staged_loop` | **true** (C1 enabled) | `config/config.yaml:193` |
 | `audio_fx.enabled` | **true** (only `thunder.wav` bundled) | `config/config.yaml:198` |
 | `tts.omnivoice.num_step` | **16** (was 24) | `config/config.yaml:54` |
-| `tts.engine` (active) | **supertonic** (default as of 2026-06-04; was omnivoice) | `config/config.yaml:31` |
+| `tts.engine` (active) | **supertonic** (default; unknown engines normalize to supertonic) | `config/config.yaml:31` |
 | `tts.engine` options | `supertonic` (default), `omnivoice`, `f5`, `edge` (xtts/fish_speech removed — no code path) | `config/config_schemas.py:133` |
 | `tts.supertonic.voice` (active) | `character_voices/dhruv_voice_polished.json` (DIY extract, 18s polished) | `config/config.yaml:36` |
 | `tts.supertonic.steps` (active) | **16** (was 8 — A/B winner 2026-06-04) | `config/config.yaml:37` |
@@ -118,6 +118,8 @@ These are the live values; if a doc disagrees, **the live values win**:
 | Backend linter | **ruff 0.15.15** (see `LINTING.md`). All checks pass. | `ruff check .` |
 | Frontend linter | **ESLint 9 (flat config)** — see `dashboard/eslint.config.js`. All checks pass. | `cd dashboard && npm run lint` |
 | CI | None (no `.github/`) | `Test-Path .github` |
+| `tts.engine` aliases (removed) | `xtts`, `coqui` → f5; `chattts` → edge (no longer aliased) | `audio/audio_proxy.py` |
+| Reviewer model | **qwen2.5:0.5b** (was script-reviewer Qwen2.5-3B) | `utils/specialized_models.py` |
 
 ## Read these first (in order)
 
@@ -520,8 +522,7 @@ deleting an old one.
 - **Verified**: `ruff check .` 0 errors, all 162 tests in the touched
   test files pass, no production-code references to `train_lora` /
   `_run_studio_session` / `unload_sd_pipeline` /
-  `_stable_diffusion` (only `lora_paths=` no-op kwarg kept for
-  back-compat with `core/segment_runner.py`).
+  `_stable_diffusion` (LoRA fully removed).
 
 - **Cost**: 1 module deleted (`train_lora.py`), 1 module created
   (`video/image_gen/ip_adapter.py`), 3 test files deleted
@@ -616,13 +617,11 @@ deleting an old one.
 
 ### `video/`
 - `image_gen/image_gen.py` (650) — **2026-06-04 rewrite:** only image
-  backend is now Bonsai 4B (gemlite 2-bit, ternary). Public surface:
-  `generate_images(prompts, output_dir, config, lora_paths=None,
-  char_presence=None, project_id=None)`, `unload_bonsai_pipeline()`,
-  `get_oom_report()`, `_prompt_cache_key(...)`,
-  `_resolve_dominant_char(...)`, `clear_oom_events()`. `lora_paths` is
-  a no-op kwarg kept for back-compat with `core/segment_runner.py`.
-  2-tier OOM ladder (Tier 1 = 4 steps, Tier 2 = `max(2, steps*0.5)`,
+   backend is now Bonsai 4B (gemlite 2-bit, ternary). Public surface:
+   `generate_images(prompts, output_dir, config, char_presence=None, project_id=None)`, `unload_bonsai_pipeline()`,
+`get_oom_report()`, `_prompt_cache_key(...)`,
+   `_resolve_dominant_char(...)`, `clear_oom_events()`.
+   2-tier OOM ladder (Tier 1 = 4 steps, Tier 2 = `max(2, steps*0.5)`,
   then skip+log+record event). Lazy per-character master portrait
   trigger fires before the per-frame loop.
 - `image_gen/ip_adapter.py` (220) — **NEW 2026-06-04.** `IPAdapterManager`
@@ -787,7 +786,8 @@ is a known-but-unfixed wart — don't replicate the pattern).
 - **Pipeline won't run (wrong Python):** run via `venv\Scripts\python.exe`,
   not `python`. The venv guard in `bootstrap_pipeline.py` enforces this.
 - **TTS engine name from LLM doesn't match:** check `normalize_tts_engine()`
-  in `audio/audio_proxy.py` — `chattts` → `edge`, `xtts`/`coqui` → `f5`.
+  in `audio/audio_proxy.py` — valid engines: `supertonic`, `omnivoice`, `f5`, `edge`.
+  Unknown strings default to `supertonic`.
 
 ## Reference
 

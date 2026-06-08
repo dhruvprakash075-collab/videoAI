@@ -182,17 +182,6 @@ def test_generate_images_empty_list(tmp_path: Path):
     assert bns.call_args.args[0] == []
 
 
-def test_generate_images_warns_on_lora_paths(tmp_path: Path, caplog):
-    """Passing lora_paths is a no-op in Bonsai — should log a warning."""
-    import logging
-
-    cfg = {"image_gen": {"backend": "bonsai"}}
-    with patch("video.image_gen.image_gen._bonsai", return_value=[]):
-        with caplog.at_level(logging.WARNING):
-            generate_images(["p"], tmp_path, cfg, lora_paths={"x": Path("y")})
-    assert any("lora_paths" in r.message for r in caplog.records)
-
-
 def test_generate_images_passes_project_id(tmp_path: Path):
     """project_id is forwarded to _bonsai for project-scoped lookups."""
     cfg = {"image_gen": {"backend": "bonsai"}}

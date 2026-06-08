@@ -5,7 +5,7 @@ consistency is achieved via IP-Adapter FLUX v2 (XLabs-AI/flux-ip-adapter-v2)
 referencing a per-character master portrait stored in the project store.
 
 Public surface:
-- generate_images(prompts, output_dir, config, lora_paths=None, char_presence=None)
+- generate_images(prompts, output_dir, config, char_presence=None)
 - unload_bonsai_pipeline()
 - unload_ip_adapter() (re-exported from ip_adapter)
 - get_oom_report(), clear_oom_events(), _record_oom_event()
@@ -87,7 +87,6 @@ def generate_images(
     prompts,
     output_dir: Path,
     config: dict,
-    lora_paths: dict[str, Path] | None = None,
     char_presence: list[dict[str, float]] | None = None,
     project_id: str | None = None,
 ) -> list[Path]:
@@ -99,19 +98,11 @@ def generate_images(
                  prompts — the override is accepted for compatibility only.
         output_dir: Directory to save generated PNG images.
         config: Full pipeline config dict.
-        lora_paths: Accepted for signature compat with old SD call sites. Always None now (LoRA removed).
         char_presence: Optional list of per-frame character weight dicts.
         project_id: Project name (used to resolve master portrait paths).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = config.get("image_gen") or {}
-
-    # lora_paths is a no-op in the Bonsai pipeline; log only if non-empty.
-    if lora_paths:
-        log.warning(
-            "[image_gen] lora_paths argument is ignored — Bonsai uses IP-Adapter for "
-            "character consistency, not LoRA. Pass char_presence instead."
-        )
 
     if isinstance(prompts, list):
         prompt_list = [str(p).strip() for p in prompts if str(p).strip()]

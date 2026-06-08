@@ -2,19 +2,11 @@
 specialized_models.py - Fast specialized models for pipeline optimization.
 
 Uses small, purpose-built models for specific tasks:
-- reviewer (Qwen2.5-0.5B, default; was script-reviewer Qwen2.5-3B): Fast JSON extraction
-  for world-state facts/characters/threads. The 3B reviewer model was removed in
-  Phase 0 and was returning 404s; default now points to the installed qwen2.5:0.5b
-  (397MB, fast, fits 6GB alongside SD). Override via ``models.reviewer`` in config.
+- reviewer (Qwen2.5-0.5B default): Fast JSON extraction for world-state facts/
+  characters/threads. Override via ``models.reviewer`` in config.
 - image-engineer (Replete-LLM-V2.5-Qwen-7B): Detailed image prompt generation
 
 These models run via Ollama and are much faster than using the Director/Writer models.
-
-B1 fix: ``_call_ollama`` now routes through ``utils.ollama_client.OllamaClient``,
-which gives the per-model circuit breaker, exponential-backoff retry, and
-shared ``keep_alive`` handling for free. The function signature is preserved
-so existing test patches (``patch("utils.specialized_models._call_ollama", ...)`)
-keep working.
 """
 
 import json
@@ -23,9 +15,7 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Model names in Ollama. The 2026-06-02 fix changed the default from the
-# removed "script-reviewer" to the installed "qwen2.5:0.5b" (small, fast, JSON-capable).
-# Override per-deployment via ``models.reviewer`` in config.yaml.
+# Model names in Ollama. Override per-deployment via ``models.reviewer`` in config.yaml.
 SCRIPT_REVIEWER_MODEL = "qwen2.5:0.5b"
 IMAGE_ENGINEER_MODEL = "image-engineer"
 
@@ -63,7 +53,7 @@ def review_script_fast(
     script: str, plan: dict, context: str = "", characters: dict | None = None
 ) -> dict:
     """
-    Fast script review using script-reviewer model (Qwen2.5-3B).
+    Fast script review using qwen2.5:0.5b model.
 
     Returns:
         {
@@ -122,7 +112,7 @@ OUTPUT ONLY VALID JSON:
     if not response:
         # Reviewer unavailable — do NOT fabricate approval
         log.warning(
-            "[script-reviewer] No response — reviewer unavailable, manual review recommended"
+            "[reviewer] No response — reviewer unavailable, manual review recommended"
         )
         return {
             "approved": False,
@@ -187,7 +177,7 @@ OUTPUT ONLY VALID JSON:
         except Exception:
             pass
 
-        log.warning(f"[script-reviewer] Failed to parse JSON: {response[:100]}")
+        log.warning(f"[reviewer] Failed to parse JSON: {response[:100]}")
         return {
             "approved": False,
             "review_unavailable": True,

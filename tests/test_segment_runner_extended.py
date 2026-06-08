@@ -41,7 +41,7 @@ def mock_dependencies(tmp_path):
         "ctx_mgr": MagicMock(),
         "director_agent_instance": MagicMock(),
         "writer_agent": MagicMock(),
-        "trained_loras": {},
+
         "resume": False,
         "dry_run": True,
         "director_mode": False,

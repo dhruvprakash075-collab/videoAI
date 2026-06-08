@@ -303,11 +303,11 @@ def test_specialized_models_routes_through_breaker():
     # test is to prove _call_ollama delegates to client.generate, NOT urllib.
     with patch("utils.ollama_client.get_ollama_client", return_value=_StubClient()):
         result = _call_ollama(
-            "hi there", "script-reviewer", format_json=True, temperature=0.2, timeout=10
+            "hi there", "qwen2.5:0.5b", format_json=True, temperature=0.2, timeout=10
         )
 
     assert result == "stub-response"
-    assert captured["model"] == "script-reviewer"
+    assert captured["model"] == "qwen2.5:0.5b"
     assert captured["kwargs"]["format_json"] is True
     assert captured["kwargs"]["temperature"] == 0.2
     assert captured["kwargs"]["num_predict"] == 4096
@@ -371,7 +371,7 @@ def _call_ollama_with(client, prompt):
     from utils import specialized_models
 
     with patch("utils.ollama_client.get_ollama_client", return_value=client):
-        return specialized_models._call_ollama(prompt, "script-reviewer")
+        return specialized_models._call_ollama(prompt, "qwen2.5:0.5b")
 
 
 # ── Additional OllamaClient coverage tests ───────────────────────────────

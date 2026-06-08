@@ -404,7 +404,6 @@ def make_process_segment(
     ctx_mgr,
     director_agent_instance,
     writer_agent,
-    trained_loras: dict,
     resume: bool,
     dry_run: bool,
     fast_dry_run: bool = False,
@@ -761,7 +760,6 @@ def make_process_segment(
                 enriched_prompts,
                 out_base / "images",
                 seg_config,
-                lora_paths=trained_loras,
                 char_presence=plan.get("char_presence"),
                 project_id=topic,
             )

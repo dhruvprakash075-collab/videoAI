@@ -23,24 +23,20 @@ def test_normalize_tts_engine_omnivoice_aliases():
 
 
 def test_normalize_tts_engine_edge_aliases():
-    for s in ["edge", "edge-tts", "edge_tts", "microsoft", "Edge", "chattts"]:
+    for s in ["edge", "edge-tts", "edge_tts", "microsoft", "Edge"]:
         assert audio_proxy.normalize_tts_engine(s) == "edge"
 
 
-def test_normalize_tts_engine_edge_aliases_includes_chattts():
-    assert audio_proxy.normalize_tts_engine("chattts") == "edge"
-
-
-def test_normalize_tts_engine_unknown_defaults_to_f5():
+def test_normalize_tts_engine_unknown_defaults_to_supertonic():
     with patch("audio.audio_proxy.log") as lg:
-        assert audio_proxy.normalize_tts_engine("some random voice") == "f5"
+        assert audio_proxy.normalize_tts_engine("some random voice") == "supertonic"
         assert lg.warning.called
 
 
-def test_normalize_tts_engine_non_string_defaults_to_f5():
+def test_normalize_tts_engine_non_string_defaults_to_supertonic():
     with patch("audio.audio_proxy.log") as lg:
-        assert audio_proxy.normalize_tts_engine(None) == "f5"
-        assert audio_proxy.normalize_tts_engine(123) == "f5"
+        assert audio_proxy.normalize_tts_engine(None) == "supertonic"
+        assert audio_proxy.normalize_tts_engine(123) == "supertonic"
         assert lg.warning.called
 
 

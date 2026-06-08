@@ -58,10 +58,10 @@ def t_ollama_client():
     reset_ollama_client()
     cfg = load_config()
     client = get_ollama_client(cfg)
-    cfg.get("models", {}).get("script-reviewer", "script-reviewer")
-    # Use the fast 3B reviewer for speed
+    cfg.get("models", {}).get("qwen2.5:0.5b", "qwen2.5:0.5b")
+    # Use the fast 0.5B reviewer for speed
     out = client.generate(
-        "Reply with the single word: OK", model="script-reviewer", temperature=0.0, num_predict=10
+        "Reply with the single word: OK", model="qwen2.5:0.5b", temperature=0.0, num_predict=10
     )
     assert out, "empty response from live Ollama"
     return f"live generate -> {out[:40]!r}"

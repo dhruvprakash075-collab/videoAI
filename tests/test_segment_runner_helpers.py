@@ -574,7 +574,7 @@ def test_make_process_segment_creates_closure(tmp_path):
         ctx_mgr=MagicMock(),
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
-        trained_loras={},
+
         resume=False,
         dry_run=True,
         director_mode=False,
@@ -619,7 +619,7 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
         ctx_mgr=MagicMock(),
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
-        trained_loras={},
+
         resume=False,
         dry_run=True,
         director_mode=False,
@@ -670,7 +670,7 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
         ctx_mgr=MagicMock(),
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
-        trained_loras={},
+
         resume=False,
         dry_run=True,
         director_mode=False,
@@ -971,7 +971,7 @@ def test_process_segment_aborted_early(tmp_path):
             ctx_mgr=MagicMock(),
             director_agent_instance=MagicMock(),
             writer_agent=MagicMock(),
-            trained_loras={},
+
             resume=False,
             dry_run=True,
             director_mode=False,
@@ -1018,7 +1018,7 @@ def test_process_segment_no_ctx_mgr(tmp_path):
         ctx_mgr=None,  # trigger fallback
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
-        trained_loras={},
+
         resume=False,
         dry_run=True,
         director_mode=False,
@@ -1064,7 +1064,7 @@ def test_process_segment_exception_handling_resume(tmp_path):
         ctx_mgr=MagicMock(),
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
-        trained_loras={},
+
         resume=True,  # triggers skip rather than raise
         dry_run=True,
         director_mode=False,

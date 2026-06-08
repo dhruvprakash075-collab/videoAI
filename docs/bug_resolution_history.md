@@ -66,7 +66,7 @@ This document consolidates confirmed historical bug fixes with references to liv
 |---|---|---|
 | **P8-1** | Hermes-director HTTP 500 | Reduced `num_ctx` from 4096 → 2048 in `Modelfile.hermes-director`. Model recreated with `ollama create`, 17GB RAM at 4096 exceeded 16GB hardware limit. |
 | **P8-2** | Duration override | CLI `--duration` flag now correctly wins over user locks in `decision_engine.py` — applied AFTER user locks, not before. |
-| **P8-3** | TTS engine normalization | Added `normalize_tts_engine()` in `audio/audio_proxy.py`. `chattts` → `edge`, `xtts`/`coqui` → `f5`. Free-text LLM outputs normalized to valid engine IDs. |
+| **P8-3** | TTS engine normalization | Added `normalize_tts_engine()` in `audio/audio_proxy.py`. Unknown engines default to `supertonic` (not `f5`). Removed legacy aliases (`xtts`, `coqui`, `chattts`). Valid engines: `supertonic`, `omnivoice`, `f5`, `edge`. |
 | **P8-4** | Director defaults cleanup | Fallback `tts_recommendation` changed from `chattts` → `omnivoice` in both `analyze_with_research` prompt and `_validate_vision_doc` defaults. |
 | **P8-5** | Director TTS validation | `_validate_vision_doc` calls `normalize_tts_engine()` on `tts_recommendation`; `produce_runtime_config` normalizes final engine before writing overlay. |
 | **P8-6** | Supertonic voice preflight | Added `_check_supertonic_voice()` in `utils/preflight.py` — validates configured voice JSON exists on disk. |
@@ -89,7 +89,7 @@ Added `get_tts_capabilities = tts_capabilities` in `audio/audio_proxy.py` for
 callers expecting the `get_` naming convention.
 
 ### Test status (2026-06-08)
-- 1,682 Python tests pass (clean exit — no access violation, no PermissionError)
+- 1,644 Python tests pass (clean exit — no access violation, no PermissionError)
 - 165 Dashboard tests pass (silent stderr)
 - 41 director `produce_runtime_config` tests pass
 - `ruff check .` — 0 errors

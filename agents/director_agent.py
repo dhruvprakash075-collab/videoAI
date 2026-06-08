@@ -1463,15 +1463,18 @@ class DirectorAgent:
         if _mode != "video-only":
             tts_response = str(user_responses.get("tts_engine", "")).lower()
             engine = vision_doc.get("tts_recommendation", "omnivoice") or "omnivoice"
-            if "edge" in tts_response:
-                engine = "edge"
-            elif "omnivoice" in tts_response:
-                engine = "omnivoice"
-            try:
-                from audio.audio_proxy import normalize_tts_engine
-                engine = normalize_tts_engine(engine)
-            except Exception:
-                pass
+            if tts_response:
+                try:
+                    from audio.audio_proxy import normalize_tts_engine
+                    engine = normalize_tts_engine(tts_response)
+                except Exception:
+                    pass
+            else:
+                try:
+                    from audio.audio_proxy import normalize_tts_engine
+                    engine = normalize_tts_engine(engine)
+                except Exception:
+                    pass
             tts_lang = (
                 self.llm_config.get("tts", {}).get("lang", "hi")
                 if isinstance(self.llm_config, dict)
