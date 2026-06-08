@@ -1,9 +1,10 @@
-import { Settings, Play, Mic, Image as ImageIcon } from 'lucide-react';
+import { Settings, Play, Mic, Image as ImageIcon, Server } from 'lucide-react';
 
 const TABS = [
   { id: 'preview',    label: 'Director Canvas', icon: Play },
   { id: 'voices',     label: 'Voice Studio',    icon: Mic },
   { id: 'ab-testing', label: 'A/B Testing',     icon: ImageIcon },
+  { id: 'jobs',       label: 'Jobs',            icon: Server },
 ];
 
 function SidebarButton({ active, onClick, title, children }) {
