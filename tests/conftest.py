@@ -45,6 +45,16 @@ if str(_ROOT) not in sys.path:
 
 def _install_optional_dependency_stubs() -> None:
     """Make optional heavyweight packages importable for monkeypatch-only tests."""
+    # Stub pyarrow to avoid loading native DLLs (causes Windows access violation at shutdown).
+    if "pyarrow" not in sys.modules:
+        sys.modules["pyarrow"] = types.ModuleType("pyarrow")
+        sys.modules["pyarrow"].__version__ = "24.0.0"
+        sys.modules["pyarrow"].lib = types.ModuleType("pyarrow.lib")
+        sys.modules["pyarrow"].fs = types.ModuleType("pyarrow.fs")
+        sys.modules["pyarrow"].parquet = types.ModuleType("pyarrow.parquet")
+        sys.modules["pyarrow"].dataset = types.ModuleType("pyarrow.dataset")
+        sys.modules["pyarrow"].compute = types.ModuleType("pyarrow.compute")
+
     if "crewai" not in sys.modules:
         crewai = types.ModuleType("crewai")
 

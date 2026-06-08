@@ -1467,6 +1467,11 @@ class DirectorAgent:
                 engine = "edge"
             elif "omnivoice" in tts_response:
                 engine = "omnivoice"
+            try:
+                from audio.audio_proxy import normalize_tts_engine
+                engine = normalize_tts_engine(engine)
+            except Exception:
+                pass
             tts_lang = (
                 self.llm_config.get("tts", {}).get("lang", "hi")
                 if isinstance(self.llm_config, dict)

@@ -1562,10 +1562,10 @@ def test_produce_runtime_config_tts_engine_omnivoice(agent):
 
 
 def test_produce_runtime_config_tts_engine_default(agent):
-    """Unknown TTS engine → falls back to vision_doc or omnivoice default."""
+    """Unknown TTS engine → falls back to vision_doc (normalized) or omnivoice default."""
     vision = {"characters": [{"name": "A"}], "tts_recommendation": "xtts"}
     result = agent.produce_runtime_config(vision, {"tts_engine": "unknown"}, {})
-    assert result["tts"]["engine"] == "xtts"
+    assert result["tts"]["engine"] == "f5"
 
 
 def test_produce_runtime_config_subtitle_color(agent):
