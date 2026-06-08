@@ -53,7 +53,7 @@ def _get_config() -> dict:
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
 _EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft", "chattts"})
 _F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts"})
-_SUPERONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
+_SUPERTONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
 
 
 def normalize_tts_engine(engine: str) -> str:
@@ -78,7 +78,7 @@ def normalize_tts_engine(engine: str) -> str:
         return "f5"
 
     normalized = engine.strip().lower()
-    if normalized in _SUPERONIC_ALIASES:
+    if normalized in _SUPERTONIC_ALIASES:
         return "supertonic"
     if normalized in _F5_ALIASES:
         return "f5"
@@ -147,20 +147,22 @@ def _call_edge_direct(
             communicate = Communicate(text=text, voice=voice, rate=rate, volume=volume)
             await communicate.save(str(output_mp3))
 
+        _coro = _gen()
         try:
-            asyncio.run(_gen())
-        except RuntimeError:
             try:
-                import nest_asyncio
-
-                nest_asyncio.apply()
-                asyncio.get_event_loop().run_until_complete(_gen())
-            except (ImportError, ModuleNotFoundError):
-                loop = asyncio.new_event_loop()
+                asyncio.run(_coro)
+            except RuntimeError:
                 try:
-                    loop.run_until_complete(_gen())
-                finally:
+                    import nest_asyncio
+
+                    nest_asyncio.apply()
+                    asyncio.get_event_loop().run_until_complete(_coro)
+                except (ImportError, ModuleNotFoundError):
+                    loop = asyncio.new_event_loop()
+                    loop.run_until_complete(_coro)
                     loop.close()
+        finally:
+            _coro.close()
 
         # Get duration
         try:
@@ -1118,7 +1120,7 @@ def tts_generate(
     # route them directly to edge instead of silently attempting F5.
     _raw_engine = _cfg.get("tts", {}).get("engine", "supertonic")
     if isinstance(_raw_engine, str) and _raw_engine.strip().lower() not in (
-        _SUPERONIC_ALIASES | _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
+        _SUPERTONIC_ALIASES | _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
     ):
         log.warning(f"Unknown TTS engine '{_raw_engine}' — falling back to edge-tts")
         engine = "edge"

@@ -31,24 +31,6 @@ async function clickSave(onClose) {
   await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
 }
 
-async function testConfigLoad(voiceEngine) {
-  const fetchMock = mockGetFetch({
-    voiceEngine: voiceEngine,
-    dynamicSubtitles: false,
-    uncappedScaling: true,
-    maxImagesPerSegment: 9
-  });
-  render(<ControlPanel onClose={onClose} />);
-  await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  });
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', voiceEngine === 'omnivoice' ? 'true' : 'false');
-    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', voiceEngine === 'supertonic' ? 'true' : 'false');
-    expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', voiceEngine === 'edge' ? 'true' : 'false');
-  });
-}
-
 describe('ControlPanel', () => {
   let onClose;
 
