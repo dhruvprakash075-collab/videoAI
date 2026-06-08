@@ -152,7 +152,7 @@ echo Running story pipeline for topic: "%TOPIC%"...
 echo.
 call venv\Scripts\activate.bat
 :: BUG-534 FIX: Use -m flag to run as module for proper imports
-python -m core.pipeline_long --topic "%TOPIC%" %ARGS%
+venv\Scripts\python.exe bootstrap_pipeline.py --topic "%TOPIC%" %ARGS%
 if %errorlevel% neq 0 (
     echo.
     if exist "studio_outputs\*_final_video.mp4" (

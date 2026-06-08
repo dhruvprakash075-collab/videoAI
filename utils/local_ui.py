@@ -14,14 +14,18 @@ import threading
 import uuid
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agents.director_agent import UIState
+from jobs.job_store import JobStore
 from utils import load_config
 from utils.concurrency import global_scheduler
+
+# Initialize global job store
+job_store = JobStore()
 
 UIState.is_ui_mode = True
 
@@ -234,16 +238,9 @@ async def read_index():
 async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrative")):
     """
     Endpoint to receive uploaded light novels, stories, or scripts.
-    """
-    if getattr(UIState, "status", "idle") in ["running", "paused"]:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "status": "error",
-                "message": "A pipeline is already running or paused. Please wait.",
-            },
-        )
 
+    Creates a queued job in the job store instead of starting the pipeline directly.
+    """
     try:
         content = await file.read()
         script_text = content.decode("utf-8")
@@ -253,25 +250,54 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
             content={"status": "error", "message": f"Failed to read script file: {e}"},
         )
 
-    # Start execution in a separate background thread
-    UIState.logs = ["Engine initialized."]
-    UIState.current_script = script_text
-    UIState.active_question = None
-    UIState.user_reply = None
-    UIState.output_video = ""
-    UIState.status = "running"
-    UIState.pause_event = threading.Event()
-
-    t = threading.Thread(target=run_pipeline_thread, args=(script_text, topic))
-    t.daemon = True
-    t.start()
-    UIState.run_thread = t
-
-    return {
-        "status": "success",
-        "filename": file.filename,
-        "message": "Pipeline started in background.",
+    # Build job request payload
+    job_request = {
+        "topic": topic,
+        "content_text": script_text,
+        # preserve sensible defaults for UI-initiated runs
+        "dry_run": False,
+        "skip_rvc": True,
+        "no_resume": True,
     }
+
+    # Try to include image backend info from config
+    try:
+        cfg = load_config()
+        img = cfg.get("image_gen", {}) or {}
+        job_request["image_backend"] = img.get("backend")
+        cosy = img.get("comfyui", {}) or {}
+        job_request["comfyui_checkpoint"] = cosy.get("checkpoint")
+    except Exception:
+        pass
+
+    job_id = job_store.create_job(job_request, topic=topic, image_backend=job_request.get("image_backend"), comfyui_checkpoint=job_request.get("comfyui_checkpoint"))
+    job_store.append_event(job_id, "created via upload_script", event_type="system")
+
+    return JSONResponse(content={"status": "queued", "job_id": job_id, "message": "Job queued for execution."})
+
+
+@app.post("/api/upload_voice")
+async def create_job_endpoint(job_request: dict = Body(...)):
+    """Create a new job via JSON body.
+
+    Example body from UI:
+    {
+      "topic": "Job Smoke",
+      "duration": 1,
+      "dry_run": true,
+      "skip_rvc": true
+    }
+    """
+    try:
+        topic = job_request.get("topic")
+        image_backend = job_request.get("image_backend")
+        comfyui_checkpoint = job_request.get("comfyui_checkpoint")
+        job_id = job_store.create_job(job_request, topic=topic, image_backend=image_backend, comfyui_checkpoint=comfyui_checkpoint)
+        job_store.append_event(job_id, "created via API", event_type="system")
+        return JSONResponse(content={"status": "queued", "job_id": job_id})
+    except Exception as e:
+        log.exception("Failed to create job")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 @app.post("/api/upload_voice")
@@ -388,6 +414,53 @@ async def get_voices():
     for f in voices_dir.glob("*.wav"):
         voices.append({"name": f.stem, "filename": f.name, "size": f.stat().st_size})
     return {"voices": voices}
+
+
+# -------------------- Job API Endpoints --------------------
+@app.get("/api/jobs")
+async def list_jobs(limit: int = 100, offset: int = 0):
+    try:
+        rows = job_store.list_jobs(limit=limit, offset=offset)
+        return {"jobs": rows}
+    except Exception as e:
+        log.exception("Failed to list jobs")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.get("/api/jobs/{job_id}")
+async def get_job(job_id: int):
+    job = job_store.get_job(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "job not found"})
+    return job
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def get_job_events(job_id: int, limit: int | None = None):
+    try:
+        events = job_store.get_events(job_id, limit=limit)
+        return {"events": events}
+    except Exception as e:
+        log.exception("Failed to get job events")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: int):
+    ok = job_store.request_cancel(job_id)
+    if ok:
+        return {"status": "cancel_requested", "job_id": job_id}
+    return JSONResponse(status_code=400, content={"status": "error", "message": "Unable to cancel job"})
+
+
+@app.post("/api/jobs/{job_id}/retry")
+async def retry_job(job_id: int):
+    new_id = job_store.retry_job(job_id)
+    if new_id:
+        return {"status": "retry_queued", "job_id": new_id}
+    return JSONResponse(status_code=400, content={"status": "error", "message": "Unable to retry job"})
+
+
 
 
 @app.get("/api/audio/preview/{character}")
