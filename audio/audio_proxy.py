@@ -28,17 +28,21 @@ log = logging.getLogger(__name__)
 
 # OPT-03: module-level config cache — load_config() only hits disk once per process
 _config_cache: dict = {}
+_config_loader_id: int | None = None
 
 
 def _get_config() -> dict:
     """Return cached config, loading from disk only on first call."""
-    global _config_cache
-    if not _config_cache:
+    global _config_cache, _config_loader_id
+    loader_id = id(load_config)
+    if not _config_cache or _config_loader_id != loader_id:
         try:
             _config_cache = load_config()
+            _config_loader_id = loader_id
         except Exception as e:
             log.warning(f"Could not load config: {e}")
             _config_cache = {}
+            _config_loader_id = loader_id
     return _config_cache
 
 
@@ -888,8 +892,16 @@ def tts_generate(
 
     # P1-7 fix: normalize the engine string from config (which may have been set
     # from the vision doc overlay) to a known engine id before dispatching.
+    # Keep the documented tts_generate() behavior for truly unknown strings:
+    # route them directly to edge instead of silently attempting F5.
     _raw_engine = _cfg.get("tts", {}).get("engine", "omnivoice")
-    engine = normalize_tts_engine(_raw_engine)
+    if isinstance(_raw_engine, str) and _raw_engine.strip().lower() not in (
+        _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
+    ):
+        log.warning(f"Unknown TTS engine '{_raw_engine}' — falling back to edge-tts")
+        engine = "edge"
+    else:
+        engine = normalize_tts_engine(_raw_engine)
 
     log.info(f"Generating TTS audio ({lang}) using {engine}...")
 

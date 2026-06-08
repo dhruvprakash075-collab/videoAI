@@ -105,7 +105,7 @@ image_gen:
   bonsai_model: "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
   height: 1024
   width: 1024
-  steps: 4
+  steps: 12
   guidance_scale: 3.5
   # No negative_prompt — FLUX-style models do not use them
   # No acceleration block — Bonsai is already a distilled, fast model
@@ -113,7 +113,7 @@ image_gen:
   # No LoRA — character consistency is via IP-Adapter
   ip_adapter_scale: 0.8         # 0.0–1.0; default 0.8 is balanced
   lock_seed: true
-  preview_steps: 4
+  preview_steps: 12
   oom_recovery: true
 
   # ── Upscaler (Lanczos-only fallback by default; opt into Real-ESRGAN) ───

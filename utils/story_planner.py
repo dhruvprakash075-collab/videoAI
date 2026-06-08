@@ -4,11 +4,17 @@ import json
 import logging
 import re
 
-from crewai import Crew, Task
-from crewai.process import Process
 from pydantic import BaseModel, Field
 
 from utils.crewai_breaker import BreakerOpen, guarded_crewai_kickoff
+
+try:
+    from crewai import Crew, Task
+    from crewai.process import Process
+except ImportError:  # optional dependency; fallback planning still works without it
+    Crew = None
+    Task = None
+    Process = None
 
 
 class SegmentPlan(BaseModel):
@@ -147,6 +153,10 @@ def _plan_batch(
     )
 
     try:
+        if Crew is None or Task is None or Process is None:
+            log.warning("CrewAI is not installed - using default outline")
+            return _default_outline(topic, batch_size)
+
         crew = Crew(
             agents=[agent],
             tasks=[

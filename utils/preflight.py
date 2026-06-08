@@ -185,12 +185,12 @@ def _check_ffmpeg() -> tuple[Status, str]:
 
 
 def _check_python() -> tuple[Status, str]:
-    """Verify Python version is in the supported range (3.10–3.13)."""
+    """Verify Python version is in the supported range (3.10-3.14)."""
     import sys
 
     v = sys.version_info
-    if v.major != 3 or v.minor < 10 or v.minor > 13:
-        return "fail", f"Python {v.major}.{v.minor}.{v.micro} not supported (need 3.10–3.13)"
+    if v.major != 3 or v.minor < 10 or v.minor > 14:
+        return "fail", f"Python {v.major}.{v.minor}.{v.micro} not supported (need 3.10-3.14)"
     return "ok", f"Python {v.major}.{v.minor}.{v.micro}"
 
 

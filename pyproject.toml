@@ -8,7 +8,7 @@
 name = "video-ai"
 version = "0.0.0"
 description = "Local video-generation pipeline (see AGENTS.md)"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.15"
 
 [tool.ruff]
 # Match the de-facto line length in this codebase (existing modules use ~100-110).
@@ -236,6 +236,21 @@ indent-style = "space"
 line-ending = "auto"
 # Skip reformatting lines that already have a `# fmt: off` / `# fmt: skip`.
 docstring-code-format = false
+
+# ── Pytest config ─────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [
+    ".git",
+    ".playwright-cli",
+    ".pytest_cache",
+    ".ruff_cache",
+    "codex_tmp",
+    "dashboard",
+    "external",
+    "node_modules",
+    "venv",
+]
 
 # ── Coverage config ───────────────────────────────────────────────────────
 [tool.coverage.run]
