@@ -69,6 +69,16 @@ def test_cli_flag_locks_duration():
     assert rec.total_duration_min.locked is True
 
 
+def test_cli_flag_beats_user_lock():
+    """CLI flag must win when both user and CLI specify the same field."""
+    user = {"total_duration_min": 30}
+    cli = {"total_duration_min": 1}
+    rec = build_decision_record(FakeDirector(), {}, {}, user, cli, BASE_CONFIG)
+    assert rec.total_duration_min.value == 1
+    assert rec.total_duration_min.provenance == "cli_flag"
+    assert rec.total_duration_min.locked is True
+
+
 def test_run_mode_set():
     rec = build_decision_record(
         FakeDirector(), {}, {}, {"run_mode": "project", "project_name": "myproj"}, {}, BASE_CONFIG

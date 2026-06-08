@@ -51,7 +51,7 @@ def _get_config() -> dict:
 # "xtts", "Calm, measured, storytelling voice"). Map everything to the three
 # engine ids that tts_generate actually dispatches: "f5", "omnivoice", or "edge".
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
-_EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft"})
+_EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft", "chattts"})
 _F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts"})
 
 

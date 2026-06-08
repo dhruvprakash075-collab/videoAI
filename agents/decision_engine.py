@@ -141,8 +141,12 @@ def _apply_writer_input(rec, writer_input: dict) -> None:
 
 
 def _apply_user_locks(rec, user_locks: dict, cli_flags: dict) -> None:
-    """Apply explicit user overrides and CLI flags as locked values."""
-    # CLI flags (e.g. --duration → total_duration_min)
+    """Apply explicit user overrides and CLI flags as locked values.
+
+    Authority: CLI flags (applied second) always win over user locks (applied first)
+    when both are present, so ``--duration 1`` cannot be overwritten by a
+    consultation or director decision.
+    """
     # P4-33 fix: map internal flag keys to their actual CLI flag names for the
     # rationale string (e.g. "total_duration_min" → "--duration", not "--total_duration_min").
     _cli_flag_names = {
@@ -159,14 +163,6 @@ def _apply_user_locks(rec, user_locks: dict, cli_flags: dict) -> None:
         "words_per_segment": "words_per_segment",
         "images_per_segment": "images_per_segment",
     }
-    for flag, field in cli_map.items():
-        val = cli_flags.get(flag)
-        if val is not None:
-            _flag_label = _cli_flag_names.get(flag, f"--{flag}")
-            rec.set(field, val, "cli_flag", lock=True, rationale=f"CLI flag {_flag_label}")
-            log.info(f"[DECISION ENGINE] CLI lock: '{field}' = {val}")
-
-    # Explicit user overrides from consultation
     user_map = {
         "total_duration_min": "total_duration_min",
         "segment_count": "segment_count",
@@ -174,11 +170,21 @@ def _apply_user_locks(rec, user_locks: dict, cli_flags: dict) -> None:
         "images_per_segment": "images_per_segment",
         "segment_duration_min": "segment_duration_min",
     }
+
+    # 1. User locks applied first (lower authority)
     for u_key, field in user_map.items():
         val = user_locks.get(u_key)
         if val is not None:
             rec.set(field, val, "user", lock=True, rationale="User explicit override")
             log.info(f"[DECISION ENGINE] User lock: '{field}' = {val}")
+
+    # 2. CLI flags applied second (highest authority — always wins)
+    for flag, field in cli_map.items():
+        val = cli_flags.get(flag)
+        if val is not None:
+            _flag_label = _cli_flag_names.get(flag, f"--{flag}")
+            rec.set(field, val, "cli_flag", lock=True, rationale=f"CLI flag {_flag_label}")
+            log.info(f"[DECISION ENGINE] CLI lock: '{field}' = {val}")
 
     # Run mode
     run_mode = user_locks.get("run_mode") or cli_flags.get("run_mode")
