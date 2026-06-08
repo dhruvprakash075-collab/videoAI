@@ -325,12 +325,14 @@ def run_long_pipeline(
 
     log_vram_usage("Pipeline Start")
 
-    est_total_s = n_segs * 25 if dry_run else n_segs * (120 + 60 + 30)
+    est_dry_s = n_segs * 25 if not fast_dry_run else n_segs * 20
+    est_total_s = n_segs * (120 + 60 + 30)
     log.info("┌─────────────────────────────────────────┐")
     log.info("│  Estimated Run Time                     │")
     log.info(f"│  Segments:    {n_segs:<26}│")
     if dry_run:
-        log.info(f"│  Dry-run:     ~{format_time_hms(est_total_s):<25}│")
+        label = "Fast-dry-run" if fast_dry_run else "Dry-run"
+        log.info(f"│  {label}: ~{format_time_hms(est_dry_s):<25}│")
     else:
         log.info(f"│  TTS/segment: ~2.0 min  → {n_segs * 2:>2} min total  │")
         log.info(f"│  SD/segment:  ~1.0 min  → {n_segs * 1:>2} min total  │")

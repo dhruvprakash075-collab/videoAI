@@ -1182,10 +1182,16 @@ class DirectorAgent:
         elif not isinstance(vs, str):
             vision["visual_style"] = str(vs) if vs else "anime"
 
-        # tts_recommendation: must be a string (LLM sometimes returns True/False)
+        # tts_recommendation: must be a valid engine ID
         tts_rec = vision.get("tts_recommendation")
         if not isinstance(tts_rec, str):
             vision["tts_recommendation"] = "omnivoice"
+        else:
+            try:
+                from audio.audio_proxy import normalize_tts_engine
+                vision["tts_recommendation"] = normalize_tts_engine(tts_rec)
+            except Exception:
+                pass
 
         # theme / emotions / pacing: must be strings
         for _str_field in ("theme", "emotions", "pacing"):

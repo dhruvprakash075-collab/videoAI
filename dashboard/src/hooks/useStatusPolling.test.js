@@ -20,8 +20,9 @@ describe('useStatusPolling', () => {
     vi.useRealTimers();
   });
 
-  it('starts with the idle default state', () => {
+  it('starts with the idle default state', async () => {
     const { result } = renderHook(() => useStatusPolling());
+    await act(async () => {});
     expect(result.current[0]).toEqual({
       state: 'idle',
       logs: [],

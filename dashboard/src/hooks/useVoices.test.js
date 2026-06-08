@@ -7,9 +7,10 @@ describe('useVoices', () => {
     global.fetch = vi.fn();
   });
 
-  it('starts with an empty voices list', () => {
+  it('starts with an empty voices list', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ voices: [] }) });
     const { result } = renderHook(() => useVoices());
+    await act(async () => {});
     expect(result.current.voices).toEqual([]);
   });
 
