@@ -156,10 +156,24 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         checks["OmniVoice Python Environment"]["status"] = "OK"
         checks["OmniVoice Python Environment"]["info"] = f"Using system Python: {os.sys.executable}"
 
-    # 2.7 TTS engine
-    tts_engine = config.get("tts", {}).get("engine", "omnivoice")
+    # 2.7 TTS engine — validate only supported engines
+    _KNOWN_TTS_ENGINES = {"supertonic", "omnivoice", "f5", "edge"}
+    tts_engine = config.get("tts", {}).get("engine", "supertonic")
     checks[f"TTS Engine '{tts_engine}'"] = {"status": "PENDING", "info": ""}
-    if tts_engine == "omnivoice":
+    if tts_engine not in _KNOWN_TTS_ENGINES:
+        checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
+        checks[f"TTS Engine '{tts_engine}'"]["info"] = (
+            f"Unknown engine '{tts_engine}'. Supported: {', '.join(sorted(_KNOWN_TTS_ENGINES))}"
+        )
+    elif tts_engine == "supertonic":
+        worker_script = Path("audio/supertonic_worker.py")
+        if worker_script.exists():
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = "Supertonic worker script available"
+        else:
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = "audio/supertonic_worker.py NOT FOUND!"
+    elif tts_engine == "omnivoice":
         worker_script = Path("audio/omnivoice_worker.py")
         if worker_script.exists():
             checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
@@ -167,6 +181,14 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         else:
             checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
             checks[f"TTS Engine '{tts_engine}'"]["info"] = "audio/omnivoice_worker.py NOT FOUND!"
+    elif tts_engine == "f5":
+        worker_script = Path("audio/f5_worker.py")
+        if worker_script.exists():
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = "F5 worker script available"
+        else:
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = "audio/f5_worker.py NOT FOUND!"
     elif tts_engine == "edge":
         try:
             import edge_tts
@@ -176,9 +198,6 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         except ImportError:
             checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
             checks[f"TTS Engine '{tts_engine}'"]["info"] = "edge-tts module NOT installed!"
-    else:
-        checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
-        checks[f"TTS Engine '{tts_engine}'"]["info"] = f"Engine '{tts_engine}' assumed working"
 
     # 2.5 Disk space
     checks.setdefault("Disk Space Availability", {})
@@ -938,7 +957,7 @@ def plan_outline(
     topic: str, n_segs: int, config: dict, director_agent, cp_mgr, resume: bool
 ) -> list[dict]:
     """Plan the story outline (once, before segments). Loads from checkpoint if available."""
-    from utils.story_planner import plan_story
+    from utils.story_planner import _default_outline_used, plan_story
 
     ck_meta = cp_mgr.get(f"{topic}_meta") if resume else None
     if ck_meta and "outline" in ck_meta:
@@ -949,6 +968,19 @@ def plan_outline(
         outline = plan_story(topic, n_segs, config, director_agent)
         cp_mgr.save(f"{topic}_meta", "outline", {"data": outline})
         log.info(f"[OK] Story outline: {len(outline)} segments")
+
+    # Record degradation if the outline fell back to defaults
+    if _default_outline_used:
+        try:
+            from agents.director_agent import UIState as _UIState
+
+            _UIState.record_degradation(
+                seg="all",
+                stage="plan_outline",
+                reason="Director LLM failed — outline is generic defaults",
+            )
+        except Exception:
+            log.warning("[DEGRADED] Director outline is generic defaults (UIState unavailable)")
 
     return outline
 

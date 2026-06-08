@@ -48,26 +48,28 @@ def _get_config() -> dict:
 
 # P1-7 fix: TTS engine normalization whitelist.
 # Vision docs and user responses can contain arbitrary strings (e.g. "chattts",
-# "xtts", "Calm, measured, storytelling voice"). Map everything to the three
-# engine ids that tts_generate actually dispatches: "f5", "omnivoice", or "edge".
+# "xtts", "Calm, measured, storytelling voice"). Map everything to the four
+# engine ids that tts_generate actually dispatches: "supertonic", "f5", "omnivoice", or "edge".
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
 _EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft", "chattts"})
 _F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts"})
+_SUPERONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
 
 
 def normalize_tts_engine(engine: str) -> str:
     """Normalize an arbitrary TTS engine string to a known engine id.
 
-    Known f5 aliases:        "f5", "f5-tts", "f5tts", "f5_tts"
-    Known omnivoice aliases: "omnivoice", "omni", "voice_clone", "clone"
-    Known edge aliases:      "edge", "edge-tts", "edge_tts", "microsoft"
+    Known supertonic aliases: "supertonic", "supertone", "supertonic3", "supertonic-3"
+    Known f5 aliases:         "f5", "f5-tts", "f5tts", "f5_tts"
+    Known omnivoice aliases:  "omnivoice", "omni", "voice_clone", "clone"
+    Known edge aliases:       "edge", "edge-tts", "edge_tts", "microsoft", "chattts"
     Everything else (including free-text descriptions) → "f5" (default).
 
     Args:
         engine: Raw engine string from vision doc, config overlay, or user input.
 
     Returns:
-        "f5", "omnivoice", or "edge".
+        "supertonic", "f5", "omnivoice", or "edge".
     """
     if not isinstance(engine, str):
         log.warning(
@@ -76,6 +78,8 @@ def normalize_tts_engine(engine: str) -> str:
         return "f5"
 
     normalized = engine.strip().lower()
+    if normalized in _SUPERONIC_ALIASES:
+        return "supertonic"
     if normalized in _F5_ALIASES:
         return "f5"
     if normalized in _OMNIVOICE_ALIASES:
@@ -83,8 +87,6 @@ def normalize_tts_engine(engine: str) -> str:
     if normalized in _EDGE_ALIASES:
         return "edge"
 
-    # Unknown / free-text value — default to f5 and log a warning so
-    # operators can see when the vision doc produced an unmapped engine string.
     log.warning(
         f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'f5'. "
         "Add an alias to normalize_tts_engine() if this is a valid engine."
@@ -174,6 +176,226 @@ def _call_edge_direct(
 
     except Exception as e:
         log.exception(f"edge-tts direct failed: {e}")
+        return {"status": "error", "message": str(e)[:200]}
+
+
+# ── Supertonic 3 persistent worker ────────────────────────────────────────────
+
+
+class _SupertonicWorker:
+    """Persistent Supertonic 3 TTS worker subprocess (CPU ONNX, zero VRAM).
+
+    Mirrors _OmniVoiceWorker design. Spawns supertonic_worker.py --serve once,
+    keeps the model loaded, and pipes line-delimited JSON requests across many
+    segments. Falls back gracefully if supertonic is not installed.
+    """
+
+    def __init__(self):
+        self._proc = None
+        self._lock = threading.Lock()
+        self._failed = False
+
+    def _start(self) -> bool:
+        if self._failed:
+            return False
+        if self._proc is not None and self._proc.poll() is None:
+            return True
+        python_exe = Path(sys.executable)
+        worker_script = Path(__file__).parent / "supertonic_worker.py"
+        if not worker_script.exists():
+            log.warning("[Supertonic] worker script not found — disabling persistent mode")
+            self._failed = True
+            return False
+        try:
+            _super_env = dict(os.environ)
+            _super_env.update(
+                {
+                    "WANDB_MODE": "disabled",
+                    "WANDB_DISABLED": "true",
+                    "PYTHONIOENCODING": "utf-8",
+                }
+            )
+            self._proc = subprocess.Popen(
+                [str(python_exe), str(worker_script), "--serve"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+                env=_super_env,
+            )
+            import time as _t
+
+            deadline = _t.time() + 120
+            while _t.time() < deadline:
+                line = self._proc.stdout.readline()
+                if not line:
+                    if self._proc.poll() is not None:
+                        raise RuntimeError("Supertonic worker exited during startup")
+                    continue
+                line = line.strip()
+                if not (line.startswith("{") and line.endswith("}")):
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("status") == "ready":
+                    log.info("[Supertonic] Persistent worker ready (CPU ONNX model loaded)")
+                    return True
+                if msg.get("status") == "error":
+                    raise RuntimeError(msg.get("message", "supertonic worker init error"))
+            raise RuntimeError("Supertonic worker readiness timeout")
+        except Exception as e:
+            log.warning(
+                f"[Supertonic] Persistent worker unavailable ({e}) — using one-shot fallback"
+            )
+            self._failed = True
+            self._cleanup_proc()
+            return False
+
+    def _cleanup_proc(self):
+        if self._proc is not None:
+            with contextlib.suppress(Exception):
+                self._proc.kill()
+            self._proc = None
+
+    def generate(self, req: dict[str, Any], timeout: float = 300) -> dict[str, Any] | None:
+        with self._lock:
+            if not self._start():
+                return None
+            try:
+                self._proc.stdin.write(json.dumps(req) + "\n")
+                self._proc.stdin.flush()
+                import time as _t
+
+                deadline = _t.time() + timeout
+                while _t.time() < deadline:
+                    line = self._proc.stdout.readline()
+                    if not line:
+                        if self._proc.poll() is not None:
+                            raise RuntimeError("Supertonic worker died mid-request")
+                        continue
+                    line = line.strip()
+                    if not (line.startswith("{") and line.endswith("}")):
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    status = msg.get("status")
+                    if status == "progress":
+                        deadline = _t.time() + timeout
+                        continue
+                    return msg
+                raise RuntimeError("Supertonic worker response timeout")
+            except Exception as e:
+                log.warning(
+                    f"[Supertonic] Persistent worker request failed ({e}) — disabling persistent mode"
+                )
+                self._failed = True
+                self._cleanup_proc()
+                return None
+
+    def shutdown(self):
+        with self._lock:
+            if self._proc is not None and self._proc.poll() is None:
+                try:
+                    self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
+                    self._proc.stdin.flush()
+                    self._proc.wait(timeout=10)
+                except Exception:
+                    pass
+            self._cleanup_proc()
+
+
+_supertonic_worker = _SupertonicWorker()
+
+
+def shutdown_supertonic_worker():
+    """Stop the persistent Supertonic worker (call at pipeline end)."""
+    _supertonic_worker.shutdown()
+
+
+def _call_supertonic_worker(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    speed_override: float | None = None,
+) -> dict[str, Any]:
+    """Generate TTS audio using Supertonic 3 (CPU ONNX).
+
+    Tries the persistent worker first, falls back to one-shot subprocess.
+    """
+    super_cfg = {}
+    with contextlib.suppress(Exception):
+        super_cfg = load_config().get("tts", {}).get("supertonic", {})
+
+    voice = super_cfg.get("voice", "M1")
+    steps = int(super_cfg.get("steps", 16))
+    speed = float(speed_override) if speed_override is not None else float(super_cfg.get("speed", 1.0))
+    silence_duration = float(super_cfg.get("silence_duration", 0.1))
+    max_chunk_length = super_cfg.get("max_chunk_length")
+
+    if output_dir is None:
+        output_dir = Path("tts_output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_wav = output_dir / f"supertonic_{uuid.uuid4().hex[:8]}.wav"
+
+    req = {
+        "text": text,
+        "output": str(out_wav),
+        "voice": voice if voice else "M1",
+        "lang": lang if lang else None,
+        "steps": steps,
+        "speed": speed,
+        "silence_duration": silence_duration,
+        "seed": -1,
+    }
+    if max_chunk_length is not None:
+        req["max_chunk_length"] = int(max_chunk_length)
+
+    resp = _supertonic_worker.generate(req)
+    if resp is not None:
+        return resp
+
+    log.info("[Supertonic] Using one-shot subprocess fallback")
+    try:
+        python_exe = Path(sys.executable)
+        worker_script = Path(__file__).parent / "supertonic_worker.py"
+        if not worker_script.exists():
+            raise FileNotFoundError(f"supertonic_worker.py not found at {worker_script}")
+
+        cmd = [
+            str(python_exe),
+            str(worker_script),
+            f"--text={text}",
+            f"--output={out_wav}",
+            f"--voice={voice}",
+            f"--steps={steps}",
+            f"--speed={speed}",
+            f"--silence-duration={silence_duration}",
+        ]
+        if lang:
+            cmd.append(f"--lang={lang}")
+        if max_chunk_length is not None:
+            cmd.append(f"--max-chunk-length={max_chunk_length}")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
+        if result.returncode == 0 and result.stdout.strip():
+            for line in reversed(result.stdout.strip().split("\n")):
+                line = line.strip()
+                if line.startswith("{") and line.endswith("}"):
+                    try:
+                        return json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+        error_msg = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+        log.error(f"[Supertonic] one-shot failed (code {result.returncode}): {error_msg}")
+        return {"status": "error", "message": error_msg}
+    except Exception as e:
+        log.exception(f"[Supertonic] one-shot exception: {e}")
         return {"status": "error", "message": str(e)[:200]}
 
 
@@ -894,9 +1116,9 @@ def tts_generate(
     # from the vision doc overlay) to a known engine id before dispatching.
     # Keep the documented tts_generate() behavior for truly unknown strings:
     # route them directly to edge instead of silently attempting F5.
-    _raw_engine = _cfg.get("tts", {}).get("engine", "omnivoice")
+    _raw_engine = _cfg.get("tts", {}).get("engine", "supertonic")
     if isinstance(_raw_engine, str) and _raw_engine.strip().lower() not in (
-        _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
+        _SUPERONIC_ALIASES | _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
     ):
         log.warning(f"Unknown TTS engine '{_raw_engine}' — falling back to edge-tts")
         engine = "edge"
@@ -907,10 +1129,29 @@ def tts_generate(
 
     # R12.3: engine registry — adding a new engine = adding one adapter here,
     # no change to the per-segment pipeline flow.
-    if engine == "f5":
-        # T1: F5-TTS is the mandatory default engine.
-        # Falls back to omnivoice → edge if F5 model/lib is absent (safe for
-        # machines that haven't run setup_f5.ps1 yet).
+    if engine == "supertonic":
+        result = _call_supertonic_worker(
+            text,
+            lang=lang,
+            output_dir=output_dir,
+            speed_override=speed,
+        )
+        if result.get("status") != "success":
+            log.warning("[TTS] Supertonic failed — degrading to omnivoice")
+            result = _call_omnivoice_worker(
+                text,
+                lang=lang,
+                output_dir=output_dir,
+                voice_sample=str(voice_sample) if voice_sample else "",
+                speed_override=speed,
+                sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
+            )
+        if result.get("status") != "success":
+            log.warning("[TTS] omnivoice fallback also failed — degrading to edge")
+            result = _call_edge_direct(
+                text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
+            )
+    elif engine == "f5":
         result = _call_f5_worker(
             text,
             lang=lang,
@@ -1112,12 +1353,26 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
     Candidate engines (IndicF5, OpenVoice v2) can be added here once integrated.
     """
     return {
+        "supertonic": {
+            "voice_cloning": True,
+            "languages": ["hi", "en", "multi", "31 langs"],
+            "vram_hint_gb": 0.0,
+            "notes": "Default. CPU ONNX, 4.5x faster than OmniVoice. Zero VRAM. Custom voice JSON.",
+            "recommended": {"voice": "character_voices/dhruv_voice_polished.json", "steps": 16, "speed": 1.0},
+        },
         "omnivoice": {
             "voice_cloning": True,
             "languages": ["hi", "en", "multi"],
             "vram_hint_gb": 4.0,
-            "notes": "Default. Voice cloning from a reference sample. Persistent worker supported.",
+            "notes": "GPU-based fallback. Voice cloning from a reference sample. Persistent worker supported.",
             "recommended": {"speed": 0.85, "num_step": 40, "guidance_scale": 2.5},
+        },
+        "f5": {
+            "voice_cloning": True,
+            "languages": ["hi", "en"],
+            "vram_hint_gb": 3.0,
+            "notes": "F5-TTS. Hindi fine-tune. GPU-based. Falls back to omnivoice.",
+            "recommended": {"model": "SPRINGLab/F5-Hindi-24KHz", "nfe_step": 16},
         },
         "edge": {
             "voice_cloning": False,
@@ -1126,11 +1381,6 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
             "notes": "Cloud edge-tts fallback. No cloning. Fast. Requires internet.",
             "recommended": {"voice": "hi-IN-MadhurNeural", "rate": "+5%"},
         },
-        # Candidate engines to evaluate (not yet integrated — see production-quality-fixes spec):
-        # "indicf5":   {"voice_cloning": True, "languages": ["hi","indic"], "vram_hint_gb": 5.0,
-        #               "notes": "AI4Bharat F5-TTS, Indian-language focused. Evaluate for Hindi."},
-        # "openvoice": {"voice_cloning": True, "languages": ["multi"], "vram_hint_gb": 4.0,
-        #               "notes": "OpenVoice v2 — decoupled emotion control. Evaluate for expressive Hindi."},
     }
 
 
@@ -1141,6 +1391,7 @@ __all__ = [
     "rvc_convert",
     "shutdown_f5_worker",
     "shutdown_omnivoice_worker",
+    "shutdown_supertonic_worker",
     "translate_hinglish",
     "tts_capabilities",
     "tts_generate",

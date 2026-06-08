@@ -4,6 +4,10 @@ import json
 import logging
 import re
 
+# Module-level flag: set True when _default_outline() is called (degraded fallback).
+# Read by plan_outline() in pre_production.py to log degradation.
+_default_outline_used: bool = False
+
 from pydantic import BaseModel, Field
 
 from utils.crewai_breaker import BreakerOpen, guarded_crewai_kickoff
@@ -58,6 +62,8 @@ def plan_story(topic: str, n_segments: int, config: dict, agent) -> list[dict]:
 
     Returns list of dicts, one per segment.
     """
+    global _default_outline_used
+    _default_outline_used = False  # reset for fresh run
     BATCH_SIZE = 25  # max segments per LLM call to stay within output token limits
 
     if n_segments <= BATCH_SIZE:
@@ -348,6 +354,9 @@ def _parse_outline(raw: str, expected: int) -> list[dict]:
 
 def _default_outline(topic: str, n: int) -> list[dict]:
     """Generate a default outline when LLM planning fails."""
+    global _default_outline_used
+    _default_outline_used = True
+    log.warning(f"[DEGRADED] Director outline failed — using default outline for {n} segments")
     moods = ["mysterious", "horror", "action", "dramatic", "calm", "epic"]
     _num_images = 6
     return [

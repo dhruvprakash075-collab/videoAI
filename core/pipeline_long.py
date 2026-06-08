@@ -134,6 +134,7 @@ def run_long_pipeline(
     resume: bool = True,
     skip_rvc: bool = False,
     dry_run: bool = False,
+    fast_dry_run: bool = False,
     duration_min: int | None = None,
     director_mode: bool = False,
     series_mode: bool = False,
@@ -467,7 +468,8 @@ def run_long_pipeline(
             writer_agent=writer_agent,
             trained_loras=trained_loras,
             resume=resume,
-            dry_run=dry_run,
+            dry_run=dry_run or fast_dry_run,
+            fast_dry_run=fast_dry_run,
             director_mode=director_mode,
             preview_mode=preview_mode,
             skip_rvc=skip_rvc,
@@ -557,17 +559,16 @@ def run_long_pipeline(
     finally:
         # B16: stop persistent TTS workers so models are released
         try:
-            from audio.audio_proxy import shutdown_omnivoice_worker
-
+            from audio.audio_proxy import (
+                shutdown_f5_worker,
+                shutdown_omnivoice_worker,
+                shutdown_supertonic_worker,
+            )
+            shutdown_supertonic_worker()
             shutdown_omnivoice_worker()
-        except Exception as _sw_err:
-            log.debug(f"OmniVoice worker shutdown skipped: {_sw_err}")
-        try:
-            from audio.audio_proxy import shutdown_f5_worker
-
             shutdown_f5_worker()
-        except Exception as _f5_sw_err:
-            log.debug(f"F5 worker shutdown skipped: {_f5_sw_err}")
+        except Exception as _sw_err:
+            log.debug(f"TTS worker shutdown error: {_sw_err}")
 
 
 # ── Async variant (kept for compat) ──────────────────────────────────────
@@ -595,6 +596,11 @@ if __name__ == "__main__":
         "--duration", type=float, dest="duration", help="Override total duration (minutes)"
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview without generating video")
+    parser.add_argument(
+        "--fast-dry-run",
+        action="store_true",
+        help="Skip LLM script generation too (stub scripts, no TTS/images/video)",
+    )
     parser.add_argument("--no-resume", action="store_true", help="Start fresh (ignore checkpoints)")
     parser.add_argument("--skip-rvc", action="store_true", help="Skip RVC voice conversion")
     parser.add_argument(
@@ -641,6 +647,7 @@ if __name__ == "__main__":
             resume=not args.no_resume,
             skip_rvc=args.skip_rvc,
             dry_run=args.dry_run,
+            fast_dry_run=args.fast_dry_run,
             duration_min=args.duration,
             director_mode=args.director_mode,
             series_mode=args.series,

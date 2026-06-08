@@ -28,7 +28,7 @@ def test_omnivoice_aliases_still_work():
 def test_edge_aliases_still_work():
     from audio.audio_proxy import normalize_tts_engine
 
-    for alias in ("edge", "edge-tts", "edge_tts", "microsoft"):
+    for alias in ("edge", "edge-tts", "edge_tts", "microsoft", "chattts"):
         assert normalize_tts_engine(alias) == "edge"
 
 
@@ -36,7 +36,6 @@ def test_unknown_engine_defaults_to_f5():
     """Unknown strings should now default to 'f5' (was 'omnivoice' before T1)."""
     from audio.audio_proxy import normalize_tts_engine
 
-    assert normalize_tts_engine("chattts") == "f5"
     assert normalize_tts_engine("some random voice description") == "f5"
     assert normalize_tts_engine("xtts") == "f5"
 

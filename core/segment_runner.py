@@ -407,6 +407,7 @@ def make_process_segment(
     trained_loras: dict,
     resume: bool,
     dry_run: bool,
+    fast_dry_run: bool = False,
     director_mode: bool,
     preview_mode: bool,
     skip_rvc: bool,
@@ -462,6 +463,13 @@ def make_process_segment(
                 f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
             )
             return {"script": chunk.text}
+
+        if fast_dry_run:
+            _title = plan.get("title", f"Part {i}")
+            _summary = plan.get("summary", "")
+            script = f"{_title}. {_summary} This is a fast dry-run placeholder."
+            log.debug(f"  Seg {i}: fast-dry-run stub script ({len(script)} chars)")
+            return {"script": script}
 
         log.debug(f"  Seg {i}: generating script (LIGHT)")
         writer = writer_agent
@@ -560,6 +568,9 @@ def make_process_segment(
         script = state["script"]
         rewrites = state.get("rewrites_attempted", 0)
 
+        if fast_dry_run:
+            return {"critic_approved": True, "critic_feedback": ""}
+
         from utils import validate_script
 
         if not validate_script(script, config):
@@ -602,6 +613,13 @@ def make_process_segment(
         script = state["script"]
         key = f"{topic}_seg{i:02d}"
 
+        if fast_dry_run:
+            cp_mgr.save(key, "script", {"data": script})
+            _drs = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
+            with contextlib.suppress(Exception):
+                world_state.update(_drs, plan, config=config)
+            return {"devanagari_script": None, "script_for_tts": script}
+
         # Word count enforcement
         seg_words = plan.get("target_word_count", words_per_seg)
         _wc_tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
@@ -641,8 +659,9 @@ def make_process_segment(
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e})")
 
+        _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
         with contextlib.suppress(Exception):
-            world_state.update(script, plan, config=config)
+            world_state.update(_ws_script, plan, config=config)
 
         return {"devanagari_script": devanagari_script, "script_for_tts": script}
 

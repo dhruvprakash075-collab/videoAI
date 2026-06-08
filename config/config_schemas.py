@@ -68,7 +68,7 @@ class VisionDocument(BaseModel):
     emotions: str = "neutral"
     pacing: str = "moderate"
     shot_distribution: ShotDistribution = ShotDistribution()
-    tts_recommendation: Literal["omnivoice", "xtts", "edge"] = "omnivoice"
+    tts_recommendation: Literal["supertonic", "omnivoice", "f5", "edge"] = "supertonic"
     subtitle_style: SubtitleConfig = SubtitleConfig()
     ambiguity_detected: bool = False
     ambiguity_question: str = ""
@@ -130,7 +130,7 @@ class VisualConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    engine: Literal["omnivoice", "xtts", "edge", "fish_speech"] = "omnivoice"
+    engine: Literal["supertonic", "omnivoice", "f5", "edge"] = "supertonic"
     lang: str = "hi"
     # Fish Speech specific settings
     fish_speech_model_path: str = "C:/models/s2-pro-q5_k_m.gguf"
