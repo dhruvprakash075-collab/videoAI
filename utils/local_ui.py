@@ -276,7 +276,7 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
     return JSONResponse(content={"status": "queued", "job_id": job_id, "message": "Job queued for execution."})
 
 
-@app.post("/api/upload_voice")
+@app.post("/api/jobs")
 async def create_job_endpoint(job_request: dict = Body(...)):
     """Create a new job via JSON body.
 
