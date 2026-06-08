@@ -90,7 +90,7 @@ def generate_images(
     char_presence: list[dict[str, float]] | None = None,
     project_id: str | None = None,
 ) -> list[Path]:
-    """Generate images from prompts using Bonsai (+ IP-Adapter for character frames).
+    """Generate images from prompts using the configured backend.
 
     Args:
         prompts: Either a plain semicolon-separated string, or a tuple
@@ -111,13 +111,36 @@ def generate_images(
     else:
         prompt_list = [str(prompts).strip()]
 
-    return _bonsai(
-        prompt_list,
-        output_dir,
-        cfg,
-        char_presence=char_presence,
-        project_id=project_id or "",
-    )
+    backend = cfg.get("backend", "bonsai")
+
+    if backend == "comfyui":
+        try:
+            return _comfyui(
+                prompt_list,
+                output_dir,
+                cfg,
+            )
+        except Exception as e:
+            log.warning(f"[image_gen] ComfyUI failed: {e}")
+            fallback = cfg.get("fallback_backend", "bonsai")
+            if fallback == "bonsai":
+                log.info("[image_gen] Falling back to Bonsai")
+                return _bonsai(
+                    prompt_list,
+                    output_dir,
+                    cfg,
+                    char_presence=char_presence,
+                    project_id=project_id or "",
+                )
+            raise
+    else:
+        return _bonsai(
+            prompt_list,
+            output_dir,
+            cfg,
+            char_presence=char_presence,
+            project_id=project_id or "",
+        )
 
 
 # ── CACHE HELPERS ──────────────────────────────────────────────────────────
@@ -565,6 +588,92 @@ def _maybe_upscale(img, cfg: dict):
     except Exception as e:
         log.warning(f"[Upscale] Lanczos failed ({e}) — returning original")
         return img
+
+
+# ── COMFYUI ──────────────────────────────────────────────────────────────
+
+
+def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
+    """Run ComfyUI inference."""
+    from video.image_gen.comfyui_client import ComfyUIClient
+    from video.image_gen.comfyui_runtime import get_comfyui_runtime
+    from video.image_gen.comfyui_workflow import WorkflowPatcher, create_default_workflow
+
+    comfy_cfg = cfg.get("comfyui", {})
+    runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
+
+    if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
+        raise RuntimeError(
+            f"ComfyUI not running at {runtime.base_url} and auto_start is disabled"
+        )
+
+    client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+
+    workflow_path = comfy_cfg.get("workflow_path")
+    if workflow_path:
+        patcher = WorkflowPatcher(Path(workflow_path))
+    else:
+        patcher = None
+
+    width = comfy_cfg.get("width", cfg.get("width", 1024))
+    height = comfy_cfg.get("height", cfg.get("height", 1024))
+    steps = comfy_cfg.get("steps", cfg.get("steps", 20))
+    cfg_scale = comfy_cfg.get("cfg", cfg.get("guidance_scale", 7.0))
+    sampler = comfy_cfg.get("sampler_name", "euler")
+    scheduler = comfy_cfg.get("scheduler", "normal")
+    checkpoint = comfy_cfg.get("checkpoint", "")
+    neg_prompt = comfy_cfg.get("negative_prompt", "")
+
+    images: list[Path] = []
+
+    with tqdm(total=len(prompts), desc="  ComfyUI", leave=False) as pbar:
+        for i, prompt in enumerate(prompts):
+            filename_prefix = f"scene_{i + 1:02d}"
+            if patcher:
+                workflow = patcher.patch_all(
+                    prompt=prompt,
+                    negative_prompt=neg_prompt,
+                    width=width,
+                    height=height,
+                    steps=steps,
+                    cfg=cfg_scale,
+                    sampler_name=sampler,
+                    scheduler=scheduler,
+                    checkpoint=checkpoint,
+                    filename_prefix=filename_prefix,
+                ).get_workflow()
+            else:
+                workflow = create_default_workflow(
+                    prompt=prompt,
+                    negative_prompt=neg_prompt,
+                    width=width,
+                    height=height,
+                    steps=steps,
+                    cfg=cfg_scale,
+                    sampler_name=sampler,
+                    scheduler=scheduler,
+                    checkpoint=checkpoint,
+                    filename_prefix=filename_prefix,
+                )
+
+            output_images = client.generate_image(
+                workflow,
+                out,
+                filename_prefix=f"scene_{i + 1:02d}",
+                poll_interval=comfy_cfg.get("poll_seconds", 1.0),
+                timeout=comfy_cfg.get("timeout_seconds", 300),
+            )
+
+            images.extend(output_images)
+            pbar.update(1)
+
+    log.info(f"ComfyUI: {len(images)} images generated")
+
+    if comfy_cfg.get("unload_after_batch", False):
+        log.info("[ComfyUI] Unloading after batch (VRAM release)")
+        client.free_memory()
+
+    return images
 
 
 # ── REPLICATE / PEXELS (kept as code; not in active path) ────────────────

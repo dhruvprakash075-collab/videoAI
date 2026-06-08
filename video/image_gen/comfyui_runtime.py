@@ -1,0 +1,117 @@
+"""ComfyUI runtime management - checks if running, auto-starts when enabled."""
+
+import logging
+import subprocess
+import threading
+import time
+import urllib.error
+import urllib.request
+
+log = logging.getLogger(__name__)
+
+
+class ComfyUIRuntime:
+    def __init__(self, config: dict):
+        self.config = config.get("comfyui", {})
+        self.server = self.config.get("server", "127.0.0.1")
+        self.host = self.config.get("host", "127.0.0.1")
+        self.port = self.config.get("port", 8188)
+        self.root = self.config.get("root", "C:\\ComfyUI")
+        self.python = self.config.get("python", "python")
+        self.auto_start = self.config.get("auto_start", False)
+        self.open_browser = self.config.get("open_browser", False)
+        self._process: subprocess.Popen | None = None
+        self._process_lock = threading.Lock()
+        self._base_url = f"http://{self.host}:{self.port}"
+
+    def is_running(self, timeout: float = 2.0) -> bool:
+        """Check if ComfyUI is running and responding."""
+        try:
+            req = urllib.request.Request(f"{self._base_url}/system_stats")
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return response.status == 200
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+            return False
+
+    def ensure_running(self, timeout: float = 60.0) -> bool:
+        """Ensure ComfyUI is running, starting it if auto_start is enabled."""
+        if self.is_running():
+            log.info(f"[ComfyUI] Already running at {self._base_url}")
+            return True
+
+        if not self.auto_start:
+            log.warning(f"[ComfyUI] Not running at {self._base_url} and auto_start is disabled")
+            return False
+
+        return self.start(timeout=timeout)
+
+    def start(self, timeout: float = 60.0) -> bool:
+        """Start ComfyUI headlessly."""
+        with self._process_lock:
+            if self._process is not None:
+                log.info("[ComfyUI] Already starting or running")
+                return True
+
+            log.info(f"[ComfyUI] Starting at {self._base_url} (root: {self.root})")
+
+            try:
+                cmd = [
+                    self.python,
+                    "main.py",
+                    "--listen", self.host,
+                    "--port", str(self.port),
+                ]
+
+                if not self.open_browser:
+                    cmd.append("--disable-browser")
+
+                cmd.extend(["--preview-method", "auto"])
+
+                self._process = subprocess.Popen(
+                    cmd,
+                    cwd=self.root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                )
+
+                log.info(f"[ComfyUI] Started process PID {self._process.pid}")
+
+            except Exception as e:
+                log.error(f"[ComfyUI] Failed to start: {e}")
+                self._process = None
+                return False
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.is_running(timeout=2.0):
+                log.info(f"[ComfyUI] Ready at {self._base_url}")
+                return True
+            time.sleep(1)
+
+        log.error(f"[ComfyUI] Failed to start within {timeout}s")
+        return False
+
+    def stop(self) -> None:
+        """Stop the ComfyUI process if we started it."""
+        with self._process_lock:
+            if self._process is not None:
+                log.info(f"[ComfyUI] Stopping process PID {self._process.pid}")
+                try:
+                    self._process.terminate()
+                    self._process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._process.kill()
+                except Exception as e:
+                    log.warning(f"[ComfyUI] Error stopping: {e}")
+                finally:
+                    self._process = None
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+
+def get_comfyui_runtime(config: dict) -> ComfyUIRuntime:
+    """Factory function to create ComfyUI runtime from config."""
+    return ComfyUIRuntime(config)

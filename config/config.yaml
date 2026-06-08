@@ -101,7 +101,7 @@ video:
 # Character face consistency is achieved via IP-Adapter FLUX v2
 # (XLabs-AI/flux-ip-adapter-v2) referencing per-character master portraits.
 image_gen:
-  backend: "bonsai"
+  backend: "comfyui"
   bonsai_model: "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
   height: 1024
   width: 1024
@@ -123,6 +123,30 @@ image_gen:
     scale: 4
     target_width: 1920
     target_height: 1080
+
+  # ── ComfyUI Settings ─────────────────────────────────────────────
+  comfyui:
+    server: "127.0.0.1"
+    host: "127.0.0.1"
+    port: 8188
+    root: "C:\\Video.AI\\external\\ComfyUI"
+    python: "python"
+    auto_start: true
+    open_browser: false
+    workflow_path: "C:\\Video.AI\\config\\comfyui\\workflows\\text_to_image_api.json"
+    checkpoint: "DreamShaper_8.safetensors"
+    width: 1024
+    height: 1024
+    steps: 20
+    cfg: 7.0
+    sampler_name: "euler"
+    scheduler: "normal"
+    timeout_seconds: 300
+    poll_seconds: 1.0
+    auto_start_timeout: 60
+    unload_after_batch: false
+
+  fallback_backend: "bonsai"
 
 # ── Subtitles ────────────────────────────────────────────────────
 subtitles:
