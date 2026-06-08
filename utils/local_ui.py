@@ -47,6 +47,70 @@ _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [
 # Output root for A/B test artefacts — all resolved paths must stay under this
 _AB_OUTPUT_ROOT = Path("studio_outputs").resolve()
 
+_COMFYUI_UI_DEFAULTS = {
+    "autoStart": True,
+    "server": "http://127.0.0.1:8188",
+    "host": "127.0.0.1",
+    "port": 8188,
+    "root": "external/ComfyUI",
+    "python": "external/ComfyUI/.venv/Scripts/python.exe",
+    "workflowPath": "config/comfyui/workflows/text_to_image_api.json",
+    "checkpoint": "DreamShaper_8_pruned.safetensors",
+    "width": 1024,
+    "height": 1024,
+    "steps": 20,
+    "cfg": 7.0,
+    "samplerName": "euler",
+    "scheduler": "normal",
+    "timeoutSeconds": 300,
+    "pollSeconds": 1,
+    "unloadAfterBatch": True,
+    "openBrowser": False,
+    "fallbackBackend": "bonsai",
+}
+
+
+def _form_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _comfyui_config_for_ui(config: dict) -> dict:
+    image_cfg = config.get("image_gen", {}) or {}
+    comfy_cfg = image_cfg.get("comfyui", {}) or {}
+    return {
+        "autoStart": bool(comfy_cfg.get("auto_start", _COMFYUI_UI_DEFAULTS["autoStart"])),
+        "server": comfy_cfg.get("server", _COMFYUI_UI_DEFAULTS["server"]),
+        "host": comfy_cfg.get("host", _COMFYUI_UI_DEFAULTS["host"]),
+        "port": int(comfy_cfg.get("port", _COMFYUI_UI_DEFAULTS["port"])),
+        "root": comfy_cfg.get("root", _COMFYUI_UI_DEFAULTS["root"]),
+        "python": comfy_cfg.get("python", _COMFYUI_UI_DEFAULTS["python"]),
+        "workflowPath": comfy_cfg.get(
+            "workflow_path", _COMFYUI_UI_DEFAULTS["workflowPath"]
+        ),
+        "checkpoint": comfy_cfg.get("checkpoint", _COMFYUI_UI_DEFAULTS["checkpoint"]),
+        "width": int(comfy_cfg.get("width", image_cfg.get("width", _COMFYUI_UI_DEFAULTS["width"]))),
+        "height": int(
+            comfy_cfg.get("height", image_cfg.get("height", _COMFYUI_UI_DEFAULTS["height"]))
+        ),
+        "steps": int(comfy_cfg.get("steps", _COMFYUI_UI_DEFAULTS["steps"])),
+        "cfg": float(comfy_cfg.get("cfg", _COMFYUI_UI_DEFAULTS["cfg"])),
+        "samplerName": comfy_cfg.get("sampler_name", _COMFYUI_UI_DEFAULTS["samplerName"]),
+        "scheduler": comfy_cfg.get("scheduler", _COMFYUI_UI_DEFAULTS["scheduler"]),
+        "timeoutSeconds": int(
+            comfy_cfg.get("timeout_seconds", _COMFYUI_UI_DEFAULTS["timeoutSeconds"])
+        ),
+        "pollSeconds": float(comfy_cfg.get("poll_seconds", _COMFYUI_UI_DEFAULTS["pollSeconds"])),
+        "unloadAfterBatch": bool(
+            comfy_cfg.get("unload_after_batch", _COMFYUI_UI_DEFAULTS["unloadAfterBatch"])
+        ),
+        "openBrowser": bool(comfy_cfg.get("open_browser", _COMFYUI_UI_DEFAULTS["openBrowser"])),
+        "fallbackBackend": image_cfg.get(
+            "fallback_backend", _COMFYUI_UI_DEFAULTS["fallbackBackend"]
+        ),
+    }
+
 
 def _ab_segment_num_validate(segment_num: int) -> int:
     """Validate AB segment number.
@@ -359,12 +423,15 @@ async def preview_voice(character: str):
 async def get_ui_config():
     try:
         config = load_config()
+        image_cfg = config.get("image_gen", {}) or {}
         return {
             "voiceEngine": config.get("tts", {}).get("engine", "omnivoice"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
             # P3-19: return the real saved value instead of always False
             "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),
             "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
+            "imageBackend": image_cfg.get("backend", "bonsai"),
+            "comfyUiAdvanced": _comfyui_config_for_ui(config),
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
@@ -376,6 +443,26 @@ async def save_ui_config(
     dynamic_subtitles: str = Form(...),
     uncapped_scaling: str = Form(...),
     max_images_per_segment: int = Form(...),
+    image_backend: str | None = Form(None),
+    comfyui_auto_start: str | None = Form(None),
+    comfyui_server: str | None = Form(None),
+    comfyui_host: str | None = Form(None),
+    comfyui_port: int | None = Form(None),
+    comfyui_root: str | None = Form(None),
+    comfyui_python: str | None = Form(None),
+    comfyui_workflow_path: str | None = Form(None),
+    comfyui_checkpoint: str | None = Form(None),
+    comfyui_width: int | None = Form(None),
+    comfyui_height: int | None = Form(None),
+    comfyui_steps: int | None = Form(None),
+    comfyui_cfg: float | None = Form(None),
+    comfyui_sampler_name: str | None = Form(None),
+    comfyui_scheduler: str | None = Form(None),
+    comfyui_timeout_seconds: int | None = Form(None),
+    comfyui_poll_seconds: float | None = Form(None),
+    comfyui_unload_after_batch: str | None = Form(None),
+    comfyui_open_browser: str | None = Form(None),
+    comfyui_fallback_backend: str | None = Form(None),
 ):
     try:
         # Load, modify, and save config
@@ -390,12 +477,83 @@ async def save_ui_config(
         if not uncapped_bool:
             config.setdefault("script", {})["default_images_per_segment"] = max_images_per_segment
 
+        image_cfg = config.setdefault("image_gen", {})
+        if image_backend:
+            image_backend = image_backend.strip().lower()
+            if image_backend not in {"bonsai", "comfyui"}:
+                raise ValueError("image_backend must be 'bonsai' or 'comfyui'")
+            image_cfg["backend"] = image_backend
+
+        if comfyui_fallback_backend:
+            fallback = comfyui_fallback_backend.strip().lower()
+            if fallback not in {"bonsai", "none"}:
+                raise ValueError("comfyui_fallback_backend must be 'bonsai' or 'none'")
+            image_cfg["fallback_backend"] = fallback
+
+        if any(
+            value is not None
+            for value in (
+                comfyui_auto_start,
+                comfyui_server,
+                comfyui_host,
+                comfyui_port,
+                comfyui_root,
+                comfyui_python,
+                comfyui_workflow_path,
+                comfyui_checkpoint,
+                comfyui_width,
+                comfyui_height,
+                comfyui_steps,
+                comfyui_cfg,
+                comfyui_sampler_name,
+                comfyui_scheduler,
+                comfyui_timeout_seconds,
+                comfyui_poll_seconds,
+                comfyui_unload_after_batch,
+                comfyui_open_browser,
+            )
+        ):
+            comfy_cfg = image_cfg.setdefault("comfyui", {})
+            comfy_cfg["auto_start"] = _form_bool(comfyui_auto_start, True)
+            if comfyui_server is not None:
+                comfy_cfg["server"] = comfyui_server.strip()
+            if comfyui_host is not None:
+                comfy_cfg["host"] = comfyui_host.strip()
+            if comfyui_port is not None:
+                comfy_cfg["port"] = max(1, int(comfyui_port))
+            if comfyui_root is not None:
+                comfy_cfg["root"] = comfyui_root.strip()
+            if comfyui_python is not None:
+                comfy_cfg["python"] = comfyui_python.strip()
+            if comfyui_workflow_path is not None:
+                comfy_cfg["workflow_path"] = comfyui_workflow_path.strip()
+            if comfyui_checkpoint is not None:
+                comfy_cfg["checkpoint"] = comfyui_checkpoint.strip()
+            if comfyui_width is not None:
+                comfy_cfg["width"] = max(64, int(comfyui_width))
+            if comfyui_height is not None:
+                comfy_cfg["height"] = max(64, int(comfyui_height))
+            if comfyui_steps is not None:
+                comfy_cfg["steps"] = max(1, int(comfyui_steps))
+            if comfyui_cfg is not None:
+                comfy_cfg["cfg"] = max(0.0, float(comfyui_cfg))
+            if comfyui_sampler_name is not None:
+                comfy_cfg["sampler_name"] = comfyui_sampler_name.strip()
+            if comfyui_scheduler is not None:
+                comfy_cfg["scheduler"] = comfyui_scheduler.strip()
+            if comfyui_timeout_seconds is not None:
+                comfy_cfg["timeout_seconds"] = max(1, int(comfyui_timeout_seconds))
+            if comfyui_poll_seconds is not None:
+                comfy_cfg["poll_seconds"] = max(0.1, float(comfyui_poll_seconds))
+            comfy_cfg["unload_after_batch"] = _form_bool(comfyui_unload_after_batch, True)
+            comfy_cfg["open_browser"] = _form_bool(comfyui_open_browser, False)
+
         # Save to config.yaml
         config_path = Path("config/config.yaml")
         import yaml
 
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True)
+            yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
         UIState.add_log(f"Backend: UI configuration saved successfully (engine={voice_engine})")
         return {"status": "success", "message": "Configuration saved successfully."}
