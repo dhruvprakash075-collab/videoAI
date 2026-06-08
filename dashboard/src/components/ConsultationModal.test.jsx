@@ -97,9 +97,11 @@ describe('ConsultationModal', () => {
   });
 
   it('does NOT call onClose on a network error', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch.mockRejectedValue(new Error('net'));
     const { textarea, submit } = renderModal({ onClose });
     await typeAndSubmit(textarea, submit, 'reply');
     expect(onClose).not.toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 });

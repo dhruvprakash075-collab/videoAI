@@ -65,10 +65,12 @@ describe('useScriptUpload', () => {
   });
 
   it('surfaces network errors via alert', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     global.fetch.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useScriptUpload());
     await uploadFile(result, makeFile('topic.txt'));
     expect(global.alert).toHaveBeenCalledWith('Upload error: offline');
+    errSpy.mockRestore();
   });
 
   it('does nothing when called with a falsy file', async () => {
