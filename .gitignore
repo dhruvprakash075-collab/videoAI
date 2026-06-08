@@ -66,10 +66,21 @@ _*.png
 _*.ps1
 *.tmp
 *.bak
+codex_tmp/
+.playwright-cli/
+dashboard-snapshot.yaml
+dashboard-test.png
+dashboard_e2e_test.png
+director.db
 
 # ── Node (dashboard) ─────────────────────────────────────────────
+node_modules/
 dashboard/node_modules/
 dashboard/dist/
+
+# ── Local external checkouts / vendored runtime clones ───────────
+external/ComfyUI/
+external/supertonic_embed/
 
 # ── Model files (multi-GB, never commit) ──────────────────────────
 *.gguf
