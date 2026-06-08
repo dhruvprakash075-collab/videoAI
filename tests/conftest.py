@@ -7,12 +7,37 @@ from one test into the next. The autouse fixture below resets EVERY UIState
 field before each test so tests are isolated and order-independent.
 """
 
+import os
 import sys
 import threading
 import types
 from pathlib import Path
 
 import pytest
+
+# Suppress pyarrow C++ shutdown crash on Windows (DLL unloading order).
+# The pyarrow Windows wheel triggers an access violation at process exit when
+# native DLLs are unloaded in the wrong order. This flag tells pyarrow to skip
+# its C++ atexit handler, avoiding the crash without affecting functionality.
+os.environ.setdefault("PYARROW_IGNORE_CPP_SHUTDOWN", "1")
+
+
+# Suppress pytest's cleanup_numbered_dir PermissionError at exit on Windows.
+# This is a known pytest-on-Windows bug: atexit cleanup of numbered temp dirs
+# fails with [WinError 5] when symlinks are still locked. The tests all pass;
+# the traceback is noise.
+import _pytest.pathlib as _pp
+_orig_cleanup = _pp.cleanup_numbered_dir
+
+
+def _safe_cleanup_numbered_dir(root, prefix, keep, consider_lock_dead_if_created_before):
+    try:
+        _orig_cleanup(root, prefix, keep, consider_lock_dead_if_created_before)
+    except (PermissionError, OSError):
+        pass
+
+
+_pp.cleanup_numbered_dir = _safe_cleanup_numbered_dir
 
 # Make the repo root importable (tests/ is one level down)
 _ROOT = Path(__file__).resolve().parent.parent
