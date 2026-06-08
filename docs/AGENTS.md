@@ -1,6 +1,6 @@
 # AGENTS.md — Video.AI orientation for AI sessions
 
-> **Last updated:** 2026-06-04 (Supertonic promoted to default, polished-18s voice, danda fix, 3 voice JSONs, fallback chain, full docs refresh)
+> **Last updated:** 2026-06-08 (Supertonic default, voice JSON placeholder, director defaults cleanup)
 > **Purpose:** Quick context for the next AI session. Read this BEFORE grepping.
 >
 > **ECC Integration:** This project now includes [Everything Claude Code](https://github.com/affaan-m/ECC) patterns.
@@ -127,7 +127,7 @@ These are the live values; if a doc disagrees, **the live values win**:
 4. **`../.kiro/steering/ai-tools-guide.md`** — how AI tools should be used here.
 5. **`system_architecture.md`** — main system structure, modules map, and execution flow.
 6. **`supertonic_pipeline.md`** — **Supertonic 3 TTS subsystem** (default engine, DIY voice clone, production speed math).
-7. **`voice_cloning.md`** — **DIY voice JSON extraction** (3 voice JSONs persisted, recipes, switch command).
+7. **`voice_cloning.md`** — **DIY voice JSON extraction** (recipes, switch command, re-extraction guide).
 8. **`runtime_safety_guide.md`** — safety measures, VRAM/GPU evictions, circuit breakers, Bonsai OOM recovery ladder (2-tier, 2026-06-04), TTS worker subprocess safety.
 9. **`testing_and_linting.md`** — pytest guidelines, coverage configuration, and Ruff setups.
 10. **`configuration_reference.md`** — parameter details, prompting layouts, and visual presets.
@@ -279,18 +279,18 @@ These are the live values; if a doc disagrees, **the live values win**:
   without consent, attribution required).
 
 ### Supertonic 3 production readiness + DIY voice selection (2026-06-04, this session)
-- **Three DIY voice JSONs are now persisted in `character_voices/`** — all
-  extracted from `character_voices/narration_voice.wav` (Hindi Devanagari
-  narration, 18.02s / 44.1kHz / stereo / 3.1MB) using
-  `external/supertonic_embed/optimize_style.py`:
+- **DIY voice JSONs** — only the active default is on disk (`dhruv_voice_polished.json`,
+  generic F1 placeholder). The other two (`dhruv_voice_v3_9s.json`,
+  `dhruv_voice_v3.json`) were extracted but never committed — run the
+  `external/supertonic_embed/` pipeline to regenerate:
 
   | JSON | Source audio | Loss | Best for |
   |---|---|---|---|
-  | `dhruv_voice_polished.json` (289KB) — **ACTIVE** | 17.77s polished (HP 80Hz + trim + normalize + fade) | 0.2721 | Default — cleanest, no denoise artifacts |
-  | `dhruv_voice_v3_9s.json` (290KB) | 9s raw auto-trim | 0.2399 | Backup if polished too "clean" |
-  | `dhruv_voice_v3.json` (289KB) | 71.94s merged (18s real + 0.5s silence + 55s OmniVoice-synth) | 0.2388 | Empirical ceiling reference |
+  | `dhruv_voice_polished.json` (285KB) — **ACTIVE** | Generic placeholder (F1 profile) | — | Replace with real extract |
+  | `dhruv_voice_v3_9s.json` — missing | 9s raw auto-trim | 0.2399 | Backup if polished too "clean" |
+  | `dhruv_voice_v3.json` — missing | 71.94s merged (18s real + 0.5s silence + 55s OmniVoice-synth) | 0.2388 | Empirical ceiling reference |
 
-- **Empirical ceiling confirmed**: more audio does not yield better loss.
+- **Empirical ceiling** (from the extraction run): more audio does not yield better loss.
   71.94s processed (0.2388) ≈ 9s raw (0.2399). The DIY optimizer's
   ~12,800-float style vector saturates around loss 0.24. So:
   - 9s is enough for production

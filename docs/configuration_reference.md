@@ -45,17 +45,17 @@ set `tts.engine` directly.
 
 ### DIY voice style JSONs (Supertonic 3)
 
-Three extracted voices persist in `character_voices/`. All use the same
-WavLM-Large Layer 3 perceptual loss against `narration_voice.wav`:
+Only the active default is present on disk. Use `external/supertonic_embed/`
+to extract additional profiles from reference audio.
 
 | File | Source | Loss | Status |
 |---|---|---|---|
-| `dhruv_voice_polished.json` (289KB) | 17.77s polished (HP 80Hz, trim, normalize, fade) | 0.2721 | **ACTIVE default** |
-| `dhruv_voice_v3_9s.json` (290KB) | 9s raw auto-trim from `narration_ref_9s_mono24k.wav` | 0.2399 | Backup (richer timbre) |
-| `dhruv_voice_v3.json` (289KB) | 71.94s merged (18s real + 0.5s silence + 55s OmniVoice-synth Hindi) | 0.2388 | Empirical ceiling reference |
+| `dhruv_voice_polished.json` (285KB) | Generic placeholder (F1 profile) | — | **ACTIVE default** — replace with real extract |
+| `dhruv_voice_v3_9s.json` | 9s raw auto-trim — **missing, needs extraction** | 0.2399 | Backup — see `docs/voice_cloning.md` |
+| `dhruv_voice_v3.json` | 71.94s merged — **missing, needs extraction** | 0.2388 | Empirical ceiling reference |
 
-To switch: edit `tts.supertonic.voice` in `config/config.yaml`. See
-`docs/voice_cloning.md` for extraction commands.
+To switch or extract: edit `tts.supertonic.voice` in `config/config.yaml`.
+See `docs/voice_cloning.md` for extraction commands.
 
 ### v6 Pipeline Sections
 - **`source:`** — Source ingestion config (v6 Phase 1): max file size, allowed extensions.
