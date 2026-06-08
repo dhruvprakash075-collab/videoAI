@@ -50,10 +50,12 @@ ffmpeg-8.1.1-essentials_build/
 
 # ── Other AI agent configs (keep AGENTS.md only) ─────────────────
 .claude/
+.kiro/
 .kilo/
 .cursorrules
 .clinerules
 .windsurfrules
+.fallow/
 CLAUDE.md
 
 # ── OS junk ───────────────────────────────────────────────────────

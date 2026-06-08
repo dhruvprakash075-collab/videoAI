@@ -48,9 +48,21 @@ describe('ControlPanel', () => {
     render(<ControlPanel onClose={onClose} />);
     await flush();
     expect(screen.getByText('System Config')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /General/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Comfy UI Advance/i })).toBeInTheDocument();
     expect(screen.getByText('Voice Engine')).toBeInTheDocument();
     expect(screen.getByText('Visual Generation')).toBeInTheDocument();
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
+  });
+
+  it('opens the separate Comfy UI Advance settings menu', async () => {
+    const user = userEvent.setup();
+    render(<ControlPanel onClose={onClose} />);
+    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    expect(screen.getByText('Runtime Paths')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Server URL/i)).toHaveValue('http://127.0.0.1:8188');
+    expect(screen.getByLabelText(/Workflow JSON/i)).toHaveValue('config/comfyui/workflows/text_to_image_api.json');
+    expect(screen.getByRole('button', { name: /Auto Start/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('renders all three voice engine buttons with the active one pressed', async () => {
@@ -102,6 +114,26 @@ describe('ControlPanel', () => {
       expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'false');
     });
+  });
+
+  it('loads Comfy UI Advance values from /api/config without changing the visible general menu', async () => {
+    const user = userEvent.setup();
+    mockGetFetch({
+      imageBackend: 'bonsai',
+      comfyUiAdvanced: {
+        server: 'http://127.0.0.1:9000',
+        checkpoint: 'custom.safetensors',
+        width: 768,
+        height: 768,
+      },
+    });
+    render(<ControlPanel onClose={onClose} />);
+    await waitFor(() => expect(screen.getByText('Voice Engine')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    expect(screen.getByLabelText(/Server URL/i)).toHaveValue('http://127.0.0.1:9000');
+    expect(screen.getByLabelText(/Checkpoint/i)).toHaveValue('custom.safetensors');
+    expect(screen.getByLabelText(/Width/i)).toHaveValue(768);
+    expect(screen.getByLabelText(/Height/i)).toHaveValue(768);
   });
 
   it('ignores config response that includes a "status" key (error payload)', async () => {
@@ -168,6 +200,26 @@ describe('ControlPanel', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled();
     });
+  });
+
+  it('POSTs Comfy UI Advance values when saving settings', async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockSaveFetch({ saveResult: { status: 'success' } });
+    render(<ControlPanel onClose={onClose} />);
+    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    await user.clear(screen.getByLabelText(/Server URL/i));
+    await user.type(screen.getByLabelText(/Server URL/i), 'http://127.0.0.1:9001');
+    await user.clear(screen.getByLabelText(/Checkpoint/i));
+    await user.type(screen.getByLabelText(/Checkpoint/i), 'future_model.safetensors');
+    await user.click(screen.getByRole('button', { name: /Save Configuration/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    const saveCall = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'POST');
+    const body = saveCall[1].body;
+    expect(body.get('image_backend')).toBe('bonsai');
+    expect(body.get('comfyui_server')).toBe('http://127.0.0.1:9001');
+    expect(body.get('comfyui_checkpoint')).toBe('future_model.safetensors');
+    expect(body.get('comfyui_workflow_path')).toBe('config/comfyui/workflows/text_to_image_api.json');
   });
 
   it('alerts when the save response reports a non-success status', async () => {
