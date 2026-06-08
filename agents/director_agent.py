@@ -772,7 +772,7 @@ class DirectorAgent:
                         "emotional_detail": 0.10,
                         "action": 0.05,
                     },
-                    "tts_recommendation": "chattts",
+                    "tts_recommendation": "omnivoice",
                     "subtitle_style": {
                         "format": "classic",
                         "size": "small",
@@ -1158,7 +1158,7 @@ class DirectorAgent:
             "emotions": "neutral",
             "pacing": "moderate",
             "shot_distribution": {},
-            "tts_recommendation": "chattts",
+            "tts_recommendation": "omnivoice",
             "subtitle_style": {},
             "ambiguity_detected": False,
             "ambiguity_question": "",
@@ -1457,9 +1457,7 @@ class DirectorAgent:
         if _mode != "video-only":
             tts_response = str(user_responses.get("tts_engine", "")).lower()
             engine = vision_doc.get("tts_recommendation", "omnivoice") or "omnivoice"
-            if "xtts" in tts_response or "coqui" in tts_response:
-                engine = "xtts"
-            elif "edge" in tts_response:
+            if "edge" in tts_response:
                 engine = "edge"
             elif "omnivoice" in tts_response:
                 engine = "omnivoice"

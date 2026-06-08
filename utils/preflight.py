@@ -169,6 +169,22 @@ def _check_disk(config: dict) -> tuple[Status, str]:
     return "fail", f"only {free_gb:.1f} GB free on {target_dir}; clear space before running"
 
 
+def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
+    """Verify the configured Supertonic voice JSON file exists on disk."""
+    tts = config.get("tts", {})
+    if tts.get("engine") != "supertonic":
+        return "skip", "TTS engine is not supertonic"
+    voice_path = tts.get("supertonic", {}).get("voice", "")
+    if not voice_path:
+        return "skip", "no supertonic.voice configured"
+    p = Path(voice_path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if p.exists():
+        return "ok", f"supertonic voice JSON found: {p} ({p.stat().st_size / 1024:.0f} KB)"
+    return "fail", f"supertonic voice JSON not found: {p}"
+
+
 def _check_ffmpeg() -> tuple[Status, str]:
     """Verify ffmpeg is in PATH and reports a version."""
     ffmpeg = shutil.which("ffmpeg")
@@ -218,6 +234,7 @@ def run_preflight(
         _timed(lambda: _check_director_model(config), name="director_model"),
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
+        _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
         _timed(_check_ffmpeg, name="ffmpeg"),
     ]
     for c in checks:

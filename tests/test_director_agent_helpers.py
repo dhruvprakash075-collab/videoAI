@@ -251,7 +251,7 @@ def test_validate_vision_doc_missing_fields(agent):
     assert result["theme"] == "untitled"
     assert result["emotions"] == "neutral"
     assert result["pacing"] == "moderate"
-    assert result["tts_recommendation"] == "chattts"
+    assert result["tts_recommendation"] == "omnivoice"
     assert result["ambiguity_detected"] is False
     assert result["ambiguity_question"] == ""
     assert result["ambiguity_fields"] == []
@@ -1540,11 +1540,11 @@ def test_produce_runtime_config_narrator_voice_default(agent):
 
 
 def test_produce_runtime_config_tts_engine_xtts(agent):
-    """xtts/coqui keyword → xtts engine."""
+    """xtts/coqui keyword → f5 engine (via normalize_tts_engine)."""
     vision = {"characters": [{"name": "A"}]}
     for keyword in ["xtts", "XTTS", "coqui"]:
         result = agent.produce_runtime_config(vision, {"tts_engine": keyword}, {})
-        assert result["tts"]["engine"] == "xtts", f"keyword={keyword}"
+        assert result["tts"]["engine"] == "omnivoice", f"keyword={keyword}"
 
 
 def test_produce_runtime_config_tts_engine_edge(agent):
