@@ -10,10 +10,9 @@ Removes:
 - Empty directories
 
 Usage:
-    python scripts/cleanup_artifacts.py
+    python scripts/cleanup_artifacts.py              # dry-run (safe)
     python scripts/cleanup_artifacts.py --days-old 14
-    python scripts/cleanup_artifacts.py --dry-run
-    python scripts/cleanup_artifacts.py --clean-all
+    python scripts/cleanup_artifacts.py --clean-all   # actually delete
 """
 
 import argparse
@@ -22,6 +21,8 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def get_old_files(directory: Path, days_old: int) -> list[Path]:
@@ -36,19 +37,17 @@ def get_old_files(directory: Path, days_old: int) -> list[Path]:
     return old_files
 
 
-def remove_temp_dirs(dry_run: bool = True) -> int:
-    """Remove temp directories."""
-    temp_dirs = [
-        Path("codex_tmp"),
-        Path("cache"),
-        Path("temp_srt_files"),
-    ]
+def remove_temp_dirs(dry_run: bool = True, clean_cache: bool = False) -> int:
+    """Remove temp directories. cache/ is only removed if clean_cache=True."""
+    temp_dirs = [Path("codex_tmp"), Path("temp_srt_files")]
+    if clean_cache:
+        temp_dirs.append(Path("cache"))
     removed = 0
     for d in temp_dirs:
         if d.exists():
             if dry_run:
-                file_count = len(list(d.rglob("*")))
-                print(f"  [DRY] Would remove {d}: {file_count} items")
+                file_count = len([f for f in d.rglob("*") if f.is_file()])
+                print(f"  [DRY] Would remove {d}: {file_count} files")
             else:
                 try:
                     shutil.rmtree(d)
@@ -61,7 +60,7 @@ def remove_temp_dirs(dry_run: bool = True) -> int:
 
 def remove_old_logs(days_old: int = 7, dry_run: bool = True) -> int:
     """Remove old log files."""
-    logs_dir = Path("logs")
+    logs_dir = REPO_ROOT / "logs"
     if not logs_dir.exists():
         return 0
 
@@ -70,35 +69,37 @@ def remove_old_logs(days_old: int = 7, dry_run: bool = True) -> int:
         total_size = sum(f.stat().st_size for f in old_files) / (1024**2)
         print(f"  [DRY] Would remove {len(old_files)} old logs ({total_size:.1f} MB)")
     else:
+        removed = 0
         for f in old_files:
             try:
                 f.unlink()
+                removed += 1
             except Exception as e:
                 print(f"    Failed to remove {f}: {e}")
-    return len(old_files)
+        return removed
+    return 0
 
 
 def remove_failed_job_logs(dry_run: bool = True) -> int:
     """Remove logs for failed jobs."""
     try:
-        db_path = Path("studio_projects/jobs/video_ai_jobs.db")
+        db_path = REPO_ROOT / "studio_projects" / "jobs" / "video_ai_jobs.db"
         if not db_path.exists():
             return 0
 
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        rows = cur.execute("SELECT topic FROM jobs WHERE status='failed'").fetchall()
-        conn.close()
+        with sqlite3.connect(db_path) as conn:
+            cur = conn.cursor()
+            rows = cur.execute("SELECT topic FROM jobs WHERE status='failed'").fetchall()
 
         removed = 0
         for (topic,) in rows:
             if not topic:
                 continue
-            log_dir = Path("logs") / topic
+            log_dir = REPO_ROOT / "logs" / topic
             if log_dir.exists():
                 if dry_run:
-                    file_count = len(list(log_dir.rglob("*")))
-                    print(f"  [DRY] Would remove failed job logs for '{topic}': {file_count} items")
+                    file_count = len([f for f in log_dir.rglob("*") if f.is_file()])
+                    print(f"  [DRY] Would remove failed job logs for '{topic}': {file_count} files")
                 else:
                     try:
                         shutil.rmtree(log_dir)
@@ -114,7 +115,7 @@ def remove_failed_job_logs(dry_run: bool = True) -> int:
 
 def remove_stale_outputs(days_old: int = 30, dry_run: bool = True) -> int:
     """Remove old output files from studio_outputs."""
-    outputs_dir = Path("studio_outputs")
+    outputs_dir = REPO_ROOT / "studio_outputs"
     if not outputs_dir.exists():
         return 0
 
@@ -123,28 +124,29 @@ def remove_stale_outputs(days_old: int = 30, dry_run: bool = True) -> int:
         total_size = sum(f.stat().st_size for f in old_files) / (1024**2)
         print(f"  [DRY] Would remove {len(old_files)} stale outputs ({total_size:.1f} MB)")
     else:
+        removed = 0
         for f in old_files:
             try:
                 f.unlink()
+                removed += 1
             except Exception as e:
                 print(f"    Failed to remove {f}: {e}")
-    return len(old_files)
+        return removed
+    return 0
 
 
 def remove_empty_dirs(dry_run: bool = True) -> int:
     """Remove empty directories."""
     dirs_to_check = [
-        Path("logs"),
-        Path("studio_outputs"),
-        Path("cache"),
+        REPO_ROOT / "logs",
+        REPO_ROOT / "studio_outputs",
     ]
     removed = 0
     for root_dir in dirs_to_check:
         if not root_dir.exists():
             continue
-        # Walk bottom-up to remove empty dirs
-        for d in sorted(root_dir.rglob("*"), key=lambda p: len(str(p)), reverse=True):
-            if d.is_dir() and not list(d.iterdir()):
+        for d in sorted(root_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            if d.is_dir() and not any(d.iterdir()):
                 if dry_run:
                     print(f"  [DRY] Would remove empty dir: {d}")
                 else:
@@ -161,11 +163,10 @@ def main():
     parser = argparse.ArgumentParser(description="Clean up Video.AI artifacts")
     parser.add_argument("--days-old", type=int, default=7, help="Logs older than N days (default: 7)")
     parser.add_argument("--days-old-output", type=int, default=30, help="Outputs older than N days (default: 30)")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be removed (default)")
     parser.add_argument("--clean-all", action="store_true", help="Actually remove files (not dry-run)")
+    parser.add_argument("--clean-cache", action="store_true", help="Also remove cache/ directory (usually expensive to regenerate)")
     args = parser.parse_args()
 
-    # By default, dry-run is on unless --clean-all is set
     dry_run = not args.clean_all
 
     print("\n" + "=" * 70)
@@ -173,23 +174,23 @@ def main():
     print("=" * 70 + "\n")
 
     total_removed = 0
-    for task_fn in [
-        lambda: remove_temp_dirs(dry_run),
-        lambda: remove_old_logs(args.days_old, dry_run),
-        lambda: remove_failed_job_logs(dry_run),
-        lambda: remove_stale_outputs(args.days_old_output, dry_run),
-        lambda: remove_empty_dirs(dry_run),
+    for task_fn, desc in [
+        (lambda: remove_temp_dirs(dry_run, args.clean_cache), "temp dirs"),
+        (lambda: remove_old_logs(args.days_old, dry_run), "old logs"),
+        (lambda: remove_failed_job_logs(dry_run), "failed job logs"),
+        (lambda: remove_stale_outputs(args.days_old_output, dry_run), "stale outputs"),
+        (lambda: remove_empty_dirs(dry_run), "empty dirs"),
     ]:
         try:
             count = task_fn()
             total_removed += count
             print()
         except Exception as e:
-            print(f"  Error: {e}\n")
+            print(f"  Error in {desc}: {e}\n")
 
     print("=" * 70)
     if dry_run:
-        print(f"DRY RUN: Would have removed ~{total_removed} items".center(70))
+        print(f"DRY RUN: Would have processed ~{total_removed} items".center(70))
         print("Re-run with --clean-all to actually remove files".center(70))
     else:
         print(f"Cleanup complete: {total_removed} items removed".center(70))

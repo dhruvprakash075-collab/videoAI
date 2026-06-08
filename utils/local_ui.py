@@ -26,6 +26,11 @@ from utils.concurrency import global_scheduler
 
 # Initialize global job store
 job_store = JobStore()
+# Recover any stale running jobs on startup
+try:
+    job_store.mark_stale_running_failed()
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Failed to mark stale jobs as failed on startup: {e}")
 
 UIState.is_ui_mode = True
 

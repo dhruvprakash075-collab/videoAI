@@ -8,6 +8,13 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+if os.name == "nt":
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    CTRL_BREAK_EVENT = signal.CTRL_BREAK_EVENT
+else:
+    CREATE_NEW_PROCESS_GROUP = 0
+    CTRL_BREAK_EVENT = signal.SIGINT
+
 from jobs.job_store import (
     STATUS_CANCEL_REQUESTED,
     STATUS_CANCELED,
@@ -51,7 +58,7 @@ class Worker:
         try:
             import urllib.request
 
-            with urllib.request.urlopen("http://127.0.0.1:8188/", timeout=2) as resp:  # type: ignore
+            with urllib.request.urlopen("http://127.0.0.1:8188/", timeout=5) as resp:  # type: ignore
                 if resp.status >= 400:
                     raise RuntimeError("ComfyUI server returned error")
         except Exception as exc:
@@ -62,14 +69,23 @@ class Worker:
         if isinstance(req, str):
             try:
                 req = json.loads(req)
-            except Exception:
-                req = {}
+            except Exception as exc:
+                raise ValueError(f"Invalid request_json JSON: {exc}") from exc
         elif req is None:
             req = {}
         cmd = [str(VENV_PY), str(BOOTSTRAP)]
         topic = req.get("topic") or job.get("topic")
         if topic:
             cmd += ["--topic", str(topic)]
+
+        # Handle content_text: save to temp file and pass via --file
+        content_text = req.pop("content_text", None)
+        if content_text:
+            job_id = job.get("id", "temp")
+            temp_file = REPO_ROOT / "jobs" / f"_{job_id}_content.txt"
+            temp_file.write_text(content_text, encoding="utf-8")
+            cmd += ["--file", str(temp_file)]
+
         # Supported bootstrap_pipeline.py args (filter out job metadata keys)
         supported_args = {
             "duration", "dry_run", "no_resume", "skip_rvc", "file", "project",
@@ -97,13 +113,17 @@ class Worker:
             time.sleep(HEARTBEAT_INTERVAL)
 
     def _stream_process(self, proc: subprocess.Popen, job_id: int):
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            text = line.rstrip("\n")
-            self.store.append_event(job_id, text, event_type="log")
-            # also refresh heartbeat on output
-            with suppress(Exception):
-                self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        if proc.stdout is None:
+            return
+        try:
+            for line in proc.stdout:
+                text = line.rstrip("\n")
+                self.store.append_event(job_id, text, event_type="log")
+                # also refresh heartbeat on output
+                with suppress(Exception):
+                    self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        except Exception as exc:
+            self.store.append_event(job_id, f"stream_error: {exc}", event_type="system")
 
     def run_once(self) -> int | None:
         # First, check for queued jobs marked cancel_requested and mark them canceled
@@ -128,10 +148,16 @@ class Worker:
             self.store.update_job(job_id, status=STATUS_FAILED, error=str(exc))
             return job_id
 
-        cmd = self._build_command(job)
+        try:
+            cmd = self._build_command(job)
+        except ValueError as exc:
+            self.store.append_event(job_id, f"invalid_request: {exc}", event_type="system")
+            self.store.update_job(job_id, status=STATUS_FAILED, error=str(exc))
+            return job_id
+
         self.store.append_event(job_id, f"starting: {' '.join(cmd)}", event_type="system")
 
-        proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', creationflags=0)
+        proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NEW_PROCESS_GROUP)
 
         # Start heartbeat thread
         hb_thread = threading.Thread(target=self._heartbeat_loop, args=(job_id,), daemon=True)
@@ -149,10 +175,7 @@ class Worker:
                     self.store.append_event(job_id, "cancellation_requested", event_type="system")
                     # send interrupt
                     try:
-                        if os.name == "nt":
-                            proc.send_signal(signal.CTRL_BREAK_EVENT)  # type: ignore
-                        else:
-                            proc.send_signal(signal.SIGINT)
+                        proc.send_signal(CTRL_BREAK_EVENT)
                     except Exception:
                         proc.terminate()
                     # wait up to CANCEL_WAIT_SECONDS
@@ -166,10 +189,12 @@ class Worker:
                     break
                 time.sleep(1)
         finally:
-            # Ensure threads can stop
+            # Allow threads to stop and reset stop event for next job
             self._stop.set()
             out_thread.join(timeout=2)
             hb_thread.join(timeout=2)
+            # Clear stop event so heartbeat/output threads run for next job
+            self._stop.clear()
 
         rc = proc.poll()
         # Only update status if not already canceled
@@ -198,6 +223,14 @@ class Worker:
             else:
                 self.store.update_job(job_id, status=STATUS_FAILED, error=f"exit_code:{rc}")
                 self.store.append_event(job_id, f"process_failed: {rc}", event_type="system")
+
+        # Cleanup temp content file if it was created
+        try:
+            temp_file = REPO_ROOT / "jobs" / f"_{job_id}_content.txt"
+            if temp_file.exists():
+                temp_file.unlink()
+        except Exception as exc:
+            self.store.append_event(job_id, f"cleanup_warning: {exc}", event_type="system")
         return job_id
 
     def run_forever(self, poll_interval: int = 5):

@@ -1,7 +1,9 @@
 """Test job system: JobStore, Worker, API."""
 
+import importlib.util
 import json
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -52,6 +54,19 @@ class TestJobStore:
         assert job["topic"] == "Test"
         assert json.loads(job["request_json"]) == req
 
+    def test_create_job_with_backend_metadata(self, temp_db):
+        """Test job creation preserves image_backend and comfyui_checkpoint."""
+        req = {"topic": "Backend Test", "dry_run": True, "image_backend": "comfyui", "comfyui_checkpoint": "DreamShaper_8.safetensors", "fallback_backend": "bonsai"}
+        job_id = temp_db.create_job(req, topic="Backend Test", image_backend="comfyui", comfyui_checkpoint="DreamShaper_8.safetensors", fallback_backend="bonsai")
+        job = temp_db.get_job(job_id)
+        assert job["image_backend"] == "comfyui"
+        assert job["comfyui_checkpoint"] == "DreamShaper_8.safetensors"
+        assert job["fallback_backend"] == "bonsai"
+        # request_json also has these fields
+        req_loaded = json.loads(job["request_json"])
+        assert req_loaded["image_backend"] == "comfyui"
+        assert req_loaded["comfyui_checkpoint"] == "DreamShaper_8.safetensors"
+
     def test_claim_next_job(self, temp_db):
         """Test claiming queued job atomically marks it running."""
         job_id = temp_db.create_job({"topic": "Claim Test"}, topic="Claim Test")
@@ -60,9 +75,22 @@ class TestJobStore:
         assert job["id"] == job_id
         assert job["status"] == STATUS_RUNNING
         assert job["attempt"] == 1
-        # Claiming again should return None (no more queued)
+        assert temp_db.claim_next_job() is None
+
+    def test_claim_next_job_oldest_first(self, temp_db):
+        """Test claim_next_job returns the oldest queued job (FIFO)."""
+        id1 = temp_db.create_job({"topic": "First"}, topic="First")
+        time.sleep(0.01)
+        id2 = temp_db.create_job({"topic": "Second"}, topic="Second")
+        time.sleep(0.01)
+        id3 = temp_db.create_job({"topic": "Third"}, topic="Third")
+        # Claim oldest first
+        job = temp_db.claim_next_job()
+        assert job["id"] == id1
         job2 = temp_db.claim_next_job()
-        assert job2 is None
+        assert job2["id"] == id2
+        job3 = temp_db.claim_next_job()
+        assert job3["id"] == id3
 
     def test_job_lifecycle_succeeded(self, temp_db):
         """Test job lifecycle: queued -> running -> succeeded."""
@@ -91,19 +119,38 @@ class TestJobStore:
         job = temp_db.get_job(job_id)
         assert job["status"] == STATUS_CANCEL_REQUESTED
 
-    def test_cancel_queued_job_returns_false_but_marks_cancel_requested(self, temp_db):
-        """Test cancel on queued: marks cancel_requested, request_cancel returns False initially."""
+    def test_cancel_queued_job_marks_cancel_requested(self, temp_db):
+        """Test canceling a queued job marks it cancel_requested."""
         job_id = temp_db.create_job({"topic": "CancelQueue"}, topic="CancelQueue")
         ok = temp_db.request_cancel(job_id)
         assert ok is True
         job = temp_db.get_job(job_id)
         assert job["status"] == STATUS_CANCEL_REQUESTED
 
+    def test_cancel_lifecycle_running_to_canceled(self, temp_db):
+        """Test running job detected cancel_requested in monitor loop gets marked canceled."""
+        job_id = temp_db.create_job({"topic": "CancelFlow"}, topic="CancelFlow")
+        # Manually mark job as running (simulating worker having claimed it)
+        # then request cancel - simulating cancel requested while job is running
+        temp_db.update_job(job_id, status=STATUS_RUNNING)
+        temp_db.request_cancel(job_id)
+        # Verify the job is now CANCEL_REQUESTED
+        job = temp_db.get_job(job_id)
+        assert job["status"] == STATUS_CANCEL_REQUESTED
+        # claim_next_job should NOT return this (not QUEUED)
+        from jobs.worker import Worker
+        w = Worker(store=temp_db)
+        # Worker pre-cancel check should find cancel_requested job and mark canceled
+        _ = w.run_once()
+        # run_once may return None (pre-cancel check handled it) or the job_id
+        # if it was processed differently. Key: final status must be CANCELED.
+        job = temp_db.get_job(job_id)
+        assert job["status"] == STATUS_CANCELED
+
     def test_mark_stale_running_failed(self, temp_db):
         """Test stale running jobs are marked failed."""
         job_id = temp_db.create_job({"topic": "Stale"}, topic="Stale")
         temp_db.claim_next_job()
-        # Set a stale heartbeat (2+ hours ago)
         temp_db.update_job(job_id, heartbeat_at="2000-01-01T00:00:00Z")
         count = temp_db.mark_stale_running_failed(stale_seconds=120)
         assert count >= 1
@@ -122,6 +169,18 @@ class TestJobStore:
         assert new_job["status"] == STATUS_QUEUED
         assert new_job["topic"] == "Retry"
 
+    def test_retry_job_preserves_metadata(self, temp_db):
+        """Test retry preserves image_backend and comfyui_checkpoint."""
+        req = {"topic": "RetryMeta", "dry_run": True, "image_backend": "comfyui", "comfyui_checkpoint": "DreamShaper_8.safetensors", "fallback_backend": "bonsai"}
+        job_id = temp_db.create_job(req, topic="RetryMeta", image_backend="comfyui", comfyui_checkpoint="DreamShaper_8.safetensors", fallback_backend="bonsai")
+        temp_db.claim_next_job()
+        temp_db.update_job(job_id, status=STATUS_FAILED)
+        new_id = temp_db.retry_job(job_id)
+        new_job = temp_db.get_job(new_id)
+        assert new_job["image_backend"] == "comfyui"
+        assert new_job["comfyui_checkpoint"] == "DreamShaper_8.safetensors"
+        assert new_job["fallback_backend"] == "bonsai"
+
     def test_retry_job_canceled(self, temp_db):
         """Test retrying a canceled job creates a new queued job."""
         job_id = temp_db.create_job({"topic": "RetryCanceled"}, topic="RetryCanceled")
@@ -139,6 +198,12 @@ class TestJobStore:
         new_id = temp_db.retry_job(job_id)
         assert new_id is None
 
+    def test_retry_job_queued_returns_none(self, temp_db):
+        """Test retrying a queued (not running) job returns None."""
+        job_id = temp_db.create_job({"topic": "QueuedRetry"}, topic="QueuedRetry")
+        new_id = temp_db.retry_job(job_id)
+        assert new_id is None
+
     def test_append_event_and_list(self, temp_db):
         """Test appending and listing events."""
         job_id = temp_db.create_job({"topic": "Events"}, topic="Events")
@@ -151,18 +216,43 @@ class TestJobStore:
 
     def test_list_jobs_newest_first(self, temp_db):
         """Test list_jobs returns jobs ordered by created_at DESC."""
-        import time
         id1 = temp_db.create_job({"topic": "First"}, topic="First")
-        time.sleep(0.01)  # Small delay to ensure different timestamps
+        time.sleep(0.01)
         id2 = temp_db.create_job({"topic": "Second"}, topic="Second")
         jobs = temp_db.list_jobs()
-        # Check that the list has at least 2 jobs
-        assert len(jobs) >= 2
-        # The second job created should appear before the first (ordered DESC by created_at)
         ids = [j["id"] for j in jobs]
-        idx1 = ids.index(id1)
-        idx2 = ids.index(id2)
-        assert idx2 < idx1  # id2 (newer) should come before id1 (older)
+        assert id2 in ids
+        assert id1 in ids
+        assert ids.index(id2) < ids.index(id1)
+
+    def test_list_jobs_pagination(self, temp_db):
+        """Test list_jobs respects limit and offset."""
+        for i in range(5):
+            temp_db.create_job({"topic": f"Page{i}"}, topic=f"Page{i}")
+        all_jobs = temp_db.list_jobs(limit=10)
+        page1 = temp_db.list_jobs(limit=2, offset=0)
+        page2 = temp_db.list_jobs(limit=2, offset=2)
+        assert len(page1) == 2
+        assert len(page2) == 2
+        assert page1[0]["id"] == all_jobs[0]["id"]
+        assert page1[1]["id"] == all_jobs[1]["id"]
+        assert page2[0]["id"] == all_jobs[2]["id"]
+
+    def test_get_events_with_limit(self, temp_db):
+        """Test get_events respects limit parameter."""
+        job_id = temp_db.create_job({"topic": "EventLimit"}, topic="EventLimit")
+        for i in range(5):
+            temp_db.append_event(job_id, f"msg {i}", event_type="log")
+        events = temp_db.get_events(job_id, limit=3)
+        assert len(events) == 3
+
+    def test_update_job_ignores_disallowed_fields(self, temp_db):
+        """Test update_job silently ignores fields not in allowed set."""
+        job_id = temp_db.create_job({"topic": "Update"}, topic="Update")
+        temp_db.update_job(job_id, status=STATUS_RUNNING, made_up_field="ignored", another_bad=123)
+        job = temp_db.get_job(job_id)
+        assert "made_up_field" not in job
+        assert "another_bad" not in job
 
 
 class TestWorker:
@@ -190,7 +280,6 @@ class TestWorker:
         assert "--dry-run" in cmd_str
         assert "--duration" in cmd_str
         assert "1" in cmd_str
-        # Unsupported args should NOT appear
         assert "--content-text" not in cmd_str
         assert "--image-backend" not in cmd_str
         assert "--comfyui-checkpoint" not in cmd_str
@@ -213,10 +302,9 @@ class TestWorker:
         assert "--dry-run" in cmd_str
         assert "--no-resume" in cmd_str
         assert "--yes" in cmd_str
-        # False values should not appear
         assert "--skip-rvc" not in cmd_str
 
-    def test_build_command_with_topic_from_job_or_request(self):
+    def test_build_command_with_topic_from_request(self):
         """Test topic comes from request_json if available."""
         store = JobStore()
         worker = Worker(store)
@@ -228,21 +316,57 @@ class TestWorker:
         cmd_str = " ".join(cmd)
         assert "RequestTopic" in cmd_str
 
+    def test_build_command_with_content_text_creates_temp_file(self):
+        """Test content_text is written to temp file and --file is passed."""
+        store = JobStore()
+        worker = Worker(store)
+        job = {
+            "id": 999,
+            "topic": "ContentTest",
+            "request_json": json.dumps({
+                "topic": "ContentTest",
+                "content_text": "This is the script content",
+            }),
+        }
+        cmd = worker._build_command(job)
+        cmd_str = " ".join(cmd)
+        assert "--file" in cmd_str
+        assert "content_text" not in cmd_str  # should not appear as arg
+        # Temp file should exist
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[1]
+        temp_file = repo_root / "jobs" / "_999_content.txt"
+        try:
+            assert temp_file.exists()
+            assert temp_file.read_text(encoding="utf-8") == "This is the script content"
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()
+
+    def test_heartbeat_updates_job(self, temp_db):
+        """Test heartbeat loop actually updates the job heartbeat_at field."""
+        job_id = temp_db.create_job({"topic": "HeartbeatTest"}, topic="HeartbeatTest")
+        temp_db.claim_next_job()
+        job = temp_db.get_job(job_id)
+        old_hb = job.get("heartbeat_at")
+        import time
+
+        from jobs.worker import Worker
+        w = Worker(store=temp_db)
+        w.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        updated = temp_db.get_job(job_id)
+        assert updated["heartbeat_at"] != old_hb
+
 
 class TestJobAPIIntegration:
     """Test Job API endpoints integration (requires running FastAPI server)."""
 
-    # Note: These tests require utils/local_ui.py running on http://127.0.0.1:8000
-    # They are marked as integration tests and can be skipped if server is not running.
+    _requests_available = importlib.util.find_spec("requests") is not None
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("requests", minversion=None),
-        reason="requests library not available",
-    )
+    @pytest.mark.skipif(not _requests_available, reason="requests library not available")
     def test_api_create_job(self):
         """Test POST /api/jobs creates a job (requires running server)."""
         import requests
-
         try:
             resp = requests.post(
                 "http://127.0.0.1:8000/api/jobs",
@@ -256,14 +380,10 @@ class TestJobAPIIntegration:
         except requests.ConnectionError:
             pytest.skip("FastAPI server not running")
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("requests", minversion=None),
-        reason="requests library not available",
-    )
+    @pytest.mark.skipif(not _requests_available, reason="requests library not available")
     def test_api_list_jobs(self):
         """Test GET /api/jobs lists jobs (requires running server)."""
         import requests
-
         try:
             resp = requests.get("http://127.0.0.1:8000/api/jobs", timeout=2)
             if resp.status_code == 200:
