@@ -96,6 +96,14 @@ class StoryMemory:
             topic_data = data.get(topic, {})
             return list(topic_data.get("segments", []))
 
+    def read(self) -> dict:
+        """Return the entire memory store as a dict (all topics, all entries).
+
+        Used by segment_runner.do_memory_review to pass full context
+        to the director agent.
+        """
+        return self._load_all()
+
     def clear(self, topic: str) -> None:
         with self._lock:
             data = self._load_all()
