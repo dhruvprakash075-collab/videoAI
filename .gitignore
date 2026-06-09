@@ -1,10 +1,13 @@
 # ── Python ────────────────────────────────────────────────────────
 venv/
+venv*/
 **/Lib/
 **/Lib64/
 **/Scripts/
 **/Include/
 **/share/
+*_env/
+*_venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -98,3 +101,10 @@ Modelfile.*
 # ── Crash logs ────────────────────────────────────────────────────
 *.log
 studio_tui_crash.log
+
+# ── Audit / temporary files ───────────────────────────────────────
+SECURITY_AUDIT_REFERENCE.md
+AUDITOR_GUIDANCE.md
+GITHUB_SETUP_INSTRUCTIONS.md
+Video_AI_Source_Code.zip
+files_to_zip.csv
