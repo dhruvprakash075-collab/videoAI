@@ -163,7 +163,9 @@ def main():
     parser = argparse.ArgumentParser(description="Clean up Video.AI artifacts")
     parser.add_argument("--days-old", type=int, default=7, help="Logs older than N days (default: 7)")
     parser.add_argument("--days-old-output", type=int, default=30, help="Outputs older than N days (default: 30)")
-    parser.add_argument("--clean-all", action="store_true", help="Actually remove files (not dry-run)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", dest="clean_all", action="store_false", default=False, help="Show what would be removed (default)")
+    mode.add_argument("--clean-all", action="store_true", help="Actually remove files")
     parser.add_argument("--clean-cache", action="store_true", help="Also remove cache/ directory (usually expensive to regenerate)")
     args = parser.parse_args()
 
