@@ -7,7 +7,6 @@ export default function CharactersPanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
     apiGet('/api/characters')
       .then((data) => setCharacters(data.characters || []))
       .catch(() => {})
