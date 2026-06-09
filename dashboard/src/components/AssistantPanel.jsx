@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Trash2, Bot, User, Loader } from 'lucide-react';
-import { apiSend, apiGet } from '../lib/api.js';
+import { apiGet } from '../lib/api.js';
 
 const LS_SESSION_KEY = 'video_ai_chat_session';
 
@@ -44,7 +44,7 @@ export default function AssistantPanel({ status }) {
         localStorage.setItem(LS_SESSION_KEY, data.session_id);
         setMessages(data.messages || []);
       }
-    } catch (e) {
+    } catch {
       setError('Failed to reach backend. Is it running?');
     } finally {
       setLoading(false);

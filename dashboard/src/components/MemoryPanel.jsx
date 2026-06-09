@@ -22,7 +22,6 @@ export default function MemoryPanel() {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    setLoading(true);
     apiGet('/api/memory')
       .then((data) => setMemory(data.memory || []))
       .catch(() => {})
