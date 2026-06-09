@@ -342,7 +342,10 @@ def _call_supertonic_worker(
     steps = int(super_cfg.get("steps", 16))
     speed = float(speed_override) if speed_override is not None else float(super_cfg.get("speed", 1.0))
     silence_duration = float(super_cfg.get("silence_duration", 0.1))
-    max_chunk_length = super_cfg.get("max_chunk_length")
+    # Default max_chunk_length=100 chars to stay under ONNX 1000-token
+    # attention limit. Without chunking, texts >1000 chars trigger a Mul_13
+    # broadcast error in the ONNX runtime.
+    max_chunk_length = super_cfg.get("max_chunk_length", 100)
 
     if output_dir is None:
         output_dir = Path("tts_output")

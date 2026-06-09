@@ -97,14 +97,16 @@ def _synthesize_once(
     voice_style = _load_voice_style(tts, voice)
 
     # Devanagari danda fix: Supertonic's chunk_text() only splits on .!?
-    # (see supertonic/utils.py:39). Hindi text uses | (danda) which is NOT
-    # recognized, so multi-sentence Hindi collapses into one giant chunk
-    # exceeding the ONNX attention limit and crashes with a Mul_13 broadcast
-    # error. Pre-replace | with ". " so the chunker sees real sentence
-    # boundaries. Pronunciation of "." and "|" in Hindi TTS is effectively
-    # the same short pause.
-    if isinstance(text, str) and "ÓÑñ" in text:
-        text = text.replace("ÓÑñ", ". ")
+    # (see supertonic/utils.py:39). Hindi text uses । (single danda) or
+    # ॥ (double danda) which are NOT recognized, so multi-sentence Hindi
+    # collapses into one giant chunk exceeding the ONNX attention limit and
+    # crashes with a Mul_13 broadcast error.
+    # Pre-replace with ". " so the chunker sees real sentence boundaries.
+    if isinstance(text, str):
+        if "॥" in text:
+            text = text.replace("॥", ". ")
+        if "।" in text:
+            text = text.replace("।", ". ")
 
     # API: synthesize(text, voice_style, total_steps, speed, max_chunk_length,
     #                 silence_duration, lang, verbose) -> (wav_2d, junk_ndarray)
