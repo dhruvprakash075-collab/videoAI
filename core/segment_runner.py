@@ -981,7 +981,7 @@ def make_process_segment(
 
                 # Identity-hash change detection: if the dominant char's stored
                 # identity hash differs from the current frame, force a review.
-                if not is_important and frame_cp and self.mem._project is not None:
+                if not is_important and frame_cp and getattr(self.mem, '_project', None) is not None:
                     try:
                         dom_char = max(frame_cp, key=frame_cp.get)
                         if frame_cp[dom_char] >= 0.3:
@@ -1014,7 +1014,7 @@ def make_process_segment(
                         dom_char = max(frame_cp, key=frame_cp.get)
                         if frame_cp[dom_char] >= 0.3:
                             try:
-                                if self.mem._project is None:
+                                if getattr(self.mem, '_project', None) is None:
                                     log.info("[DIRECTOR] One-time mode — skipping asset review (no project store)")
                                 else:
                                     decision = decision_res.get("decision", "approve")
