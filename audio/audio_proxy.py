@@ -364,6 +364,8 @@ def _call_supertonic_worker(
 
     resp = _supertonic_worker.generate(req)
     if resp is not None:
+        if resp.get("status") != "success":
+            log.warning(f"[Supertonic] Persistent worker returned error: {resp.get('message', 'unknown')}")
         return resp
 
     log.info("[Supertonic] Using one-shot subprocess fallback")
@@ -467,6 +469,11 @@ class _OmniVoiceWorker:
         worker_script = Path(__file__).parent / "omnivoice_worker.py"
         python_exe = _resolve_omnivoice_python()
         try:
+            _omnivoice_env = dict(os.environ)
+            _omnivoice_env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+            # Windows without Developer Mode lacks SeCreateSymbolicLinkPrivilege.
+            # Setting HF_HUB_DISABLE_SYMLINKS_WARNING ensures huggingface_hub
+            # falls back to copy instead of raising WinError 1314.
             self._proc = subprocess.Popen(
                 [python_exe, str(worker_script), "--serve"],
                 stdin=subprocess.PIPE,
@@ -479,6 +486,7 @@ class _OmniVoiceWorker:
                 text=True,
                 encoding="utf-8",
                 bufsize=1,
+                env=_omnivoice_env,
             )
             # Wait for the readiness line (model load can take a while)
             import time as _t
@@ -1205,7 +1213,9 @@ def _call_omnivoice_oneshot(
             cmd.append(f"--ref-text={ref_text}")
 
         log.info("Calling omnivoice_worker (one-shot)...")
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
+        _oneshot_env = dict(os.environ)
+        _oneshot_env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600, env=_oneshot_env)
 
         if result.returncode == 0 and result.stdout.strip():
             for line in reversed(result.stdout.strip().split("\n")):
@@ -1414,7 +1424,7 @@ def tts_generate(
             speed_override=speed,
         )
         if result.get("status") != "success":
-            log.warning("[TTS] Supertonic failed — degrading to omnivoice")
+            log.warning(f"[TTS] Supertonic failed ({result.get('message', 'unknown')}) — degrading to omnivoice")
             result = _call_omnivoice_worker(
                 text,
                 lang=lang,
