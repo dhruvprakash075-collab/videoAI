@@ -30,6 +30,53 @@ log = logging.getLogger(__name__)
 PROJECTS_ROOT = Path("studio_projects")
 
 
+def _validate_memory_item(item: dict) -> dict | None:
+    """Validate and normalize a memory item. Returns cleaned item or None if invalid."""
+    VALID_TYPES = {
+        "costume", "face_reference", "weapon", "jewelry",
+        "lore_object", "location", "symbol_motif",
+        "relationship", "timeline_change", "negative_memory",
+        "character_identity", "temporary_scene_detail",
+    }
+    VALID_IMPORTANCE = {"core", "high", "medium", "low", "temporary"}
+    VALID_SCOPE = {"project", "story"}
+    # Minimum persistence threshold: items below "medium" are not stored.
+    MIN_IMPORTANCE_ORDER = {"core": 4, "high": 3, "medium": 2, "low": 1, "temporary": 0}
+
+    item_type = item.get("type", "")
+    if item_type not in VALID_TYPES:
+        log.warning(f"[MemoryItem] Invalid type '{item_type}' — skipping item")
+        return None
+
+    importance = item.get("importance", "medium")
+    if importance not in VALID_IMPORTANCE:
+        log.warning(f"[MemoryItem] Invalid importance '{importance}' — defaulting to medium")
+        item["importance"] = "medium"
+        importance = "medium"
+
+    # Enforce minimum persistence threshold (medium)
+    if MIN_IMPORTANCE_ORDER.get(importance, 0) < 2:
+        log.warning(
+            f"[MemoryItem] Importance '{importance}' is below minimum threshold (medium) — skipping item"
+        )
+        return None
+
+    scope = item.get("scope", "story")
+    if scope not in VALID_SCOPE:
+        log.warning(f"[MemoryItem] Invalid scope '{scope}' — defaulting to story")
+        item["scope"] = "story"
+
+    item.setdefault("visual_rules", [])
+    item.setdefault("negative_rules", [])
+    item.setdefault("name", "unknown")
+    item.setdefault("description", "")
+    item.setdefault("owner", "")
+    item.setdefault("lora_candidate", False)
+    item.setdefault("reason", "")
+
+    return item
+
+
 def _safe(name: str, maxlen: int = 60) -> str:
     # P4-30 fix: use Unicode-aware regex so Devanagari characters are preserved.
     # The old [^a-zA-Z0-9_\-] pattern stripped all non-ASCII, causing filename
@@ -76,8 +123,10 @@ class ProjectStore:
     Shared across all stories in the project.
     """
 
-    def __init__(self, project_name: str, root: Path = PROJECTS_ROOT):
+    def __init__(self, project_name: str, root: Path | None = None):
         self._lock = threading.RLock()
+        if root is None:
+            root = PROJECTS_ROOT
         self._dir = root / _safe(project_name)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._path = self._dir / "project.json"
@@ -91,7 +140,7 @@ class ProjectStore:
     def _load(self) -> dict:
         with self._lock:
             data = _load_json(self._path, {})
-            for key in ("characters", "motifs", "world_lore", "visual_locks"):
+            for key in ("characters", "motifs", "world_lore", "visual_locks", "memory_items"):
                 data.setdefault(key, {})
             return data
 
@@ -229,6 +278,233 @@ class ProjectStore:
                 return None
             return dict(entry)
 
+    def save_memory_item(self, item: dict) -> None:
+        """Store a validated memory item in project.json."""
+        cleaned = _validate_memory_item(item)
+        if cleaned is None:
+            return
+        with self._lock:
+            self._data.setdefault("memory_items", {})
+            name = cleaned.get("name", "unknown")
+            key = name.lower().replace(" ", "_")
+
+            existing = self._data["memory_items"].get(key, {})
+            updated = {**existing, **cleaned}
+            updated["updated_at"] = time.time()
+
+            self._data["memory_items"][key] = updated
+            self._save()
+
+    def get_memory_items(self) -> dict:
+        """Return all project-level memory items."""
+        with self._lock:
+            return dict(self._data.get("memory_items", {}))
+
+    # ══════════════════════════════════════════════════════════════════════════════
+    # Layered v3 character assets
+    # Stores character identity assets (character sheets, face/body refs, pose variants)
+    # in per-character directories outside project.json to avoid bloating it.
+    # Short path references live in project.json character dict.
+    # ══════════════════════════════════════════════════════════════════════════════
+
+    def _char_assets_dir(self, char_key: str) -> Path:
+        """Return the assets directory for a character: {project_dir}/characters/{char_key}/"""
+        return self._dir / "characters" / _safe(char_key)
+
+    def _load_char_assets(self, char_key: str) -> dict:
+        """Load assets.json for a character, or return default empty dict."""
+        path = self._char_assets_dir(char_key) / "assets.json"
+        if not path.exists():
+            return {}
+        return _load_json(path, {})
+
+    def _save_char_assets(self, char_key: str, data: dict) -> None:
+        """Write assets.json for a character."""
+        d = self._char_assets_dir(char_key)
+        d.mkdir(parents=True, exist_ok=True)
+        _atomic_write(d / "assets.json", data)
+
+    def set_character_assets(
+        self,
+        char_key: str,
+        character_sheet_path: str = "",
+        face_reference_path: str = "",
+        full_body_reference_path: str = "",
+        identity_hash: str = "",
+        approved: bool = False,
+    ) -> None:
+        """Store paths to layered-v3 character identity assets.
+
+        Short references (paths, approved flag, identity_hash) are written to
+        project.json so they survive lightweight project loads. Full per-asset
+        metadata (poses, variants, timestamps) goes into assets.json.
+        """
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if char is None:
+                log.warning(f"[ProjectStore] set_character_assets skipped — unknown char '{char_key}'")
+                return
+            char["character_sheet_path"] = character_sheet_path
+            char["face_reference_path"] = face_reference_path
+            char["full_body_reference_path"] = full_body_reference_path
+            char["identity_hash"] = identity_hash
+            char["approved_at"] = time.time() if approved else ""
+            char["pose_variants"] = char.get("pose_variants", [])
+            char["updated_at"] = time.time()
+            self._save()
+            log.info(
+                f"[ProjectStore] Character assets set for '{char_key}': "
+                f"sheet={character_sheet_path}, face={face_reference_path}, "
+                f"body={full_body_reference_path}, hash={identity_hash[:8] if identity_hash else ''}"
+            )
+
+    def get_character_assets(self, char_key: str) -> dict:
+        """Return layered-v3 asset paths and metadata for a character.
+
+        Returns dict with keys: character_sheet_path, face_reference_path,
+        full_body_reference_path, identity_hash, approved_at, pose_variants,
+        and any extra metadata from the per-character assets.json.
+        """
+        with self._lock:
+            char = self._data["characters"].get(char_key, {})
+            file_meta = self._load_char_assets(char_key)
+            return {
+                "character_sheet_path": char.get("character_sheet_path", ""),
+                "face_reference_path": char.get("face_reference_path", ""),
+                "full_body_reference_path": char.get("full_body_reference_path", ""),
+                "identity_hash": char.get("identity_hash", ""),
+                "approved_at": char.get("approved_at", ""),
+                "pose_variants": char.get("pose_variants", []),
+                "is_approved": bool(char.get("approved_at", "")),
+                **file_meta,
+            }
+
+    def add_pose_variant(self, char_key: str, pose_path: str) -> None:
+        """Add a pose variant path to a character's pose_variants list."""
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if char is None:
+                return
+            variants = char.get("pose_variants", [])
+            if pose_path not in variants:
+                variants.append(pose_path)
+                char["pose_variants"] = variants
+                self._save()
+
+    def approve_character(self, char_key: str) -> None:
+        """Mark a character sheet as approved (sets approved_at timestamp)."""
+        with self._lock:
+            char = self._data["characters"].get(char_key)
+            if char is None:
+                log.warning(f"[ProjectStore] approve_character skipped — unknown char '{char_key}'")
+                return
+            char["approved_at"] = time.time()
+            char["updated_at"] = time.time()
+            self._save()
+            log.info(f"[ProjectStore] Character '{char_key}' approved")
+
+    def record_asset_review(
+        self,
+        char_key: str,
+        asset_path: str,
+        decision: str,
+        reason: str = "",
+        locked: bool = False,
+        lora_metadata: dict | None = None,
+        ip_adapter_ref: bool = False,
+        negative_example: bool = False,
+        identity_hash: str | None = None,
+    ) -> None:
+        """Record a review decision for a specific character asset.
+
+        Stores full metadata including LoRA candidate tracking,
+        IP-Adapter reference flags, negative example storage,
+        identity hash, training status history, and version history.
+        """
+        with self._lock:
+            assets = self._load_char_assets(char_key)
+            lora_obj = assets.setdefault("lora", {})
+            reviews = assets.get("reviews", {})
+
+            entry = reviews.get(asset_path, {})
+            entry.update({
+                "decision": decision,
+                "reason": reason,
+                "locked": locked,
+                "timestamp": time.time(),
+            })
+
+            # Identity hash (used to detect frame-to-frame identity drift)
+            if identity_hash:
+                entry["identity_hash"] = identity_hash
+
+            # Approved / rejected image path lists
+            approved_list = lora_obj.setdefault("approved_images", [])
+            rejected_list = lora_obj.setdefault("rejected_images", [])
+
+            if decision == "lora_candidate":
+                if asset_path not in approved_list:
+                    approved_list.append(asset_path)
+                lora_obj.setdefault("version_history", [])
+
+            if (negative_example or decision == "reject") and asset_path not in rejected_list:
+                rejected_list.append(asset_path)
+
+            # LoRA candidate metadata
+            if decision == "lora_candidate" or (lora_metadata and lora_metadata.get("candidate")):
+                meta = lora_metadata or {}
+                lora_obj["candidate"] = True
+                lora_obj["trigger_word"] = meta.get("trigger_word", f"{char_key}_v1")
+                lora_obj["minimum_needed"] = meta.get("minimum_needed", 20)
+                lora_obj["status"] = meta.get("status", "collecting")
+
+                # Training status history
+                training_history = lora_obj.setdefault("training_status_history", [])
+                new_status = lora_obj["status"]
+                if not training_history or training_history[-1].get("status") != new_status:
+                    training_history.append({
+                        "status": new_status,
+                        "timestamp": time.time(),
+                    })
+
+                # Version history
+                if "version" in meta:
+                    vh = lora_obj.setdefault("version_history", [])
+                    vh.append({
+                        "version": meta["version"],
+                        "trigger_word": lora_obj["trigger_word"],
+                        "approved_count": len(approved_list),
+                        "timestamp": time.time(),
+                    })
+
+            # IP-Adapter reference
+            if ip_adapter_ref or decision == "ip_ref":
+                lora_obj["ip_adapter_ref"] = True
+                lora_obj["ip_adapter_ref_paths"] = lora_obj.get("ip_adapter_ref_paths", [])
+                if asset_path not in lora_obj["ip_adapter_ref_paths"]:
+                    lora_obj["ip_adapter_ref_paths"].append(asset_path)
+                lora_obj["ip_adapter_updated_at"] = time.time()
+                entry["ip_adapter_ref"] = True
+
+            # Negative example
+            if negative_example or decision == "reject":
+                entry["negative_example"] = True
+                entry["rejected_at"] = time.time()
+
+            # Visual lock update
+            if locked:
+                lock_entry = self._data["visual_locks"].get(char_key, {})
+                lock_entry["locked_at"] = time.time()
+                lock_entry["locked_by"] = asset_path
+                lock_entry["reason"] = reason
+                self._data["visual_locks"][char_key] = lock_entry
+                self._save()
+
+            reviews[asset_path] = entry
+            assets["reviews"] = reviews
+            self._save_char_assets(char_key, assets)
+            log.info(f"[ProjectStore] Asset review recorded for {char_key}: {decision}")
+
     # ── World lore ────────────────────────────────────────────────────────
 
     def add_world_lore(self, key: str, value: str) -> None:
@@ -255,9 +531,11 @@ class StoryStore:
     """
 
     def __init__(
-        self, story_name: str, project_name: str | None = None, root: Path = PROJECTS_ROOT
+        self, story_name: str, project_name: str | None = None, root: Path | None = None
     ):
         self._lock = threading.RLock()
+        if root is None:
+            root = PROJECTS_ROOT
         if project_name:
             self._dir = root / _safe(project_name) / "stories" / _safe(story_name)
         else:
@@ -282,6 +560,7 @@ class StoryStore:
             # characters and motifs are stored here for one-time runs
             data.setdefault("characters", {})
             data.setdefault("motifs", {})
+            data.setdefault("memory_items", {})
             return data
 
     def _save_story(self) -> None:
@@ -313,6 +592,28 @@ class StoryStore:
         with self._lock:
             segs = self._data.get("segments", [])[-n:]
             return "\n".join(f"Segment {s['segment']}: {s['summary']}" for s in segs)
+
+    def save_memory_item(self, item: dict) -> None:
+        """Store a validated memory item in story.json."""
+        cleaned = _validate_memory_item(item)
+        if cleaned is None:
+            return
+        with self._lock:
+            self._data.setdefault("memory_items", {})
+            name = cleaned.get("name", "unknown")
+            key = name.lower().replace(" ", "_")
+
+            existing = self._data["memory_items"].get(key, {})
+            updated = {**existing, **cleaned}
+            updated["updated_at"] = time.time()
+
+            self._data["memory_items"][key] = updated
+            self._save_story()
+
+    def get_memory_items(self) -> dict:
+        """Return all story-level memory items."""
+        with self._lock:
+            return dict(self._data.get("memory_items", {}))
 
     # ── Continuity audit ──────────────────────────────────────────────────
 
@@ -420,6 +721,9 @@ class PermanentMemoryLog:
 
         # Expose data dict for code that reads .data directly
         self.data = self._build_data_view()
+
+        # In-memory store for temporary scene-detail items (not persisted to disk)
+        self._temp_items: dict[str, dict] = {}
 
         # One-time mode: load persisted characters/motifs from the checkpoint
         # directory so that a resumed run recovers continuity data.
@@ -579,18 +883,28 @@ class PermanentMemoryLog:
         return dict(entry)
 
     def read(self) -> dict:
-        """Return the full memory dict (characters, motifs, segments, audit_log).
+        """Return the full memory dict (characters, motifs, segments, audit_log, memory_items).
 
-        This was missing from the legacy PermanentMemoryLog API — callers had to
-        reach into ``.data`` directly. ``read()`` is the documented, stable
-        accessor for the same view.
+        ``memory_items`` values are always lists (not dicts) so pipeline consumers
+        can iterate directly. ``temporary`` items are ephemeral (in-memory only).
         """
         with self._lock:
+            project_items = {}
+            story_items = {}
+            if self._project:
+                project_items = self._project.get_memory_items()
+            story_items = self._story.get_memory_items()
+            temp_items = dict(self._temp_items)
             return {
                 "characters": dict(self.data.get("characters", {})),
                 "motifs": dict(self.data.get("motifs", {})),
                 "segments": list(self.data.get("segments", [])),
                 "audit_log": list(self.data.get("audit_log", [])),
+                "memory_items": {
+                    "project": list(project_items.values()),
+                    "story": list(story_items.values()),
+                    "temporary": list(temp_items.values()),
+                },
             }
 
     def log_recurring_motif(self, motif_name: str, details: str) -> None:
@@ -616,6 +930,41 @@ class PermanentMemoryLog:
                         log.warning(
                             f"[PermanentMemoryLog] Could not write one-time memory checkpoint: {e}"
                         )
+
+    def save_memory_item(self, item: dict) -> None:
+        """Save a validated memory item to the appropriate store based on scope.
+
+        Temporary-importance items go to an in-memory store (lost on restart)
+        so the current segment can reference scene-level detail without
+        polluting project/story memory.
+        """
+        importance = item.get("importance", "medium")
+        if importance == "temporary":
+            with self._lock:
+                name = item.get("name", "unknown")
+                key = name.lower().replace(" ", "_")
+                self._temp_items[key] = {**item, "updated_at": time.time()}
+                return
+
+        cleaned = _validate_memory_item(item)
+        if cleaned is None:
+            log.warning(f"[PermanentMemoryLog] Dropping invalid memory item: {item.get('type', '?')}")
+            return
+        scope = cleaned.get("scope", "story")
+        if scope == "project" and self._project:
+            self._project.save_memory_item(cleaned)
+        else:
+            self._story.save_memory_item(cleaned)
+
+    def clear_temp_items(self) -> None:
+        """Clear the in-memory temporary item store (call at segment boundary)."""
+        with self._lock:
+            self._temp_items.clear()
+
+    def get_temp_items(self) -> dict:
+        """Return all in-memory temporary items (read-only copy)."""
+        with self._lock:
+            return dict(self._temp_items)
 
     def check_continuity(self, segment_assets: dict) -> bool:
         return self._story.check_continuity(segment_assets, self._project)

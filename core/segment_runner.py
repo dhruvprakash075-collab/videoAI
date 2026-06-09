@@ -745,7 +745,20 @@ def make_process_segment(
         _visual_style = config.get("visual", {}).get("style", "")
         from utils.scene_director import enrich_prompts
 
-        enrich_result = enrich_prompts(build_prompts(script, plan, config), script, config, plan)
+        _memory_items_for_image = []
+        try:
+            _mem_data = mem.read()
+            for _sk in ("project", "story"):
+                _items = _mem_data.get("memory_items", {}).get(_sk, [])
+                if isinstance(_items, list):
+                    _memory_items_for_image.extend(_items)
+        except Exception:
+            pass
+
+        enrich_result = enrich_prompts(
+            build_prompts(script, plan, config), script, config, plan,
+            memory_items=_memory_items_for_image,
+        )
 
         enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
         seg_config = dict(config)
@@ -809,9 +822,108 @@ def make_process_segment(
 
         return {"mp4_path": str(mp4_path)}
 
+    # ── Identity-critical image trigger detection ──────────────────────────
+    _OUTFIT_KEYWORDS = {
+        "outfit", "gown", "robe", "armor", "cloak", "uniform", "dress",
+        "suit", "costume", "garment",
+    }
+    _JEWELRY_KEYWORDS = {
+        "necklace", "ring", "earring", "bracelet", "crown", "tiara",
+        "amulet", "pendant", "brooch", "gem", "jewel",
+    }
+    _WEAPON_KEYWORDS = {
+        "sword", "dagger", "bow", "arrow", "spear", "axe", "shield",
+        "staff", "wand", "blade", "mace", "scythe",
+    }
+    _CLOSEUP_TOKENS = {"close-up", "closeup", "portrait", "medium close-up"}
+    _INTRO_TOKENS = {"wearing", "introducing", "reveals", "new", "emerges", "appears"}
+
+    def _perceptual_hash(image_path: str | Path, hash_size: int = 8) -> str:
+        """Compute a perceptual difference hash (dhash) for an image.
+
+        Returns a hex string of length ``hash_size * hash_size // 4``.
+        Similar images produce similar hashes; a Hamming-distance
+        threshold of 10—14 is typical for ``hash_size=8``.
+        """
+        try:
+            from PIL import Image
+            with Image.open(str(image_path)) as img:
+                grey = img.convert("L")
+                resized = grey.resize((hash_size + 1, hash_size), Image.LANCZOS)
+            bits = []
+            for row in range(hash_size):
+                for col in range(hash_size):
+                    left = resized.getpixel((col, row))
+                    right = resized.getpixel((col + 1, row))
+                    bits.append(1 if left < right else 0)
+            # Pack into hex
+            hex_hash = ""
+            for i in range(0, len(bits), 4):
+                nibble = 0
+                for j in range(4):
+                    if i + j < len(bits):
+                        nibble |= bits[i + j] << (3 - j)
+                hex_hash += format(nibble, "x")
+            return hex_hash
+        except Exception:
+            return ""
+
+    def _detect_important_trigger(
+        idx: int,
+        frame_cp: dict,
+        prompt: str,
+        script: str,
+    ) -> tuple[bool, str]:
+        """Return (is_important, trigger_reason) for the given frame."""
+        weights = list(frame_cp.values())
+        max_w = max(weights) if weights else 0.0
+        prompt_lower = prompt.lower()
+
+        # Frame 0 is always a character sheet / establishing identity
+        if idx == 0:
+            return True, "character_sheet"
+
+        # Multi-character key frame (two+ characters with significant presence)
+        significant = sum(1 for w in weights if w >= 0.3)
+        if significant >= 2:
+            return True, "multi_char_key_frame"
+
+        # Major close-up / face reference
+        if max_w >= 0.8:
+            return True, "face_reference"
+
+        # Full-body reference (medium shot with identity description)
+        full_body_hint = any(tok in prompt_lower for tok in _CLOSEUP_TOKENS) and "full body" in prompt_lower
+        if full_body_hint and max_w >= 0.5:
+            return True, "full_body_reference"
+
+        # New outfit / garment detected in prompt
+        outfit_hit = any(tok in prompt_lower for tok in _OUTFIT_KEYWORDS)
+        intro_hit = any(tok in prompt_lower for tok in _INTRO_TOKENS)
+        if outfit_hit and intro_hit and max_w >= 0.5:
+            return True, "new_outfit"
+
+        # Jewelry detected in prompt
+        if any(tok in prompt_lower for tok in _JEWELRY_KEYWORDS) and max_w >= 0.3:
+            return True, "jewelry"
+
+        # Weapon detected in prompt
+        if any(tok in prompt_lower for tok in _WEAPON_KEYWORDS) and max_w >= 0.3:
+            return True, "weapon"
+
+        # Fallback: weight >= 0.5 (legacy heuristic)
+        if max_w >= 0.5:
+            return True, "high_importance_frame"
+
+        return False, ""
+
     class LocalGraphContext:
         def __init__(self):
             self.config = config
+            self.director_agent_instance = director_agent_instance
+            self.topic = topic
+            self.mem = mem
+            self.world_state = world_state
 
         def do_write_script(self, state):
             return write_script_node(state)
@@ -828,8 +940,158 @@ def make_process_segment(
         def do_image_gen(self, state):
             return image_node(state)
 
+        def do_important_image_review(self, state):
+            images = state.get("images", [])
+            plan = state["plan"]
+            script = state.get("script", "")
+
+            if not images:
+                return {}
+
+            from utils import build_prompts
+            from utils.scene_director import enrich_prompts
+
+            _mem_items = []
+            try:
+                _d = self.mem.read()
+                for _sk in ("project", "story"):
+                    _items = _d.get("memory_items", {}).get(_sk, [])
+                    if isinstance(_items, list):
+                        _mem_items.extend(_items)
+            except Exception:
+                pass
+
+            raw_prompts = build_prompts(script, plan, self.config)
+            enrich_result = enrich_prompts(raw_prompts, script, self.config, plan,
+                                           memory_items=_mem_items)
+            enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+
+            results = []
+            for idx, img_path in enumerate(images):
+                if idx >= len(enriched_prompts):
+                    break
+
+                prompt = enriched_prompts[idx]
+                cp = plan.get("char_presence", [])
+                frame_cp = cp[idx] if (isinstance(cp, list) and idx < len(cp)) else {}
+
+                is_important, _ = _detect_important_trigger(
+                    idx, frame_cp, prompt, script,
+                )
+
+                # Identity-hash change detection: if the dominant char's stored
+                # identity hash differs from the current frame, force a review.
+                if not is_important and frame_cp and self.mem._project is not None:
+                    try:
+                        dom_char = max(frame_cp, key=frame_cp.get)
+                        if frame_cp[dom_char] >= 0.3:
+                            stored = self.mem._project.get_character_assets(dom_char)
+                            stored_hash = (stored or {}).get("identity_hash", "")
+                            if stored_hash:
+                                current_hash = _perceptual_hash(img_path)
+                                if current_hash and current_hash != stored_hash:
+                                    is_important = True
+                    except Exception:
+                        pass
+
+                if is_important:
+                    try:
+                        decision_res = self.director_agent_instance.review_important_image(
+                            image_path=img_path,
+                            prompt=prompt,
+                            char_presence=frame_cp,
+                            project_id=self.topic
+                        )
+                    except Exception as e:
+                        err_str = str(e)
+                        if "vision" in err_str.lower() or "model" in err_str.lower():
+                            log.warning(f"[DIRECTOR] Vision model unavailable for {img_path}: {e} — auto-approving")
+                        else:
+                            log.warning(f"[DIRECTOR] Important image review failed for {img_path}: {e}")
+                        decision_res = {"decision": "approve", "reason": "review_failed", "locked": False}
+
+                    if frame_cp:
+                        dom_char = max(frame_cp, key=frame_cp.get)
+                        if frame_cp[dom_char] >= 0.3:
+                            try:
+                                if self.mem._project is None:
+                                    log.info("[DIRECTOR] One-time mode — skipping asset review (no project store)")
+                                else:
+                                    decision = decision_res.get("decision", "approve")
+                                    lora_meta = None
+                                    if decision == "lora_candidate":
+                                        lora_meta = {
+                                            "trigger_word": f"{dom_char}_v1",
+                                            "minimum_needed": 20,
+                                        }
+                                    _id_hash = _perceptual_hash(img_path) or None
+                                    self.mem._project.record_asset_review(
+                                        char_key=dom_char,
+                                        asset_path=img_path,
+                                        decision=decision,
+                                        reason=decision_res.get("reason", ""),
+                                        locked=decision_res.get("locked", False),
+                                        lora_metadata=lora_meta,
+                                        ip_adapter_ref=(decision == "ip_ref"),
+                                        negative_example=(decision == "reject"),
+                                        identity_hash=_id_hash,
+                                    )
+                            except Exception as e:
+                                log.warning(f"[DIRECTOR] Failed to record asset review: {e}")
+
+                    results.append({"image": img_path, "decision": decision_res})
+
+            return {"important_image_reviews": results}
+
         def do_render(self, state):
             return render_node(state)
+
+        def do_memory_review(self, state):
+            script = state.get("script", "")
+            plan = state["plan"]
+            images = state.get("images", [])
+
+            from utils import build_prompts
+            from utils.scene_director import enrich_prompts
+            _mem_items = []
+            try:
+                _d = self.mem.read()
+                for _sk in ("project", "story"):
+                    _items = _d.get("memory_items", {}).get(_sk, [])
+                    if isinstance(_items, list):
+                        _mem_items.extend(_items)
+            except Exception:
+                pass
+            raw_prompts = build_prompts(script, plan, self.config)
+            enrich_result = enrich_prompts(raw_prompts, script, self.config, plan,
+                                           memory_items=_mem_items)
+            enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+
+            current_mem = self.mem.read()
+            ws_block = self.world_state.to_prompt_block()
+
+            try:
+                review_result = self.director_agent_instance.review_segment_memory(
+                    segment_script=script,
+                    image_plan=plan,
+                    generated_prompts=enriched_prompts,
+                    current_memory=current_mem,
+                    world_state=ws_block,
+                    generated_images=images
+                )
+            except Exception as e:
+                log.warning(f"[DIRECTOR] Segment memory review failed for seg {state['i']}: {e}")
+                review_result = {"memory_items": []}
+
+            memory_items = review_result.get("memory_items", [])
+            for item in memory_items:
+                try:
+                    self.mem.save_memory_item(item)
+                except Exception as e:
+                    log.warning(f"[DIRECTOR] Failed to persist memory item: {e}")
+
+            return {"memory_items": memory_items}
+
 
     builder = SegmentGraphBuilder(LocalGraphContext())
     graph = builder.build()
@@ -863,6 +1125,47 @@ def make_process_segment(
                 from memory import build_context
 
                 context = f"{ws_block}\n{build_context(mem.load(topic))}"
+
+            # Inject persistent memory_items (from previous segments) into context
+            try:
+                mem_data = mem.read()
+                all_items = []
+                for scope_key in ("project", "story"):
+                    items = mem_data.get("memory_items", {}).get(scope_key, [])
+                    if isinstance(items, list):
+                        all_items.extend(items)
+
+                if all_items:
+                    plan_cp = plan.get("char_presence", [])
+                    chars_in_segment = set()
+                    for frame_cp in (plan_cp if isinstance(plan_cp, list) else [plan_cp]):
+                        if isinstance(frame_cp, dict):
+                            for cname in frame_cp:
+                                chars_in_segment.add(cname.lower().replace(" ", "_"))
+
+                    blocks = []
+                    for item in all_items:
+                        owner = (item.get("owner") or "").lower().replace(" ", "_")
+                        if owner and owner not in chars_in_segment:
+                            continue
+                        importance = item.get("importance", "medium")
+                        name = item.get("name", "")
+                        desc = item.get("description", "")
+                        lines = [f"- {name} ({importance}): {desc}"]
+                        for rule in item.get("visual_rules", []):
+                            lines.append(f"  Visual: {rule}")
+                        for rule in item.get("negative_rules", []):
+                            lines.append(f"  Avoid: {rule}")
+                        blocks.append("\n".join(lines))
+
+                    if blocks:
+                        context += (
+                            "\n\n[Character Memory]\n"
+                            + "\n---\n".join(blocks)
+                            + "\n[/Character Memory]\n"
+                        )
+            except Exception as e:
+                log.warning(f"[DIRECTOR] Failed to inject memory items into context: {e}")
 
             initial_state = {
                 "i": i,

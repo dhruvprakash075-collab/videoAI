@@ -49,16 +49,16 @@ describe('ControlPanel', () => {
     await flush();
     expect(screen.getByText('System Config')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /General/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Comfy UI Advance/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Comfy UI/i })).toBeInTheDocument();
     expect(screen.getByText('Voice Engine')).toBeInTheDocument();
     expect(screen.getByText('Visual Generation')).toBeInTheDocument();
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
   });
 
-  it('opens the separate Comfy UI Advance settings menu', async () => {
+  it('opens the separate Comfy UI settings menu', async () => {
     const user = userEvent.setup();
     render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    await user.click(screen.getByRole('button', { name: /Comfy UI/i }));
     expect(screen.getByText('Runtime Paths')).toBeInTheDocument();
     expect(screen.getByLabelText(/Server URL/i)).toHaveValue('http://127.0.0.1:8188');
     expect(screen.getByLabelText(/Workflow JSON/i)).toHaveValue('config/comfyui/workflows/text_to_image_api.json');
@@ -116,7 +116,7 @@ describe('ControlPanel', () => {
     });
   });
 
-  it('loads Comfy UI Advance values from /api/config without changing the visible general menu', async () => {
+  it('loads Comfy UI values from /api/config without changing the visible general menu', async () => {
     const user = userEvent.setup();
     mockGetFetch({
       imageBackend: 'bonsai',
@@ -129,7 +129,7 @@ describe('ControlPanel', () => {
     });
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => expect(screen.getByText('Voice Engine')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    await user.click(screen.getByRole('button', { name: /Comfy UI/i }));
     expect(screen.getByLabelText(/Server URL/i)).toHaveValue('http://127.0.0.1:9000');
     expect(screen.getByLabelText(/Checkpoint/i)).toHaveValue('custom.safetensors');
     expect(screen.getByLabelText(/Width/i)).toHaveValue(768);
@@ -202,11 +202,11 @@ describe('ControlPanel', () => {
     });
   });
 
-  it('POSTs Comfy UI Advance values when saving settings', async () => {
+  it('POSTs Comfy UI values when saving settings', async () => {
     const user = userEvent.setup();
     const fetchMock = mockSaveFetch({ saveResult: { status: 'success' } });
     render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Comfy UI Advance/i }));
+    await user.click(screen.getByRole('button', { name: /Comfy UI/i }));
     await user.clear(screen.getByLabelText(/Server URL/i));
     await user.type(screen.getByLabelText(/Server URL/i), 'http://127.0.0.1:9001');
     await user.clear(screen.getByLabelText(/Checkpoint/i));
