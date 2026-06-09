@@ -15,6 +15,7 @@ else:
     CREATE_NEW_PROCESS_GROUP = 0
     CTRL_BREAK_EVENT = signal.SIGINT
 
+from config import _safe_filename
 from jobs.job_store import (
     STATUS_CANCEL_REQUESTED,
     STATUS_CANCELED,
@@ -221,8 +222,9 @@ class Worker:
                 self.store.append_event(job_id, f"process_exited: {rc}", event_type="system")
                 # Try to capture output artifacts
                 try:
-                    topic = j.get("topic") or "unknown"
-                    output_root = REPO_ROOT / "studio_outputs" / topic
+                    topic_raw = j.get("topic") or "unknown"
+                    topic_slug = _safe_filename(topic_raw)
+                    output_root = REPO_ROOT / "studio_outputs" / topic_slug
                     if output_root.exists():
                         # Find latest video
                         videos = list(output_root.glob("*.mp4"))
@@ -231,8 +233,8 @@ class Worker:
                             self.store.update_job(job_id, output_path=str(latest_video))
                             self.store.add_artifact(job_id, "output_video", str(latest_video))
                             self.store.append_event(job_id, f"output_video: {latest_video.name}", event_type="artifact")
-                        # Capture manifest if present
-                        manifest = output_root / "manifest.json"
+                        # Capture manifest if present (pipeline writes run_manifest.json)
+                        manifest = output_root / "run_manifest.json"
                         if manifest.exists():
                             self.store.add_artifact(job_id, "manifest", str(manifest))
                 except Exception as exc:

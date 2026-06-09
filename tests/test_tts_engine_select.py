@@ -142,3 +142,129 @@ def test_tts_generate_f5_and_omni_failure_falls_back_to_edge(monkeypatch, tmp_pa
     result = ap.tts_generate("Hello world", output_dir=tmp_path)
     assert edge_called, "edge fallback was not called"
     assert result["wav_path"] == edge_wav
+
+
+# ---------------------------------------------------------------------------
+# IndicF5 normalization
+# ---------------------------------------------------------------------------
+
+
+def test_indicf5_aliases_normalize_to_indicf5():
+    from audio.audio_proxy import normalize_tts_engine
+
+    for alias in ("indicf5", "indic-f5", "ai4bharat-indicf5", "hindi-f5", "IndicF5"):
+        assert normalize_tts_engine(alias) == "indicf5", f"Expected 'indicf5' for alias {alias!r}"
+
+
+def test_indicf5_aliases_in_raw_engine_check(monkeypatch):
+    """Verify _INDICF5_ALIASES is in the raw engine check set."""
+    from audio import audio_proxy
+
+    assert "indicf5" in (
+        audio_proxy._SUPERTONIC_ALIASES
+        | audio_proxy._F5_ALIASES
+        | audio_proxy._OMNIVOICE_ALIASES
+        | audio_proxy._EDGE_ALIASES
+        | audio_proxy._INDICF5_ALIASES
+    )
+
+
+# ---------------------------------------------------------------------------
+# IndicF5 dispatch
+# ---------------------------------------------------------------------------
+
+
+def test_tts_generate_calls_indicf5_when_engine_is_indicf5(monkeypatch, tmp_path):
+    """When engine='indicf5', tts_generate should call _call_indicf5_worker."""
+    import audio.audio_proxy as ap
+
+    called = []
+    fake_wav = tmp_path / "out.wav"
+    fake_wav.write_bytes(b"RIFF")
+
+    def _fake_indicf5(text, lang="hi", output_dir=None, voice_sample="", speed_override=None):
+        called.append("indicf5")
+        return {"status": "success", "wav_path": str(fake_wav)}
+
+    monkeypatch.setattr(ap, "_call_indicf5_worker", _fake_indicf5)
+    monkeypatch.setattr(
+        ap,
+        "_get_config",
+        lambda: {
+            "tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}, "edge": {}, "indicf5": {}},
+        },
+    )
+
+    result = ap.tts_generate("नमस्ते", output_dir=tmp_path)
+    assert "indicf5" in called
+    assert result["wav_path"] == fake_wav
+
+
+def test_tts_generate_indicf5_failure_falls_back_to_supertonic(monkeypatch, tmp_path):
+    """When IndicF5 fails, tts_generate should fall back to supertonic."""
+    import audio.audio_proxy as ap
+
+    fallback_wav = tmp_path / "super.wav"
+    fallback_wav.write_bytes(b"RIFF")
+
+    monkeypatch.setattr(
+        ap, "_call_indicf5_worker", lambda *a, **kw: {"status": "error", "message": "IndicF5 not available"}
+    )
+
+    super_called = []
+
+    def _fake_super(text, lang="hi", output_dir=None, speed_override=None):
+        super_called.append(True)
+        return {"status": "success", "wav_path": str(fallback_wav)}
+
+    monkeypatch.setattr(ap, "_call_supertonic_worker", _fake_super)
+    monkeypatch.setattr(
+        ap,
+        "_get_config",
+        lambda: {
+            "tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}, "edge": {}, "indicf5": {}},
+        },
+    )
+
+    result = ap.tts_generate("नमस्ते", output_dir=tmp_path)
+    assert super_called, "supertonic fallback was not called"
+    assert result["wav_path"] == fallback_wav
+
+
+def test_tts_generate_indicf5_all_fallbacks(monkeypatch, tmp_path):
+    """IndicF5 → supertonic → omnivoice → edge fallback chain."""
+    import audio.audio_proxy as ap
+
+    edge_wav = tmp_path / "edge.wav"
+    edge_wav.write_bytes(b"RIFF")
+
+    def _fake_indicf5(*a, **kw):
+        return {"status": "error", "message": "IndicF5 failed"}
+
+    def _fake_super(*a, **kw):
+        return {"status": "error", "message": "super failed"}
+
+    def _fake_omni(*a, **kw):
+        return {"status": "error", "message": "omni failed"}
+
+    edge_called = []
+
+    def _fake_edge(text, lang="hi", output_dir=None, voice_profile=None, speed=None):
+        edge_called.append(True)
+        return {"status": "success", "wav_path": str(edge_wav)}
+
+    monkeypatch.setattr(ap, "_call_indicf5_worker", _fake_indicf5)
+    monkeypatch.setattr(ap, "_call_supertonic_worker", _fake_super)
+    monkeypatch.setattr(ap, "_call_omnivoice_worker", _fake_omni)
+    monkeypatch.setattr(ap, "_call_edge_direct", _fake_edge)
+    monkeypatch.setattr(
+        ap,
+        "_get_config",
+        lambda: {
+            "tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}, "edge": {}, "indicf5": {}},
+        },
+    )
+
+    result = ap.tts_generate("नमस्ते", output_dir=tmp_path)
+    assert edge_called, "edge fallback was not called"
+    assert result["wav_path"] == edge_wav

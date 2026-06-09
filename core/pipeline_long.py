@@ -558,12 +558,14 @@ def run_long_pipeline(
         try:
             from audio.audio_proxy import (
                 shutdown_f5_worker,
+                shutdown_indicf5_worker,
                 shutdown_omnivoice_worker,
                 shutdown_supertonic_worker,
             )
             shutdown_supertonic_worker()
             shutdown_omnivoice_worker()
             shutdown_f5_worker()
+            shutdown_indicf5_worker()
         except Exception as _sw_err:
             log.debug(f"TTS worker shutdown error: {_sw_err}")
 

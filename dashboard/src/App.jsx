@@ -7,6 +7,13 @@ import ABPlayground from './components/ABPlayground.jsx';
 import StatusTracker from './components/StatusTracker.jsx';
 import ConsultationModal from './components/ConsultationModal.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
+import JobList from './components/JobList.jsx';
+import AssistantPanel from './components/AssistantPanel.jsx';
+import CreateJobPanel from './components/CreateJobPanel.jsx';
+import ArtifactsPanel from './components/ArtifactsPanel.jsx';
+import PreflightPanel from './components/PreflightPanel.jsx';
+import MemoryPanel from './components/MemoryPanel.jsx';
+import CharactersPanel from './components/CharactersPanel.jsx';
 import useStatusPolling from './hooks/useStatusPolling.js';
 import useScriptUpload from './hooks/useScriptUpload.js';
 import { apiSend } from './lib/api.js';
@@ -26,6 +33,10 @@ export default function App() {
   };
 
   const showConsultation = status.state === 'paused' && Boolean(status.active_question);
+
+  const handleCreateJobQueued = () => {
+    setActiveTab('jobs');
+  };
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0c] text-zinc-100 overflow-hidden font-sans selection:bg-zinc-800">
@@ -49,6 +60,13 @@ export default function App() {
           )}
           {activeTab === 'voices' && <VoiceManager />}
           {activeTab === 'ab-testing' && <ABPlayground />}
+          {activeTab === 'jobs' && <JobList />}
+          {activeTab === 'assistant' && <AssistantPanel status={status} />}
+          {activeTab === 'create-job' && <CreateJobPanel onJobQueued={handleCreateJobQueued} />}
+          {activeTab === 'artifacts' && <ArtifactsPanel />}
+          {activeTab === 'preflight' && <PreflightPanel />}
+          {activeTab === 'memory' && <MemoryPanel />}
+          {activeTab === 'characters' && <CharactersPanel />}
         </main>
 
         <div className="absolute bottom-6 right-8 w-96">

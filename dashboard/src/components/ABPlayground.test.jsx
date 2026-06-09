@@ -29,10 +29,11 @@ describe('ABPlayground', () => {
 
   it('renders two prompt textareas with default values', () => {
     render(<ABPlayground />);
-    const textareas = screen.getAllByRole('textbox');
-    expect(textareas).toHaveLength(2);
-    expect(textareas[0].value).toMatch(/futuristic city/i);
-    expect(textareas[1].value).toMatch(/raining/i);
+    // topic input + 2 prompt textareas = 3 textboxes
+    const textboxes = screen.getAllByRole('textbox');
+    expect(textboxes).toHaveLength(3);
+    expect(textboxes[1].value).toMatch(/futuristic city/i);
+    expect(textboxes[2].value).toMatch(/raining/i);
   });
 
   it('calls start with the prompts when the run button is clicked', async () => {
@@ -40,7 +41,7 @@ describe('ABPlayground', () => {
     const user = userEvent.setup();
     render(<ABPlayground />);
     await user.click(screen.getByRole('button', { name: /Run A\/B Comparison/i }));
-    expect(start).toHaveBeenCalledWith(1, expect.stringMatching(/futuristic/), expect.stringMatching(/raining/));
+    expect(start).toHaveBeenCalledWith(1, expect.stringMatching(/futuristic/), expect.stringMatching(/raining/), undefined);
   });
 
   it('disables the run button while running', () => {

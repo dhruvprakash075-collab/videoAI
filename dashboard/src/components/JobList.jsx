@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import JobDetail from './JobDetail.jsx';
 import { apiGet } from '../lib/api.js';
+import { AlertTriangle } from 'lucide-react';
 
 export default function JobList() {
   const [jobs, setJobs] = useState([]);
@@ -24,9 +25,20 @@ export default function JobList() {
     };
   }, []);
 
+  const hasQueuedJobs = jobs.some((j) => j.status === 'queued');
+  const hasRunningJobs = jobs.some((j) => j.status === 'running');
+
   return (
     <div className="text-zinc-100">
       <h2 className="text-xl mb-4">Jobs</h2>
+
+      {hasQueuedJobs && !hasRunningJobs && (
+        <div className="flex items-center gap-2 p-3 mb-4 rounded-lg bg-amber-950/20 border border-amber-900/30 text-amber-400 text-sm">
+          <AlertTriangle size={14} />
+          Jobs are queued but no worker appears to be running. Start the worker via launch_studio.bat.
+        </div>
+      )}
+
       <div className="grid gap-2">
         {jobs.length === 0 && <div className="text-zinc-400">No jobs yet</div>}
         {jobs.map((j) => (

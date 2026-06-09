@@ -8,6 +8,7 @@ export default function useABJob() {
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState('idle');
   const [images, setImages] = useState({ a: [], b: [] });
+  const [lastPickResult, setLastPickResult] = useState(null);
   const pollRef = useRef(null);
 
   const stopPolling = useCallback(() => {
@@ -31,12 +32,13 @@ export default function useABJob() {
     }, POLL_INTERVAL_MS);
   }, [stopPolling]);
 
-  const start = useCallback(async (segmentNum, promptA, promptB) => {
+  const start = useCallback(async (segmentNum, promptA, promptB, topic) => {
     setStatus('starting');
     const formData = new FormData();
     formData.append('segment_num', segmentNum);
     formData.append('prompt_a', promptA);
     formData.append('prompt_b', promptB);
+    if (topic) formData.append('topic', topic);
     try {
       const res = await apiSend('/api/ab/generate', formData);
       const data = res.ok ? await res.json() : null;
@@ -59,7 +61,8 @@ export default function useABJob() {
     formData.append('choice', choice);
     formData.append('segment_num', segmentNum);
     try {
-      await apiSend('/api/ab/pick', formData);
+      const res = await apiSend('/api/ab/pick', formData);
+      setLastPickResult(res.ok ? await res.json() : { error: 'pick failed' });
       setStatus('idle');
       setJobId(null);
       setImages({ a: [], b: [] });
@@ -68,5 +71,5 @@ export default function useABJob() {
 
   useEffect(() => stopPolling, [stopPolling]);
 
-  return { status, images, jobId, start, pick };
+  return { status, images, jobId, lastPickResult, start, pick };
 }

@@ -10,16 +10,15 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     skip_smoke = pytest.mark.skip(reason="need --run-smoke option to run")
     for item in items:
-        if "smoke" in item.keywords:
-            if not config.getoption("--run-smoke", default=False):
-                item.add_marker(skip_smoke)
+        if "smoke" in item.keywords and not config.getoption("--run-smoke", default=False):
+            item.add_marker(skip_smoke)
 
 
 @pytest.mark.smoke
 def test_comfyui_runtime_is_running():
     """Check if ComfyUI server is accessible."""
-    from video.image_gen.comfyui_runtime import ComfyUIRuntime
     from config.config import load_config
+    from video.image_gen.comfyui_runtime import ComfyUIRuntime
 
     config = load_config()
     runtime = ComfyUIRuntime(config)
@@ -33,10 +32,11 @@ def test_comfyui_runtime_is_running():
 @pytest.mark.smoke
 def test_comfyui_generate_image():
     """Smoke test - generate real image through ComfyUI."""
-    from pathlib import Path
     import tempfile
-    from video.image_gen.image_gen import generate_images
+    from pathlib import Path
+
     from config.config import load_config
+    from video.image_gen.image_gen import generate_images
 
     config = load_config()
 
@@ -53,8 +53,7 @@ def test_comfyui_generate_image():
         assert result[0].exists()
         assert result[0].suffix == ".png"
 
-        import os
-        size = os.path.getsize(result[0])
+        size = result[0].stat().st_size
         assert size > 1000, f"Image too small: {size} bytes"
 
         print(f"Generated: {result[0]} ({size} bytes)")

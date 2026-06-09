@@ -41,6 +41,9 @@ class SegmentState(TypedDict, total=False):
     # Render Node
     mp4_path: str
 
+    # Memory Review
+    memory_items: list[dict]
+
     # Control signals
     aborted: bool
     skip: bool
@@ -77,10 +80,20 @@ class SegmentGraphBuilder:
             return {}
         return self.ctx.do_image_gen(state)
 
+    def important_image_review_node(self, state: SegmentState) -> dict:
+        if state.get("aborted") or state.get("skip"):
+            return {}
+        return self.ctx.do_important_image_review(state)
+
     def render_node(self, state: SegmentState) -> dict:
         if state.get("aborted") or state.get("skip"):
             return {}
         return self.ctx.do_render(state)
+
+    def memory_review_node(self, state: SegmentState) -> dict:
+        if state.get("aborted") or state.get("skip"):
+            return {}
+        return self.ctx.do_memory_review(state)
 
     def route_after_critic(self, state: SegmentState) -> str:
         if state.get("aborted") or state.get("skip"):
@@ -108,7 +121,9 @@ class SegmentGraphBuilder:
         builder.add_node("translate_node", self.translate_node)
         builder.add_node("tts_node", self.tts_node)
         builder.add_node("image_node", self.image_node)
+        builder.add_node("important_image_review_node", self.important_image_review_node)
         builder.add_node("render_node", self.render_node)
+        builder.add_node("memory_review_node", self.memory_review_node)
 
         builder.set_entry_point("write_script_node")
 
@@ -125,7 +140,9 @@ class SegmentGraphBuilder:
         builder.add_edge("write_script_node", "critic_node")
         builder.add_edge("translate_node", "tts_node")
         builder.add_edge("tts_node", "image_node")
-        builder.add_edge("image_node", "render_node")
-        builder.add_edge("render_node", END)
+        builder.add_edge("image_node", "important_image_review_node")
+        builder.add_edge("important_image_review_node", "render_node")
+        builder.add_edge("render_node", "memory_review_node")
+        builder.add_edge("memory_review_node", END)
 
         return builder.compile()

@@ -66,6 +66,8 @@ Desktop.ini
 # ── Scratch / temp files ──────────────────────────────────────────
 _*.png
 _*.ps1
+jobs/_temp_*
+jobs/*.tmp
 *.tmp
 *.bak
 codex_tmp/

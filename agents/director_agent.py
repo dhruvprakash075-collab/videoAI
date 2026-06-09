@@ -545,6 +545,140 @@ class DirectorAgent:
 
             cls._prompts = {}
 
+    def review_important_image(
+        self, image_path: str, prompt: str, char_presence: dict | None, project_id: str
+    ) -> dict:
+        """Review an identity-critical image and decide how to store it.
+
+        Reads the image file and passes it as base64 to a vision-capable model
+        if available, otherwise falls back to text-only analysis with metadata.
+        """
+        log.info(f"[DIRECTOR] Reviewing important image: {image_path}")
+
+        import base64
+        from pathlib import Path
+
+        img_file = Path(image_path)
+        if not img_file.exists():
+            log.warning(f"[DIRECTOR] Image not found: {image_path} — auto-approving")
+            return {"decision": "approve", "reason": "file_not_found", "locked": False}
+
+        try:
+            from PIL import Image as _PILImage
+            with _PILImage.open(img_file) as pil_img:
+                width, height = pil_img.size
+                fmt = pil_img.format or "PNG"
+        except Exception:
+            width, height, fmt = 0, 0, "unknown"
+
+        try:
+            image_b64 = base64.b64encode(img_file.read_bytes()).decode("utf-8")
+        except Exception as e:
+            log.warning(f"[DIRECTOR] Could not read image for vision: {e}")
+            image_b64 = ""
+
+        # Try vision-capable chat endpoint first
+        if image_b64 and self._is_vision_model():
+            try:
+                return self._review_with_vision(image_b64, prompt, char_presence, width, height, fmt)
+            except Exception as e:
+                log.warning(f"[DIRECTOR] Vision review failed ({e}) — falling back to text")
+                return {"decision": "approve", "reason": f"vision_fallback: {e}", "locked": False}
+
+        # Text-only fallback with image metadata
+        meta = f"File: {img_file.name}, Format: {fmt}, Size: {width}x{height}"
+        if char_presence:
+            dom_char = max(char_presence, key=char_presence.get)
+            meta += f", Dominant char: {dom_char}"
+        prompt_text = (
+            f"You are the Creative Director. Review this image for character consistency.\n"
+            f"Image: {meta}\n"
+            f"Generated Text Prompt: {prompt}\n"
+            f"Characters Present: {char_presence}\n"
+            f"Project: {project_id}\n\n"
+            f"Decide if this asset should be: approved, rejected, stored as LoRA candidate, "
+            f"or used as an IP-Adapter reference. Return JSON: "
+            f'{{"decision": "approve|reject|lora_candidate|ip_ref", "reason": "...", "locked": bool}}'
+        )
+        res = self._call_ollama(prompt_text, format_json=True)
+        return self._parse_json(res, {"decision": "approve", "reason": "Auto-approved (text fallback)", "locked": False})
+
+    def _is_vision_model(self) -> bool:
+        """Check if the director model supports vision (based on model name heuristic)."""
+        model = self._resolve_model("director").lower()
+        vision_indicators = ("llava", "bakllava", "minicpm", "cogvlm", "internvl", "qwen2-vl", "gpt-4o", "gpt-4-vision", "gemini", "claude")
+        return any(ind in model for ind in vision_indicators)
+
+    def _review_with_vision(
+        self, image_b64: str, prompt: str, char_presence: dict | None,
+        width: int, height: int, fmt: str
+    ) -> dict:
+        """Call the Ollama chat API with an embedded base64 image."""
+        import json
+        import urllib.request as _ur
+        host, timeout, _ = self.llm._ollama_opts()
+        model = self._resolve_model("director")
+        url = f"{host}/api/chat"
+        payload = json.dumps({
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Review this character image ({width}x{height}, {fmt}) for visual consistency.\n"
+                        f"Generated Prompt: {prompt}\n"
+                        f"Characters Present: {char_presence}\n"
+                        f"Decide: approve, reject, lora_candidate (perfect face/body reference), "
+                        f"or ip_ref (useful for IP-Adapter). "
+                        f"Set locked=true if this outfit/identity must never change.\n"
+                        f"Return JSON: {{\"decision\": \"...\", \"reason\": \"...\", \"locked\": bool}}"
+                    ),
+                    "images": [image_b64],
+                }
+            ],
+            "stream": False,
+            "options": {"temperature": 0.2},
+        }).encode()
+        req = _ur.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with _ur.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode())
+        raw = body.get("message", {}).get("content", "")
+        return self._parse_json(raw, {"decision": "approve", "reason": "vision_reviewed", "locked": False})
+
+    def review_segment_memory(
+        self,
+        segment_script: str,
+        image_plan: dict,
+        generated_prompts: list[str],
+        current_memory: dict,
+        world_state: str,
+        generated_images: list[str] | None = None
+    ) -> dict:
+        """Review the segment and extract long-term memory items."""
+        log.info("[DIRECTOR] Performing segment memory review...")
+
+        images_block = ""
+        if generated_images:
+            images_block = "\nGenerated Images:\n" + "\n".join(f"  - {p}" for p in generated_images) + "\n"
+
+        prompt_text = (
+            f"You are the Creative Director. Analyze the segment to extract important visual and story memory.\n"
+            f"Segment Script: {segment_script}\n"
+            f"Image Plan: {image_plan}\n"
+            f"Generated Prompts: {generated_prompts}\n"
+            f"{images_block}"
+            f"Current Memory: {current_memory}\n"
+            f"World State: {world_state}\n\n"
+            f"Identify important faces, outfits, jewelry, weapons, lore objects, locations, and story-impacting details.\n"
+            f"Return a JSON object with 'memory_items' list. Each item must have:\n"
+            f"{{'type': 'costume|face_reference|weapon|jewelry|lore_object|location|symbol_motif|relationship|timeline_change|negative_memory|character_identity|temporary_scene_detail',\n"
+            f" 'name': '...', 'owner': '...', 'importance': 'core|high|medium', 'scope': 'project|story',\n"
+            f" 'description': '...', 'visual_rules': [], 'negative_rules': [], 'lora_candidate': bool, 'reason': '...'}}"
+        )
+
+        res = self._call_ollama(prompt_text, format_json=True)
+        return self._parse_json(res, {"memory_items": []})
+
     def _prompt(self, key: str, **kwargs) -> str:
         """Get a formatted prompt template by key."""
 
@@ -554,14 +688,11 @@ class DirectorAgent:
             return ""
 
         try:
-            # Escape user-controlled values to prevent attribute injection via format()
-
             safe_kwargs = {}
 
             for k, v in kwargs.items():
                 if isinstance(v, str):
                     safe_kwargs[k] = v.replace("{", "{{").replace("}", "}}")
-
                 else:
                     safe_kwargs[k] = v
 

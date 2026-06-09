@@ -1,10 +1,16 @@
-import { Settings, Play, Mic, Image as ImageIcon, Server } from 'lucide-react';
+import { Settings, Play, Mic, Image as ImageIcon, Server, MessageSquare, PlusSquare, ClipboardCheck, Archive, Users, BrainCircuit } from 'lucide-react';
 
 const TABS = [
   { id: 'preview',    label: 'Director Canvas', icon: Play },
   { id: 'voices',     label: 'Voice Studio',    icon: Mic },
   { id: 'ab-testing', label: 'A/B Testing',     icon: ImageIcon },
   { id: 'jobs',       label: 'Jobs',            icon: Server },
+  { id: 'assistant',  label: 'Assistant',       icon: MessageSquare },
+  { id: 'create-job', label: 'Create Job',      icon: PlusSquare },
+  { id: 'artifacts',  label: 'Artifacts',       icon: Archive },
+  { id: 'preflight',  label: 'Preflight',       icon: ClipboardCheck },
+  { id: 'memory',     label: 'Memory',          icon: BrainCircuit },
+  { id: 'characters', label: 'Characters',      icon: Users },
 ];
 
 function SidebarButton({ active, onClick, title, children }) {

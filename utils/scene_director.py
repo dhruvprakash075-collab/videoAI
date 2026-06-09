@@ -90,7 +90,8 @@ def get_dynamic_negative_prompt(mood: str, script: str, config: dict) -> str:
 
 
 def enrich_prompts(
-    raw_prompts: str, script: str, config: dict, plan: dict | None = None
+    raw_prompts: str, script: str, config: dict, plan: dict | None = None,
+    memory_items: list[dict] | None = None
 ) -> tuple[str, str]:
     """Add camera directions and visual style to raw image prompts.
 
@@ -149,6 +150,24 @@ def enrich_prompts(
         if name and name.lower() not in _STOP_WORDS and len(name) > 3:
             char_names.append(name)
     char_names.append("a figure")
+
+    # Build memory-enhanced identity tokens per character key
+    memory_identity_map: dict[str, str] = {}
+    if memory_items:
+        for item in memory_items:
+            owner = (item.get("owner") or "").lower().replace(" ", "_")
+            if not owner or owner not in chars:
+                continue
+            visual_rules = item.get("visual_rules", [])
+            desc_to_add = item.get("description", "")
+            if visual_rules:
+                desc_to_add += ", " + ", ".join(visual_rules)
+            if desc_to_add:
+                existing = memory_identity_map.get(owner, "")
+                if existing:
+                    memory_identity_map[owner] = existing + ", " + desc_to_add
+                else:
+                    memory_identity_map[owner] = desc_to_add
 
     enriched = []
     for i, prompt in enumerate(prompts):
@@ -220,11 +239,12 @@ def enrich_prompts(
                 for c_key, cw in sorted(cp.items(), key=lambda x: x[1], reverse=True):
                     if cw >= 0.3:
                         _cd = chars.get(c_key, {}).get("description", "")
+                        if _memory_extra := memory_identity_map.get(c_key):
+                            _cd = f"{_cd}, {_memory_extra}" if _cd else _memory_extra
                         if _cd:
                             _char_identities.append((_cd, cw))
 
                 if len(_char_identities) >= 2:
-                    # Multi-character interaction frame — use budget-shared assembler
                     _assembled = assemble_prompt_multi(
                         identity_list=_char_identities,
                         scene_tokens=f"{prompt}, {move}",
@@ -232,7 +252,6 @@ def enrich_prompts(
                         budget=_total_budget,
                     )
                 elif _char_identities:
-                    # Single character — use standard assembler
                     _assembled = assemble_prompt(
                         identity_tokens=_char_identities[0][0],
                         scene_tokens=f"{prompt}, {move}",
@@ -264,6 +283,8 @@ def enrich_prompts(
                 for c_key, cw in sorted(cp.items(), key=lambda x: x[1], reverse=True):
                     if cw >= 0.3:
                         _cd = chars.get(c_key, {}).get("description", "")
+                        if _memory_extra := memory_identity_map.get(c_key):
+                            _cd = f"{_cd}, {_memory_extra}" if _cd else _memory_extra
                         if _cd:
                             _char_identities.append((_cd, cw))
 

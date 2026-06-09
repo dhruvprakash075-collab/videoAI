@@ -185,6 +185,138 @@ def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
     return "fail", f"supertonic voice JSON not found: {p}"
 
 
+def _check_indicf5(config: dict) -> tuple[Status, str]:
+    """Verify IndicF5 environment and configuration are available."""
+    tts = config.get("tts", {})
+    if tts.get("engine") != "indicf5":
+        return "skip", "TTS engine is not indicf5"
+
+    indicf5 = tts.get("indicf5", {})
+    if not indicf5.get("enabled", False) and tts.get("engine") == "indicf5":
+        return "warn", "indicf5 engine selected but tts.indicf5.enabled is false"
+
+    python_path = indicf5.get("python", "")
+    if not python_path:
+        python_path = "indicf5_env/Scripts/python.exe"
+
+    p = Path(python_path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+
+    if not p.exists():
+        return "fail", (
+            f"IndicF5 python not found at {p}. Run scripts/setup_indicf5.ps1 to create "
+            "the indicf5 conda environment."
+        )
+
+    ref_audio = indicf5.get("ref_audio", "")
+    if ref_audio:
+        ref_p = Path(ref_audio)
+        if not ref_p.is_absolute():
+            ref_p = Path.cwd() / ref_p
+        if not ref_p.exists():
+            return "fail", f"IndicF5 ref_audio not found: {ref_p}"
+
+    ref_text = indicf5.get("ref_text", "")
+    if not ref_text:
+        return "warn", "IndicF5 ref_text not configured (will use reference audio without transcript)"
+
+    device = indicf5.get("device", "cuda")
+    if device == "cuda":
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return "warn", "IndicF5 configured for CUDA but no GPU available; will use CPU (slow)"
+            free_gb = torch.cuda.mem_get_info(0)[0] / (1024**3)
+            if free_gb < 5.0:
+                return "warn", f"IndicF5: only {free_gb:.1f} GB VRAM free; may OOM with ComfyUI"
+        except ImportError:
+            return "warn", "IndicF5: torch not available, will use CPU"
+
+    return "ok", f"IndicF5 environment ready: {p}"
+
+
+def _check_layered_v3(config: dict) -> tuple[Status, str]:
+    """Check layered_v3 prerequisites: ComfyUI, workflows, custom nodes, checkpoints."""
+    img = config.get("image_gen", {}) or {}
+    composition_mode = img.get("composition_mode", "one_pass")
+    if composition_mode != "layered_v3":
+        return "skip", f"composition_mode is '{composition_mode}', not layered_v3"
+
+    comfy_cfg = img.get("comfyui", {}) or {}
+    lv3 = img.get("layered_v3", {}) or {}
+    workflows = lv3.get("workflows", {}) or {}
+
+    errors: list[str] = []
+
+    # 1. ComfyUI must be reachable
+    host = comfy_cfg.get("host", "127.0.0.1")
+    port = comfy_cfg.get("port", 8188)
+    try:
+        import urllib.error
+        import urllib.request
+
+        url = f"http://{host}:{port}/system_stats"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            if resp.status >= 400:
+                errors.append(f"ComfyUI returned status {resp.status}")
+    except (urllib.error.URLError, TimeoutError):
+        errors.append(f"ComfyUI not reachable at http://{host}:{port}/")
+    except Exception as e:
+        errors.append(f"ComfyUI probe failed: {e}")
+
+    # 2. Workflow files must exist
+    workflow_names = {
+        "character_sheet": workflows.get("character_sheet", ""),
+        "background": workflows.get("background", ""),
+        "character_pose": workflows.get("character_pose", ""),
+        "composite_refine": workflows.get("composite_refine", ""),
+    }
+    for name, path in workflow_names.items():
+        if path and not Path(path).exists():
+            errors.append(f"workflow file not found [{name}]: {path}")
+
+    # 3. Required ComfyUI custom nodes must be installed
+    comfy_root = Path(comfy_cfg.get("root", "C:\\Video.AI\\external\\ComfyUI"))
+    custom_nodes_dir = comfy_root / "custom_nodes"
+    required_nodes = {
+        "IPAdapter Plus": custom_nodes_dir / "ComfyUI_IPAdapter_plus",
+        "Impact Pack": custom_nodes_dir / "ComfyUI-Impact-Pack",
+        "ControlNet Aux": custom_nodes_dir / "comfyui_controlnet_aux",
+    }
+    missing_nodes = [n for n, p in required_nodes.items() if not p.exists()]
+    if missing_nodes:
+        errors.append(
+            f"missing ComfyUI custom nodes: {', '.join(missing_nodes)}. "
+            f"See docs/layered_v3_setup.md for installation instructions."
+        )
+
+    # 4. Required models (IPAdapter plus checkpoint)
+    ipadapter_dir = comfy_root / "models" / "ipadapter"
+    required_models = {
+        "ip-adapter-plus_sd15.bin": ipadapter_dir / "ip-adapter-plus_sd15.bin",
+        "ip-adapter-plus-fullface_sd15.bin": ipadapter_dir / "ip-adapter-plus-fullface_sd15.bin",
+    }
+    missing_models = [n for n, p in required_models.items() if not p.exists()]
+    if missing_models:
+        errors.append(
+            f"missing IPAdapter models: {', '.join(missing_models)}. "
+            f"Place in: {ipadapter_dir}"
+        )
+
+    if errors:
+        fallback = lv3.get("fallback_mode", "")
+        if fallback == "one_pass":
+            return (
+                "warn",
+                f"layered_v3 preflight failed ({len(errors)} issues); will fall back to one_pass. Issues:\n"
+                + "\n".join(f"  - {e}" for e in errors),
+            )
+        return "fail", "layered_v3 preflight failed:\n" + "\n".join(f"  - {e}" for e in errors)
+
+    return "ok", "layered_v3 preflight passed (ComfyUI, workflows, nodes, models all present)"
+
+
 def _check_ffmpeg() -> tuple[Status, str]:
     """Verify ffmpeg is in PATH and reports a version."""
     ffmpeg = shutil.which("ffmpeg")
@@ -235,6 +367,8 @@ def run_preflight(
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
+        _timed(lambda: _check_indicf5(config), name="indicf5"),
+        _timed(lambda: _check_layered_v3(config), name="layered_v3"),
         _timed(_check_ffmpeg, name="ffmpeg"),
     ]
     for c in checks:

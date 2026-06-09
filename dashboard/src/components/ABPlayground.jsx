@@ -3,17 +3,26 @@ import { RefreshCw, Zap } from 'lucide-react';
 import VariantPanel from './VariantPanel.jsx';
 import useABJob from '../hooks/useABJob.js';
 
-const SEGMENT_NUM = 1;
 const DEFAULT_PROMPT_A = 'A futuristic city at night, neon lights, cinematic';
 const DEFAULT_PROMPT_B = 'A futuristic city at night, raining, highly detailed, photorealistic';
 
 export default function ABPlayground() {
   const [promptA, setPromptA] = useState(DEFAULT_PROMPT_A);
   const [promptB, setPromptB] = useState(DEFAULT_PROMPT_B);
+  const [topic, setTopic] = useState('');
+  const [segmentNum, setSegmentNum] = useState(1);
   const { status, images, start, pick } = useABJob();
 
   const isRunning = status === 'running' || status === 'starting';
   const hasResults = images.a.length > 0 || images.b.length > 0;
+
+  const handleStart = () => {
+    start(segmentNum, promptA, promptB, topic || undefined);
+  };
+
+  const handlePick = (choice) => {
+    pick(choice, segmentNum);
+  };
 
   return (
     <div className="max-w-6xl mx-auto h-full flex flex-col pt-8 animate-in fade-in duration-500">
@@ -23,6 +32,29 @@ export default function ABPlayground() {
       </header>
 
       <section className="bg-[#0f0f13] border border-zinc-800/50 rounded-3xl p-8 mb-8 shadow-2xl">
+        <div className="flex gap-4 mb-6">
+          <div className="flex-1">
+            <label className="block text-xs text-zinc-500 mb-1">Topic</label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="default_topic"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+          <div className="w-32">
+            <label className="block text-xs text-zinc-500 mb-1">Segment #</label>
+            <input
+              type="number"
+              min={1}
+              max={9999}
+              value={segmentNum}
+              onChange={(e) => setSegmentNum(parseInt(e.target.value) || 1)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-8">
           <PromptField
             label="Variant A"
@@ -40,7 +72,7 @@ export default function ABPlayground() {
         <div className="mt-8 flex justify-center">
           <button
             type="button"
-            onClick={() => start(SEGMENT_NUM, promptA, promptB)}
+            onClick={handleStart}
             disabled={isRunning}
             className="bg-white hover:bg-zinc-200 text-black font-medium px-8 py-3 rounded-full flex items-center gap-2 transition-colors disabled:opacity-50"
           >
@@ -52,8 +84,8 @@ export default function ABPlayground() {
 
       {hasResults && (
         <section className="flex-1 grid grid-cols-2 gap-8 pb-8 animate-in slide-in-from-bottom-8 duration-700">
-          <VariantPanel id="a" images={images.a} onCommit={(choice) => pick(choice, SEGMENT_NUM)} />
-          <VariantPanel id="b" images={images.b} onCommit={(choice) => pick(choice, SEGMENT_NUM)} />
+          <VariantPanel id="a" images={images.a} onCommit={() => handlePick('a')} />
+          <VariantPanel id="b" images={images.b} onCommit={() => handlePick('b')} />
         </section>
       )}
     </div>

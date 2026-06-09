@@ -15,13 +15,18 @@ export default function useStatusPolling() {
     let cancelled = false;
     const tick = async () => {
       try {
-        const data = await apiGet('/api/status');
+        const [statusData, jobsData] = await Promise.all([
+          apiGet('/api/status'),
+          apiGet('/api/jobs?limit=1'),
+        ]);
         if (cancelled) return;
+        const job = (jobsData.jobs || [])[0];
         setStatus({
-          state: data.status,
-          logs: data.logs,
-          video: data.output_video,
-          active_question: data.active_question,
+          state: statusData.status,
+          logs: statusData.logs,
+          video: statusData.output_video,
+          active_question: statusData.active_question,
+          latestJob: job ? `#${job.id} ${job.topic || ''} — ${job.status}` : null,
         });
       } catch {
         // swallow — dashboard keeps last known state on transient failure

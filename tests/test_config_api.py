@@ -1,6 +1,5 @@
 """Tests for dashboard config API (ComfyUI settings load/save)."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,6 +37,7 @@ class TestConfigAPI:
     def test_get_config_returns_comfyui_settings(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):
             from fastapi.testclient import TestClient
+
             from utils.local_ui import app
 
             client = TestClient(app)
@@ -59,6 +59,7 @@ class TestConfigAPI:
         mock_load_config.return_value = mock_config.copy()
 
         from fastapi.testclient import TestClient
+
         from utils.local_ui import app
 
         client = TestClient(app)
@@ -84,6 +85,7 @@ class TestConfigAPI:
         mock_load_config.return_value = mock_config.copy()
 
         from fastapi.testclient import TestClient
+
         from utils.local_ui import app
 
         client = TestClient(app)
@@ -125,6 +127,7 @@ class TestConfigAPI:
     def test_save_config_validates_image_backend(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):
             from fastapi.testclient import TestClient
+
             from utils.local_ui import app
 
             client = TestClient(app)
@@ -145,6 +148,7 @@ class TestConfigAPI:
     def test_save_config_validates_fallback_backend(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):
             from fastapi.testclient import TestClient
+
             from utils.local_ui import app
 
             client = TestClient(app)
@@ -169,6 +173,7 @@ class TestConfigAPI:
         mock_load_config.return_value = mock_config.copy()
 
         from fastapi.testclient import TestClient
+
         from utils.local_ui import app
 
         client = TestClient(app)
@@ -194,6 +199,7 @@ class TestConfigAPI:
         mock_load_config.return_value = mock_config.copy()
 
         from fastapi.testclient import TestClient
+
         from utils.local_ui import app
 
         client = TestClient(app)
@@ -222,6 +228,7 @@ class TestConfigAPI:
 
         with patch("utils.local_ui.load_config", return_value=config):
             from fastapi.testclient import TestClient
+
             from utils.local_ui import app
 
             client = TestClient(app)

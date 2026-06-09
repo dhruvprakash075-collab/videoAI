@@ -6,11 +6,13 @@ Provides the "Functional UI" to track all backend processes, verify systems,
 and handle the human-in-the-loop Proactive/Manual Pausing.
 """
 
+import json
 import logging
 import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -23,6 +25,7 @@ from agents.director_agent import UIState
 from jobs.job_store import JobStore
 from utils import load_config
 from utils.concurrency import global_scheduler
+from utils.ollama_client import get_ollama_client
 
 # Initialize global job store
 job_store = JobStore()
@@ -52,6 +55,10 @@ app.add_middleware(
 # A/B Director's Chair — in-memory job store
 _ab_jobs_lock = threading.Lock()
 _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [...], "error": str}}
+
+# Chat sessions v1 — in-memory only
+_chat_sessions_lock = threading.Lock()
+_chat_sessions: dict = {}  # {session_id: {"messages": [{"role":str, "content":str}], "created_at": float}}
 
 # Output root for A/B test artefacts — all resolved paths must stay under this
 _AB_OUTPUT_ROOT = Path("studio_outputs").resolve()
@@ -83,6 +90,22 @@ def _form_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+_VALID_RUN_MODES = {"project", "one_time"}
+
+
+def _validate_job_request(req: dict):
+    """Validate job request fields, raising ValueError on invalid values."""
+    rm = req.get("run_mode")
+    if rm is not None and rm not in _VALID_RUN_MODES:
+        raise ValueError(
+            f"run_mode must be one of {sorted(_VALID_RUN_MODES)}, got {rm!r}"
+        )
+    for field in ("director_mode", "series"):
+        val = req.get(field)
+        if val is not None and not isinstance(val, bool):
+            raise ValueError(f"{field} must be a boolean, got {type(val).__name__} ({val!r})")
 
 
 def _comfyui_config_for_ui(config: dict) -> dict:
@@ -159,6 +182,11 @@ def _sanitize_path_component(value: str) -> str:
 if not os.path.exists("studio_outputs"):
     os.makedirs("studio_outputs", exist_ok=True)
 app.mount("/studio_outputs", StaticFiles(directory="studio_outputs"), name="studio_outputs")
+
+# Mount projects directory to serve character assets
+if not os.path.exists("studio_projects"):
+    os.makedirs("studio_projects", exist_ok=True)
+app.mount("/studio_projects", StaticFiles(directory="studio_projects"), name="studio_projects")
 
 # Mount static files (like ab_picker.html)
 if not os.path.exists("static"):
@@ -240,11 +268,32 @@ async def read_index():
 
 
 @app.post("/api/upload_script")
-async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrative")):
+async def upload_script(
+    file: UploadFile = File(...),
+    topic: str = Form("Narrative"),
+    duration: float | None = Form(None),
+    dry_run: str | None = Form(None),
+    no_resume: str | None = Form(None),
+    skip_rvc: str | None = Form(None),
+    project: str | None = Form(None),
+    series: str | None = Form(None),
+    director_mode: str | None = Form(None),
+    run_mode: str | None = Form(None),
+    eval_models: str | None = Form(None),
+    preview: str | None = Form(None),
+    skip_preflight: str | None = Form(None),
+    preflight_only: str | None = Form(None),
+    words_per_segment: int | None = Form(None),
+    images_per_segment: int | None = Form(None),
+    segment_count: int | None = Form(None),
+    yes: str | None = Form(None),
+    source: str | None = Form(None),
+):
     """
-    Endpoint to receive uploaded light novels, stories, or scripts.
+    Endpoint to receive uploaded text files (novels, scripts, stories).
 
-    Creates a queued job in the job store instead of starting the pipeline directly.
+    Accepts all job options as optional form fields. Creates a queued job
+    in the job store instead of starting the pipeline directly.
     """
     try:
         content = await file.read()
@@ -255,15 +304,44 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
             content={"status": "error", "message": f"Failed to read script file: {e}"},
         )
 
-    # Build job request payload
-    job_request = {
-        "topic": topic,
-        "content_text": script_text,
-        # preserve sensible defaults for UI-initiated runs
-        "dry_run": False,
-        "skip_rvc": True,
-        "no_resume": True,
-    }
+    def _parse_bool(v: str | None, default: bool) -> bool:
+        if v is None:
+            return default
+        return v.strip().lower() in ("1", "true", "yes", "on")
+
+    job_request = {"topic": topic, "content_text": script_text}
+
+    if duration is not None:
+        job_request["duration"] = duration
+    job_request["dry_run"] = _parse_bool(dry_run, False)
+    job_request["no_resume"] = _parse_bool(no_resume, True)
+    job_request["skip_rvc"] = _parse_bool(skip_rvc, True)
+    if project is not None:
+        job_request["project"] = project
+    if series is not None:
+        job_request["series"] = _parse_bool(series, False)
+    if director_mode is not None:
+        job_request["director_mode"] = _parse_bool(director_mode, False)
+    if run_mode is not None:
+        job_request["run_mode"] = run_mode
+    if eval_models is not None:
+        job_request["eval_models"] = _parse_bool(eval_models, False)
+    if preview is not None:
+        job_request["preview"] = _parse_bool(preview, False)
+    if skip_preflight is not None:
+        job_request["skip_preflight"] = _parse_bool(skip_preflight, False)
+    if preflight_only is not None:
+        job_request["preflight_only"] = _parse_bool(preflight_only, False)
+    if words_per_segment is not None:
+        job_request["words_per_segment"] = words_per_segment
+    if images_per_segment is not None:
+        job_request["images_per_segment"] = images_per_segment
+    if segment_count is not None:
+        job_request["segment_count"] = segment_count
+    if yes is not None:
+        job_request["yes"] = _parse_bool(yes, False)
+    if source is not None:
+        job_request["source"] = source
 
     # Try to include image backend info from config
     try:
@@ -278,28 +356,44 @@ async def upload_script(file: UploadFile = File(...), topic: str = Form("Narrati
     job_id = job_store.create_job(job_request, topic=topic, image_backend=job_request.get("image_backend"), comfyui_checkpoint=job_request.get("comfyui_checkpoint"))
     job_store.append_event(job_id, "created via upload_script", event_type="system")
 
-    return JSONResponse(content={"status": "queued", "job_id": job_id, "message": "Job queued for execution."})
+    return JSONResponse(content={"status": "queued", "job_id": job_id, "request": job_request, "message": "Job queued for execution."})
 
 
 @app.post("/api/jobs")
 async def create_job_endpoint(job_request: dict = Body(...)):
     """Create a new job via JSON body.
 
-    Example body from UI:
-    {
-      "topic": "Job Smoke",
-      "duration": 1,
-      "dry_run": true,
-      "skip_rvc": true
-    }
+    Accepts all worker-supported fields:
+      topic, duration, dry_run, no_resume, skip_rvc, project, series,
+      director_mode, run_mode, eval_models, preview, skip_preflight,
+      preflight_only, words_per_segment, images_per_segment, segment_count,
+      yes, topics_file, source, file, content_text
     """
     try:
+        _validate_job_request(job_request)
+
         topic = job_request.get("topic")
         image_backend = job_request.get("image_backend")
         comfyui_checkpoint = job_request.get("comfyui_checkpoint")
-        job_id = job_store.create_job(job_request, topic=topic, image_backend=image_backend, comfyui_checkpoint=comfyui_checkpoint)
+
+        # Normalize: store the full payload so the worker gets all flags
+        normalized = dict(job_request)
+        normalized.setdefault("dry_run", False)
+        normalized.setdefault("skip_rvc", True)
+        normalized.setdefault("no_resume", True)
+
+        job_id = job_store.create_job(
+            normalized,
+            topic=topic,
+            image_backend=image_backend,
+            comfyui_checkpoint=comfyui_checkpoint,
+        )
         job_store.append_event(job_id, "created via API", event_type="system")
-        return JSONResponse(content={"status": "queued", "job_id": job_id})
+        return JSONResponse(content={
+            "status": "queued",
+            "job_id": job_id,
+            "request": normalized,
+        })
     except Exception as e:
         log.exception("Failed to create job")
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
@@ -450,6 +544,16 @@ async def get_job_events(job_id: int, limit: int | None = None):
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
+@app.get("/api/jobs/{job_id}/artifacts")
+async def get_job_artifacts(job_id: int):
+    try:
+        artifacts = job_store.get_artifacts(job_id)
+        return {"artifacts": artifacts}
+    except Exception as e:
+        log.exception("Failed to get job artifacts")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
 @app.post("/api/jobs/{job_id}/cancel")
 async def cancel_job(job_id: int):
     ok = job_store.request_cancel(job_id)
@@ -502,6 +606,8 @@ async def get_ui_config():
     try:
         config = load_config()
         image_cfg = config.get("image_gen", {}) or {}
+        layered_cfg = image_cfg.get("layered_v3", {}) or {}
+        workflows = layered_cfg.get("workflows", {}) or {}
         return {
             "voiceEngine": config.get("tts", {}).get("engine", "omnivoice"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
@@ -509,6 +615,20 @@ async def get_ui_config():
             "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),
             "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
             "imageBackend": image_cfg.get("backend", "bonsai"),
+            "compositionMode": image_cfg.get("composition_mode", "one_pass"),
+            "layeredV3": {
+                "approvalMode": layered_cfg.get("approval_mode", "hybrid"),
+                "characterThreshold": layered_cfg.get("character_threshold", 0.3),
+                "closeupThreshold": layered_cfg.get("closeup_threshold", 0.8),
+                "maxCharacters": layered_cfg.get("max_characters", 2),
+                "fallbackMode": layered_cfg.get("fallback_mode", "one_pass"),
+                "workflows": {
+                    "characterSheet": workflows.get("character_sheet", ""),
+                    "background": workflows.get("background", ""),
+                    "characterPose": workflows.get("character_pose", ""),
+                    "compositeRefine": workflows.get("composite_refine", ""),
+                },
+            },
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
         }
     except Exception as e:
@@ -522,6 +642,16 @@ async def save_ui_config(
     uncapped_scaling: str = Form(...),
     max_images_per_segment: int = Form(...),
     image_backend: str | None = Form(None),
+    composition_mode: str | None = Form(None),
+    layered_v3_approval_mode: str | None = Form(None),
+    layered_v3_character_threshold: float | None = Form(None),
+    layered_v3_closeup_threshold: float | None = Form(None),
+    layered_v3_max_characters: int | None = Form(None),
+    layered_v3_fallback_mode: str | None = Form(None),
+    layered_v3_wf_character_sheet: str | None = Form(None),
+    layered_v3_wf_background: str | None = Form(None),
+    layered_v3_wf_character_pose: str | None = Form(None),
+    layered_v3_wf_composite_refine: str | None = Form(None),
     comfyui_auto_start: str | None = Form(None),
     comfyui_server: str | None = Form(None),
     comfyui_host: str | None = Form(None),
@@ -561,6 +691,59 @@ async def save_ui_config(
             if image_backend not in {"bonsai", "comfyui"}:
                 raise ValueError("image_backend must be 'bonsai' or 'comfyui'")
             image_cfg["backend"] = image_backend
+
+        if composition_mode:
+            cm = composition_mode.strip().lower()
+            if cm not in ("one_pass", "layered_v3"):
+                raise ValueError("composition_mode must be 'one_pass' or 'layered_v3'")
+            image_cfg["composition_mode"] = cm
+
+        if any(v is not None for v in (
+            layered_v3_approval_mode,
+            layered_v3_character_threshold,
+            layered_v3_closeup_threshold,
+            layered_v3_max_characters,
+            layered_v3_fallback_mode,
+            layered_v3_wf_character_sheet,
+            layered_v3_wf_background,
+            layered_v3_wf_character_pose,
+            layered_v3_wf_composite_refine,
+        )):
+            lv3 = image_cfg.setdefault("layered_v3", {})
+            if layered_v3_approval_mode is not None:
+                am = layered_v3_approval_mode.strip().lower()
+                if am not in ("auto", "hybrid", "manual"):
+                    raise ValueError("layered_v3_approval_mode must be 'auto', 'hybrid', or 'manual'")
+                lv3["approval_mode"] = am
+            if layered_v3_character_threshold is not None:
+                val = float(layered_v3_character_threshold)
+                if val < 0 or val > 1:
+                    raise ValueError("character_threshold must be between 0 and 1")
+                lv3["character_threshold"] = val
+            if layered_v3_closeup_threshold is not None:
+                val = float(layered_v3_closeup_threshold)
+                if val < 0 or val > 1:
+                    raise ValueError("closeup_threshold must be between 0 and 1")
+                lv3["closeup_threshold"] = val
+            if layered_v3_max_characters is not None:
+                val = int(layered_v3_max_characters)
+                if val < 1 or val > 10:
+                    raise ValueError("max_characters must be between 1 and 10")
+                lv3["max_characters"] = val
+            if layered_v3_fallback_mode is not None:
+                fm = layered_v3_fallback_mode.strip().lower()
+                if fm not in ("one_pass", "error"):
+                    raise ValueError("fallback_mode must be 'one_pass' or 'error'")
+                lv3["fallback_mode"] = fm
+            wf = lv3.setdefault("workflows", {})
+            if layered_v3_wf_character_sheet is not None:
+                wf["character_sheet"] = layered_v3_wf_character_sheet.strip()
+            if layered_v3_wf_background is not None:
+                wf["background"] = layered_v3_wf_background.strip()
+            if layered_v3_wf_character_pose is not None:
+                wf["character_pose"] = layered_v3_wf_character_pose.strip()
+            if layered_v3_wf_composite_refine is not None:
+                wf["composite_refine"] = layered_v3_wf_composite_refine.strip()
 
         if comfyui_fallback_backend:
             fallback = comfyui_fallback_backend.strip().lower()
@@ -849,6 +1032,325 @@ async def ab_pick(job_id: str = Form(...), choice: str = Form(...), segment_num:
         "copied_to": str(seg_images_dir),
         "images": copied,
     }
+
+
+# -------------------- Chat Endpoints --------------------
+@app.post("/api/chat")
+async def chat(body: dict = Body(...)):
+    message = (body.get("message") or "").strip()
+    session_id = body.get("session_id") or ""
+    if not message:
+        return JSONResponse(status_code=400, content={"error": "message is required"})
+
+    if not session_id:
+        session_id = uuid.uuid4().hex[:12]
+
+    with _chat_sessions_lock:
+        if session_id not in _chat_sessions:
+            _chat_sessions[session_id] = {"messages": [], "created_at": time.time()}
+        session = _chat_sessions[session_id]
+
+    try:
+        cfg = load_config()
+        director_model = cfg.get("models", {}).get("director", "llama3.1")
+        ollama = get_ollama_client(cfg)
+
+        context_parts = []
+        status = getattr(UIState, "status", "idle")
+        context_parts.append(f"Backend status: {status}")
+        latest_job = job_store.list_jobs(limit=1)
+        if latest_job:
+            j = latest_job[0]
+            context_parts.append(f"Latest job: #{j.get('id')} — {j.get('topic', '')} — {j.get('status', '')}")
+        context_parts.append(f"Config: director_model={director_model}")
+
+        system_msg = (
+            "You are the Video.AI Assistant, embedded in the local dashboard. "
+            "You help the user understand system status, jobs, configuration, and next steps. "
+            "Be concise and practical. Current context:\n" + "\n".join(context_parts)
+        )
+
+        messages = [{"role": "system", "content": system_msg}]
+        for msg in session["messages"][-20:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": message})
+
+        reply = ollama.chat(messages=messages, model=director_model, temperature=0.3)
+
+        if not reply:
+            return JSONResponse(status_code=500, content={
+                "error": "Ollama returned an empty response. Check that the director model is running and reachable.",
+                "session_id": session_id,
+                "reply": "",
+            })
+
+        session["messages"].append({"role": "user", "content": message})
+        session["messages"].append({"role": "assistant", "content": reply})
+
+        return JSONResponse(content={
+            "session_id": session_id,
+            "reply": reply,
+            "messages": session["messages"],
+        })
+    except Exception as e:
+        log.exception("Chat error")
+        return JSONResponse(status_code=500, content={
+            "error": f"Chat failed: {e}",
+            "session_id": session_id,
+            "reply": "Sorry, I encountered an error. Please check that Ollama is running and the director model is available.",
+        })
+
+
+@app.get("/api/chat/sessions/{session_id}")
+async def get_chat_session(session_id: str):
+    with _chat_sessions_lock:
+        session = _chat_sessions.get(session_id)
+    if not session:
+        return JSONResponse(status_code=404, content={"error": "Session not found"})
+    return {"session_id": session_id, "messages": session["messages"]}
+
+
+@app.delete("/api/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str):
+    with _chat_sessions_lock:
+        existed = session_id in _chat_sessions
+        _chat_sessions.pop(session_id, None)
+    if not existed:
+        return JSONResponse(status_code=404, content={"error": "Session not found"})
+    return {"status": "deleted", "session_id": session_id}
+
+
+# -------------------- Preflight Endpoints --------------------
+@app.get("/api/preflight")
+async def run_preflight_endpoint():
+    try:
+        from utils.preflight import run_preflight
+        cfg = load_config()
+        result = run_preflight(cfg, fail_fast=False, quiet=True)
+        checks = []
+        for c in result.checks:
+            checks.append({
+                "name": c.name,
+                "status": c.status,
+                "detail": c.message,
+            })
+        return {"all_ok": result.all_ok, "checks": checks}
+    except Exception as e:
+        log.exception("Preflight error")
+        return JSONResponse(status_code=500, content={"error": f"Preflight failed: {e}"})
+
+
+# -------------------- Artifacts Endpoints --------------------
+@app.get("/api/artifacts")
+async def list_artifacts():
+    output_root = Path("studio_outputs").resolve()
+    if not output_root.exists():
+        return {"artifacts": []}
+
+    artifacts = []
+    try:
+        for child in sorted(output_root.iterdir()):
+            if child.is_dir() and child.name != "ab_test":
+                run = {"run_id": child.name, "path": str(child.name)}
+                video_files = list(child.glob("*.mp4")) + list(child.glob("*.webm"))
+                run["video"] = f"/studio_outputs/{child.name}/{video_files[0].name}" if video_files else None
+                thumb_files = list(child.glob("thumb*.png")) + list(child.glob("*.jpg"))
+                run["thumbnail"] = f"/studio_outputs/{child.name}/{thumb_files[0].name}" if thumb_files else None
+                run["has_manifest"] = (child / "run_manifest.json").exists()
+                run["has_chapters"] = (child / "chapters.txt").exists()
+                artifacts.append(run)
+
+        # Also scan for root-level _final_video.mp4 files
+        for fpath in sorted(output_root.glob("*_final_video.mp4")):
+            run_id = fpath.stem  # e.g. "Narrative_final_video"
+            artifacts.append({
+                "run_id": run_id,
+                "path": str(fpath.name),
+                "video": f"/studio_outputs/{fpath.name}",
+                "thumbnail": None,
+                "has_manifest": False,
+                "has_chapters": False,
+            })
+    except Exception:
+        log.exception("Error listing artifacts")
+
+    return {"artifacts": artifacts}
+
+
+@app.get("/api/artifacts/{run_id:path}")
+async def get_artifact_detail(run_id: str):
+    safe = _sanitize_path_component(run_id)
+    run_dir = Path("studio_outputs") / safe
+    if not run_dir.exists() or not run_dir.is_dir():
+        return JSONResponse(status_code=404, content={"error": "Run not found"})
+
+    result = {"run_id": safe}
+    manifest_path = run_dir / "run_manifest.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                result["manifest"] = json.load(f)
+        except Exception:
+            result["manifest"] = None
+
+    chapters_path = run_dir / "chapters.txt"
+    if chapters_path.exists():
+        try:
+            result["chapters"] = chapters_path.read_text(encoding="utf-8")
+        except Exception:
+            result["chapters"] = None
+
+    video_files = list(run_dir.glob("*.mp4")) + list(run_dir.glob("*.webm"))
+    if video_files:
+        result["video"] = f"/studio_outputs/{safe}/{video_files[0].name}"
+
+    thumb_files = list(run_dir.glob("thumb*.png")) + list(run_dir.glob("*.jpg"))
+    if thumb_files:
+        result["thumbnail"] = f"/studio_outputs/{safe}/{thumb_files[0].name}"
+
+    segments_dir = run_dir / "segments"
+    if segments_dir.exists():
+        segments = []
+        for seg_dir in sorted(segments_dir.iterdir()):
+            if seg_dir.is_dir():
+                images = [f"/studio_outputs/{safe}/segments/{seg_dir.name}/images/{p.name}" for p in (seg_dir / "images").glob("*.png")] if (seg_dir / "images").exists() else []
+                segments.append({"name": seg_dir.name, "images": images})
+        result["segments"] = segments
+
+    return result
+
+
+# -------------------- Memory Endpoints --------------------
+@app.get("/api/memory")
+async def list_memory():
+    memory_items = []
+    projects_dir = Path("studio_projects")
+    if projects_dir.exists():
+        for proj_dir in projects_dir.iterdir():
+            if not proj_dir.is_dir() or proj_dir.name == "jobs":
+                continue
+            project_json = proj_dir / "project.json"
+            if project_json.exists():
+                try:
+                    with open(project_json, encoding="utf-8") as f:
+                        data = json.load(f)
+                    for key, item in data.get("memory_items", {}).items():
+                        item["key"] = key
+                        item["project"] = proj_dir.name
+                        memory_items.append(item)
+                    for key, item in data.get("characters", {}).items():
+                        memory_items.append({
+                            "key": key,
+                            "name": item.get("name", key),
+                            "type": "character",
+                            "project": proj_dir.name,
+                            "scope": "project",
+                        })
+                    for key, item in data.get("world_lore", {}).items():
+                        memory_items.append({
+                            "key": key,
+                            "name": item.get("name", key),
+                            "type": "world_lore",
+                            "project": proj_dir.name,
+                            "scope": "project",
+                        })
+                    for key, item in data.get("visual_locks", {}).items():
+                        memory_items.append({
+                            "key": key,
+                            "name": item.get("name", key),
+                            "type": "visual_lock",
+                            "project": proj_dir.name,
+                            "scope": "project",
+                        })
+                    for key, item in data.get("motifs", {}).items():
+                        memory_items.append({
+                            "key": key,
+                            "name": item.get("name", key),
+                            "type": "motif",
+                            "project": proj_dir.name,
+                            "scope": "project",
+                        })
+                except Exception:
+                    pass
+
+    checkpoints_dir = Path("studio_checkpoints")
+    if checkpoints_dir.exists():
+        for f in checkpoints_dir.rglob("permanent_memory.json"):
+            try:
+                with open(f, encoding="utf-8") as mf:
+                    data = json.load(mf)
+                if isinstance(data, dict):
+                    for key, item in data.items():
+                        if isinstance(item, dict):
+                            item["key"] = key
+                            item["source"] = str(f.relative_to(checkpoints_dir.parent))
+                            memory_items.append(item)
+            except Exception:
+                pass
+
+    # Also scan nested story.json files under studio_projects/*/stories/
+    sp_dir = Path("studio_projects")
+    if sp_dir.exists():
+        for f in sp_dir.rglob("story.json"):
+            try:
+                with open(f, encoding="utf-8") as sf:
+                    data = json.load(sf)
+                if isinstance(data, dict):
+                    item = {"key": "story.json", "type": "story", "source": str(f.relative_to(sp_dir.parent))}
+                    item.update(data)
+                    memory_items.append(item)
+            except Exception:
+                pass
+
+    return {"memory": memory_items}
+
+
+# -------------------- Characters Endpoints --------------------
+@app.get("/api/characters")
+async def list_characters():
+    characters = []
+    projects_dir = Path("studio_projects")
+    if projects_dir.exists():
+        for proj_dir in projects_dir.iterdir():
+            if not proj_dir.is_dir() or proj_dir.name == "jobs":
+                continue
+            chars_dir = proj_dir / "characters"
+            if chars_dir.exists():
+                for char_dir in chars_dir.iterdir():
+                    if not char_dir.is_dir():
+                        continue
+                    char = {
+                        "name": char_dir.name,
+                        "project": proj_dir.name,
+                    }
+                    master = char_dir / "master.png"
+                    if master.exists():
+                        char["master_portrait"] = f"/studio_projects/{proj_dir.name}/characters/{char_dir.name}/master.png"
+                    # Also check legacy name
+                    if not master.exists():
+                        master_legacy = char_dir / "master_portrait.png"
+                        if master_legacy.exists():
+                            char["master_portrait"] = f"/studio_projects/{proj_dir.name}/characters/{char_dir.name}/master_portrait.png"
+                    fullbody = char_dir / "full_body_ref.png"
+                    if fullbody.exists():
+                        char["full_body_ref"] = f"/studio_projects/{proj_dir.name}/characters/{char_dir.name}/full_body_ref.png"
+                    approved = list((char_dir / "approved").glob("*.png")) if (char_dir / "approved").exists() else []
+                    char["approved_count"] = len(approved)
+                    rejected = list((char_dir / "rejected").glob("*.png")) if (char_dir / "rejected").exists() else []
+                    char["rejected_count"] = len(rejected)
+                    identity = char_dir / "identity_hash.txt"
+                    if identity.exists():
+                        char["identity_hash"] = identity.read_text(encoding="utf-8").strip()
+                    ipa_dir = char_dir / "ip_adapter"
+                    if ipa_dir.exists():
+                        char["ip_adapter_refs"] = [str(p.relative_to(projects_dir.parent)) for p in ipa_dir.glob("*")]
+                    lora_dir = char_dir / "lora"
+                    if lora_dir.exists():
+                        lora_files = list(lora_dir.glob("*.safetensors"))
+                        char["lora_candidates"] = [f.name for f in lora_files]
+                    characters.append(char)
+
+    return {"characters": characters}
 
 
 if __name__ == "__main__":

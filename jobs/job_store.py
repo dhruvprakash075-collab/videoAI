@@ -229,3 +229,18 @@ class JobStore:
         cur.execute("INSERT INTO job_artifacts (job_id, key, path, meta) VALUES (?,?,?,?)", (job_id, key, path, meta))
         conn.commit()
         conn.close()
+
+    def get_artifacts(self, job_id: int) -> list[dict]:
+        """Return all artifacts for a given job_id as a list of dicts."""
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, key, path, meta FROM job_artifacts WHERE job_id = ? ORDER BY id",
+            (job_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"id": r["id"], "key": r["key"], "path": r["path"], "meta": r["meta"]}
+            for r in rows
+        ]

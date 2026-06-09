@@ -16,13 +16,13 @@ describe('PreviewCanvas', () => {
   it('renders the upload card when no video is provided', () => {
     render(<PreviewCanvas video={null} scriptInputRef={createRef()} onScriptPicked={() => {}} />);
     expect(screen.getByText('Upload Lore Script')).toBeInTheDocument();
-    expect(screen.getByText('.txt format only')).toBeInTheDocument();
+    expect(screen.getByText(/\.txt/)).toBeInTheDocument();
   });
 
-  it('renders a file input that accepts only .txt', () => {
+  it('renders a file input that accepts .txt and .md', () => {
     render(<PreviewCanvas video={null} scriptInputRef={createRef()} onScriptPicked={() => {}} />);
     const input = document.querySelector('input[type="file"]');
-    expect(input).toHaveAttribute('accept', '.txt');
+    expect(input).toHaveAttribute('accept', '.txt,.md');
   });
 
   it('calls onScriptPicked with the selected file', async () => {

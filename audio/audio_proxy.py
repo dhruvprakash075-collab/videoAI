@@ -48,11 +48,12 @@ def _get_config() -> dict:
 
 # P1-7 fix: TTS engine normalization whitelist.
 # Vision docs and user responses can contain arbitrary strings (e.g.
-# "Calm, measured, storytelling voice"). Map everything to the four
-# engine ids that tts_generate actually dispatches: "supertonic", "f5", "omnivoice", or "edge".
+# "Calm, measured, storytelling voice"). Map everything to the five
+# engine ids that tts_generate actually dispatches: "supertonic", "f5", "omnivoice", "edge", or "indicf5".
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
 _EDGE_ALIASES = frozenset({"edge", "edge-tts", "edge_tts", "microsoft"})
 _F5_ALIASES = frozenset({"f5", "f5-tts", "f5tts", "f5_tts"})
+_INDICF5_ALIASES = frozenset({"indicf5", "indic-f5", "ai4bharat-indicf5", "hindi-f5"})
 _SUPERTONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
 
 
@@ -63,13 +64,14 @@ def normalize_tts_engine(engine: str) -> str:
     Known f5 aliases:         "f5", "f5-tts", "f5tts", "f5_tts"
     Known omnivoice aliases:  "omnivoice", "omni", "voice_clone", "clone"
     Known edge aliases:       "edge", "edge-tts", "edge_tts", "microsoft"
+    Known indicf5 aliases:    "indicf5", "indic-f5", "ai4bharat-indicf5", "hindi-f5"
     Everything else (including free-text descriptions) → "supertonic" (default).
 
     Args:
         engine: Raw engine string from vision doc, config overlay, or user input.
 
     Returns:
-        "supertonic", "f5", "omnivoice", or "edge".
+        "supertonic", "f5", "omnivoice", "edge", or "indicf5".
     """
     if not isinstance(engine, str):
         log.warning(
@@ -86,6 +88,8 @@ def normalize_tts_engine(engine: str) -> str:
         return "omnivoice"
     if normalized in _EDGE_ALIASES:
         return "edge"
+    if normalized in _INDICF5_ALIASES:
+        return "indicf5"
 
     log.warning(
         f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'supertonic'. "
@@ -409,6 +413,39 @@ def _resolve_omnivoice_python() -> str:
     return sys.executable
 
 
+def _resolve_indicf5_python() -> str:
+    """Return the Python executable to run the IndicF5 worker.
+
+    Enforces strict isolation: returns the configured Python path from config,
+    or raises RuntimeError if the environment doesn't exist. Never falls back
+    to the main venv Python, as that would pollute/crash the main environment.
+    """
+    try:
+        indicf5_cfg = load_config().get("tts", {}).get("indicf5", {})
+    except Exception:
+        indicf5_cfg = {}
+
+    config_python = indicf5_cfg.get("python", "")
+    if config_python:
+        config_path = Path(config_python)
+        if config_path.exists():
+            return str(config_path)
+        else:
+            raise RuntimeError(
+                f"IndicF5 python not found at configured path: {config_python}. "
+                f"Run scripts/setup_indicf5.ps1 to create the environment."
+            )
+
+    conda_env_py = Path(__file__).parent.parent / "indicf5_env" / "Scripts" / "python.exe"
+    if conda_env_py.exists():
+        return str(conda_env_py)
+
+    raise RuntimeError(
+        "IndicF5 environment not found. Run scripts/setup_indicf5.ps1 to create "
+        "the indicf5 conda environment, or set tts.indicf5.python in config.yaml."
+    )
+
+
 class _OmniVoiceWorker:
     """Persistent OmniVoice worker manager (B16 fix).
 
@@ -714,6 +751,244 @@ _f5_worker = _F5Worker()
 def shutdown_f5_worker():
     """Stop the persistent F5-TTS worker (call at pipeline end)."""
     _f5_worker.shutdown()
+
+
+# ── IndicF5 persistent worker ─────────────────────────────────────────────────
+
+class _IndicF5Worker:
+    def __init__(self):
+        self._proc = None
+        self._lock = threading.Lock()
+        self._failed = False
+
+    def _start(self) -> bool:
+        if self._failed:
+            return False
+        if self._proc is not None and self._proc.poll() is None:
+            return True
+        try:
+            python_exe = _resolve_indicf5_python()
+            worker_script = Path(__file__).parent / "indicf5_worker.py"
+            if not worker_script.exists():
+                raise FileNotFoundError(f"indicf5_worker.py not found at {worker_script}")
+
+            try:
+                indicf5_cfg = load_config().get("tts", {}).get("indicf5", {})
+            except Exception:
+                indicf5_cfg = {}
+
+            model_id = indicf5_cfg.get("model_id", "ai4bharat/IndicF5")
+            cache_dir = indicf5_cfg.get("cache_dir", "hf_cache/indicf5")
+            device = indicf5_cfg.get("device", "cuda")
+
+            _indicf5_env = dict(os.environ)
+            _indicf5_env.update(
+                {
+                    "WANDB_MODE": "disabled",
+                    "WANDB_DISABLED": "true",
+                    "WANDB_CONSOLE": "off",
+                    "PYTHONIOENCODING": "utf-8",
+                    "HF_HUB_DISABLE_XET": "1",
+                    "HF_HUB_DISABLE_SYMLINKS_WARNING": "1",
+                    "HF_HUB_DISABLE_PROGRESS_BARS": "1",
+                    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+                }
+            )
+
+            self._proc = subprocess.Popen(
+                [python_exe, str(worker_script), "--serve", f"--model-id={model_id}", f"--cache-dir={cache_dir}", f"--device={device}"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+                env=_indicf5_env,
+            )
+            import time as _t
+
+            deadline = _t.time() + 300
+            while _t.time() < deadline:
+                line = self._proc.stdout.readline()
+                if not line:
+                    if self._proc.poll() is not None:
+                        raise RuntimeError("IndicF5 worker exited during startup")
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("status") == "ready":
+                    log.info("[IndicF5] Persistent worker ready (model loaded once)")
+                    return True
+                if msg.get("status") == "error":
+                    raise RuntimeError(msg.get("message", "IndicF5 worker init error"))
+            raise RuntimeError("IndicF5 worker readiness timeout")
+        except Exception as e:
+            log.warning(f"[IndicF5] Persistent worker unavailable ({e}) — will fall back to supertonic")
+            self._failed = True
+            self._cleanup_proc()
+            return False
+
+    def _cleanup_proc(self):
+        if self._proc is not None:
+            with contextlib.suppress(Exception):
+                self._proc.kill()
+            self._proc = None
+
+    def generate(self, req: dict[str, Any], timeout: float = 600) -> dict[str, Any] | None:
+        with self._lock:
+            if not self._start():
+                return None
+            try:
+                self._proc.stdin.write(json.dumps(req) + "\n")
+                self._proc.stdin.flush()
+                import time as _t
+
+                deadline = _t.time() + timeout
+                while _t.time() < deadline:
+                    line = self._proc.stdout.readline()
+                    if not line:
+                        if self._proc.poll() is not None:
+                            raise RuntimeError("IndicF5 worker died mid-request")
+                        continue
+                    line = line.strip()
+                    if not (line.startswith("{") and line.endswith("}")):
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    status = msg.get("status")
+                    if status == "progress":
+                        deadline = _t.time() + timeout
+                        continue
+                    return msg
+                raise RuntimeError("IndicF5 worker response timeout")
+            except Exception as e:
+                log.warning(f"[IndicF5] Persistent worker request failed ({e}) — disabling")
+                self._failed = True
+                self._cleanup_proc()
+                return None
+
+    def shutdown(self):
+        with self._lock:
+            if self._proc is not None and self._proc.poll() is None:
+                try:
+                    self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
+                    self._proc.stdin.flush()
+                    self._proc.wait(timeout=10)
+                except Exception:
+                    pass
+            self._cleanup_proc()
+
+
+_indicf5_worker = _IndicF5Worker()
+
+
+def shutdown_indicf5_worker():
+    """Stop the persistent IndicF5 worker (call at pipeline end)."""
+    _indicf5_worker.shutdown()
+
+
+def _call_indicf5_worker(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    voice_sample: str = "",
+    speed_override: float | None = None,
+) -> dict[str, Any]:
+    """Generate IndicF5 TTS audio."""
+    try:
+        indicf5_cfg = load_config().get("tts", {}).get("indicf5", {})
+    except Exception:
+        indicf5_cfg = {}
+
+    ref_text = indicf5_cfg.get("ref_text", "") or ""
+    ref_audio = indicf5_cfg.get("ref_audio", "") or ""
+    sample_rate = int(indicf5_cfg.get("sample_rate", 24000))
+    nfe_step = int(indicf5_cfg.get("nfe_step", 16))
+    speed = float(speed_override) if speed_override is not None else float(indicf5_cfg.get("speed", 1.0))
+    timeout = int(indicf5_cfg.get("timeout_seconds", 600))
+    max_chars = int(indicf5_cfg.get("max_chars_per_chunk", 220))
+
+    if output_dir is None:
+        output_dir = Path("tts_output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_wav = output_dir / f"indicf5_{uuid.uuid4().hex[:8]}.wav"
+
+    final_ref_audio = ref_audio if (ref_audio and Path(ref_audio).exists()) else ""
+    if not final_ref_audio and voice_sample and Path(voice_sample).exists():
+        final_ref_audio = voice_sample
+
+    req = {
+        "text": text,
+        "output": str(out_wav),
+        "ref_audio": final_ref_audio,
+        "ref_text": ref_text,
+        "sample_rate": sample_rate,
+        "nfe_step": nfe_step,
+        "speed": speed,
+        "max_chars_per_chunk": max_chars,
+    }
+
+    resp = _indicf5_worker.generate(req, timeout=timeout)
+    if resp is not None:
+        return resp
+
+    log.info("[IndicF5] Using one-shot subprocess fallback")
+    try:
+        python_exe = _resolve_indicf5_python()
+        worker_script = Path(__file__).parent / "indicf5_worker.py"
+
+        if not worker_script.exists():
+            raise FileNotFoundError(f"indicf5_worker.py not found at {worker_script}")
+
+        temp_dir = Path("studio_checkpoints") / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = temp_dir / f"indicf5_input_{uuid.uuid4().hex}.txt"
+        temp_file.write_text(text, encoding="utf-8", errors="replace")
+
+        cmd = [
+            python_exe,
+            str(worker_script),
+            f"--text-file={temp_file}",
+            f"--output={out_wav}",
+            f"--model-id={indicf5_cfg.get('model_id', 'ai4bharat/IndicF5')}",
+            f"--cache-dir={indicf5_cfg.get('cache_dir', 'hf_cache/indicf5')}",
+            f"--device={indicf5_cfg.get('device', 'cuda')}",
+            f"--sample-rate={sample_rate}",
+            f"--nfe-step={nfe_step}",
+            f"--speed={speed}",
+        ]
+        if final_ref_audio:
+            cmd.append(f"--ref-audio={final_ref_audio}")
+        if ref_text:
+            cmd.append(f"--ref-text={ref_text}")
+        if max_chars:
+            cmd.append(f"--max-chars={max_chars}")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout + 60)
+        with contextlib.suppress(Exception):
+            temp_file.unlink()
+
+        if result.returncode == 0 and result.stdout.strip():
+            for line in reversed(result.stdout.strip().split("\n")):
+                line = line.strip()
+                if line.startswith("{") and line.endswith("}"):
+                    try:
+                        return json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+        error_msg = result.stderr.strip()[:200] if result.stderr else "Unknown error"
+        log.error(f"[IndicF5] one-shot failed (code {result.returncode}): {error_msg}")
+        return {"status": "error", "message": error_msg}
+    except Exception as e:
+        log.exception(f"[IndicF5] one-shot exception: {e}")
+        return {"status": "error", "message": str(e)[:200]}
 
 
 def _call_f5_worker(
@@ -1114,13 +1389,13 @@ def tts_generate(
                     voice_sample = wav_files[0]
                     log.info(f"Voice cloning: auto-detected narration sample '{voice_sample}'")
 
-    # P1-7 fix: normalize the engine string from config (which may have been set
+# P1-7 fix: normalize the engine string from config (which may have been set
     # from the vision doc overlay) to a known engine id before dispatching.
     # Keep the documented tts_generate() behavior for truly unknown strings:
     # route them directly to edge instead of silently attempting F5.
     _raw_engine = _cfg.get("tts", {}).get("engine", "supertonic")
     if isinstance(_raw_engine, str) and _raw_engine.strip().lower() not in (
-        _SUPERTONIC_ALIASES | _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES
+        _SUPERTONIC_ALIASES | _F5_ALIASES | _OMNIVOICE_ALIASES | _EDGE_ALIASES | _INDICF5_ALIASES
     ):
         log.warning(f"Unknown TTS engine '{_raw_engine}' — falling back to edge-tts")
         engine = "edge"
@@ -1211,6 +1486,51 @@ def tts_generate(
         result = _call_edge_direct(
             text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
         )
+    elif engine == "indicf5":
+        result = _call_indicf5_worker(
+            text,
+            lang=lang,
+            output_dir=output_dir,
+            voice_sample=str(voice_sample) if voice_sample else "",
+            speed_override=speed,
+        )
+        if result.get("status") != "success":
+            log.warning("[TTS] IndicF5 failed — degrading to supertonic")
+            try:
+                from agents.director_agent import UIState as _UIState_tts_if5
+                _UIState_tts_if5.add_degradation(
+                    0, "tts_engine_fallback", "IndicF5 failed, using supertonic"
+                )
+            except Exception:
+                pass
+            result = _call_supertonic_worker(
+                text,
+                lang=lang,
+                output_dir=output_dir,
+                speed_override=speed,
+            )
+        if result.get("status") != "success":
+            log.warning("[TTS] supertonic fallback also failed — degrading to omnivoice")
+            try:
+                from agents.director_agent import UIState as _UIState_tts_if52
+                _UIState_tts_if52.add_degradation(
+                    0, "tts_engine_fallback", "supertonic failed, using omnivoice"
+                )
+            except Exception:
+                pass
+            result = _call_omnivoice_worker(
+                text,
+                lang=lang,
+                output_dir=output_dir,
+                voice_sample=str(voice_sample) if voice_sample else "",
+                speed_override=speed,
+                sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
+            )
+        if result.get("status") != "success":
+            log.warning("[TTS] omnivoice fallback also failed — degrading to edge")
+            result = _call_edge_direct(
+                text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
+            )
     else:
         # Unknown engine → documented fallback to edge-tts (R12.7)
         log.warning(f"Unknown TTS engine '{engine}' — falling back to edge-tts")
