@@ -7,10 +7,10 @@ param(
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $repo
 
-$bat = Join-Path $repo "..\run_worker.bat"
+$bat = Join-Path $repo ".." "run_worker.bat"
 $bat = (Resolve-Path $bat).Path
 
-$logdir = Join-Path $repo "..\logs"
+$logdir = Join-Path $repo ".." "logs"
 if (-not (Test-Path $logdir)) { New-Item -ItemType Directory -Path $logdir | Out-Null }
 $log = Join-Path $logdir "worker.log"
 
@@ -19,6 +19,6 @@ if ($Once) {
     & cmd /c `"$bat --once`"
     exit $LASTEXITCODE
 } else {
-    Start-Process -FilePath cmd -ArgumentList "/c", "start", "", `"%~dp0\..\run_worker.bat`" -WindowStyle Hidden
+    Start-Process -FilePath cmd -ArgumentList "/c", "start", "", `"$bat`" -WindowStyle Hidden
     Write-Output "Worker started (detached). Logs may be written to $log if run_worker is configured to do so."
 }

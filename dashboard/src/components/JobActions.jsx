@@ -1,5 +1,14 @@
 import { apiSend } from '../lib/api.js';
 
+function outputUrl(outputPath) {
+  if (!outputPath) return null;
+  // Convert Windows absolute path to a browser-friendly relative URL.
+  // e.g. C:\Video.AI\studio_outputs\topic\video.mp4 -> /studio_outputs/topic/video.mp4
+  const normalized = outputPath.replace(/\\/g, '/');
+  const match = normalized.match(/[/\\]studio_outputs[/\\](.+)/);
+  return match ? `/studio_outputs/${match[1]}` : normalized;
+}
+
 export default function JobActions({ job }) {
   const cancel = async () => {
     try {
@@ -26,7 +35,7 @@ export default function JobActions({ job }) {
       {(job.status === 'failed' || job.status === 'canceled') && (
         <button onClick={retry} className="px-3 py-1 rounded bg-green-600">Retry</button>
       )}
-      {job.output_path && <a href={job.output_path} className="px-3 py-1 rounded bg-zinc-800" target="_blank" rel="noreferrer">Open</a>}
+      {job.output_path && <a href={outputUrl(job.output_path)} className="px-3 py-1 rounded bg-zinc-800" target="_blank" rel="noreferrer">Open</a>}
     </div>
   );
 }

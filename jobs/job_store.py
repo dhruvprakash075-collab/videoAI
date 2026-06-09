@@ -221,3 +221,11 @@ class JobStore:
         new_id = self.create_job(request, topic=orig.get("topic"), image_backend=orig.get("image_backend"), comfyui_checkpoint=orig.get("comfyui_checkpoint"), fallback_backend=orig.get("fallback_backend"))
         self.append_event(job_id, f"retry_created:{new_id}", event_type="system")
         return new_id
+
+    def add_artifact(self, job_id: int, key: str, path: str, meta: str | None = None) -> None:
+        """Record a job artifact (output file, manifest, etc.)."""
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO job_artifacts (job_id, key, path, meta) VALUES (?,?,?,?)", (job_id, key, path, meta))
+        conn.commit()
+        conn.close()

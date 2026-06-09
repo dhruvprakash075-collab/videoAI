@@ -36,6 +36,21 @@ class Worker:
         self.store = store or JobStore()
         self._stop = threading.Event()
 
+    def _get_comfyui_url(self) -> str:
+        """Read ComfyUI server URL from config."""
+        try:
+            import yaml
+            cfg_path = REPO_ROOT / "config" / "config.yaml"
+            with open(cfg_path, encoding="utf-8", errors="replace") as f:
+                cfg = yaml.safe_load(f)
+            img = cfg.get("image_gen", {}) or {}
+            cosy = img.get("comfyui", {}) or {}
+            host = cosy.get("host", "127.0.0.1")
+            port = cosy.get("port", 8188)
+            return f"http://{host}:{port}/"
+        except Exception:
+            return "http://127.0.0.1:8188/"
+
     def _preflight_comfyui(self, job: dict[str, Any]) -> None:
         backend = job.get("image_backend")
         if backend != "comfyui":
@@ -45,7 +60,7 @@ class Worker:
         if checkpoint:
             if "\\" not in checkpoint and "/" not in checkpoint:
                 # It's a model name, resolve to ComfyUI path
-                comfyui_root = Path("external/ComfyUI").resolve()
+                comfyui_root = REPO_ROOT / "external" / "ComfyUI"
                 cp_path = comfyui_root / "models" / "checkpoints" / checkpoint
                 if not cp_path.exists():
                     raise RuntimeError(f"ComfyUI checkpoint not found: {cp_path} (resolved from model name: {checkpoint})")
@@ -54,11 +69,12 @@ class Worker:
                 cp = Path(checkpoint)
                 if not cp.exists():
                     raise RuntimeError(f"ComfyUI checkpoint not found: {cp}")
-        # Check default ComfyUI server URL
+        # Check ComfyUI server URL from config
+        comfyui_url = self._get_comfyui_url()
         try:
             import urllib.request
 
-            with urllib.request.urlopen("http://127.0.0.1:8188/", timeout=5) as resp:  # type: ignore
+            with urllib.request.urlopen(comfyui_url, timeout=5) as resp:  # type: ignore
                 if resp.status >= 400:
                     raise RuntimeError("ComfyUI server returned error")
         except Exception as exc:
@@ -213,11 +229,12 @@ class Worker:
                         if videos:
                             latest_video = max(videos, key=lambda p: p.stat().st_mtime)
                             self.store.update_job(job_id, output_path=str(latest_video))
+                            self.store.add_artifact(job_id, "output_video", str(latest_video))
                             self.store.append_event(job_id, f"output_video: {latest_video.name}", event_type="artifact")
                         # Capture manifest if present
                         manifest = output_root / "manifest.json"
                         if manifest.exists():
-                            self.store.append_event(job_id, "manifest: manifest.json", event_type="artifact")
+                            self.store.add_artifact(job_id, "manifest", str(manifest))
                 except Exception as exc:
                     self.store.append_event(job_id, f"artifact_capture_failed: {exc}", event_type="system")
             else:
