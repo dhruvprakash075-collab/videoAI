@@ -55,6 +55,43 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # ── Narration sanitization (W3 — shared with segment_runner) ──────────────
 
 
+def _normalize_hindi_for_tts(text: str) -> str:
+    """Normalize unsupported Hindi characters before TTS synthesis.
+
+    Supertonic ONNX model may not support: ऋ, ॠ, ऌ.
+    Replace with common equivalents.
+    """
+    _map = {
+        '\u090b': '\u0930\u093f',  # ऋ → रि
+        '\u0960': '\u0930\u0940',  # ॠ → री
+        '\u090c': '\u0932\u093f',  # ऌ → लि
+    }
+    for _old, _new in _map.items():
+        text = text.replace(_old, _new)
+    return text
+
+
+def _reject_unsafe_narration(text: str) -> str | None:
+    """Reject narration that contains leftover JSON, schema, or meta-commentary.
+
+    Returns None if the text is unsafe, otherwise the cleaned text.
+    """
+    import re as _re_safe
+    if not text or len(text) < 10:
+        return None
+    _unsafe_patterns = [
+        r'\{"narration":', r'"narration"', r'"segment"',
+        r'\{[\s\S]*?\}',  # JSON-like braces
+        r'\[/?[a-z_]+\]',  # remaining tags
+        r'<\|[^>]+\|>',
+        r'```',
+    ]
+    for _pat in _unsafe_patterns:
+        if _re_safe.search(_pat, text):
+            return None
+    return text
+
+
 def _sanitize_narration(script: str) -> str:
     """Strip all non-spoken artifacts from a script before TTS/translation.
 

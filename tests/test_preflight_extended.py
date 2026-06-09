@@ -12,6 +12,7 @@ from utils.preflight import (
     _check_disk,
     _check_ffmpeg,
     _check_ollama,
+    _check_playwright,
     _check_python,
     _check_vram,
     _format_report,
@@ -285,3 +286,56 @@ def test_main_config_load_fail():
         mock_run.return_value = mock_result
         exit_code = main()
         assert exit_code == 0
+
+
+def test_playwright_skipped_when_upload_disabled():
+    status, msg = _check_playwright({})
+    assert status == "skip"
+    assert "Upload not enabled" in msg
+
+
+def test_playwright_skipped_when_not_youtube():
+    status = _check_playwright({"upload": {"enabled": True, "platform": "vimeo"}})[0]
+    assert status == "skip"
+
+
+def test_playwright_ok_when_browsers_found():
+    with patch("subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        status = _check_playwright(
+            {"upload": {"enabled": True, "platform": "youtube"}}
+        )[0]
+        assert status == "ok"
+
+
+def test_playwright_fail_when_cli_missing():
+    with (
+        patch("subprocess.run", side_effect=FileNotFoundError),
+    ):
+        status, msg = _check_playwright(
+            {"upload": {"enabled": True, "platform": "youtube"}}
+        )
+        assert status == "fail"
+        assert "Playwright not found" in msg
+
+
+def test_playwright_fail_when_browsers_not_found():
+    with (
+        patch("subprocess.run") as run_mock,
+    ):
+        def side_effect(*args, **kwargs):
+            if "chromium" in " ".join(args[0]) if isinstance(args[0], list) else "":
+                return subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="", stderr=""
+            )
+        run_mock.side_effect = side_effect
+        status, msg = _check_playwright(
+            {"upload": {"enabled": True, "platform": "youtube"}}
+        )
+        assert status == "fail"
+        assert "playwright install chromium" in msg

@@ -431,7 +431,8 @@ def make_process_segment(
     """
     # Lazy imports to avoid circular import at module load
 
-    from core.pre_production import _sanitize_narration
+    from config import _safe_filename
+    from core.pre_production import _reject_unsafe_narration, _sanitize_narration
 
     try:
         from video.image_gen.image_gen import generate_images
@@ -441,6 +442,22 @@ def make_process_segment(
 
     with contextlib.suppress(ImportError):
         pass
+
+    # Compute per-segment TTS duration target from DecisionRecord (if user-locked)
+    _requested_duration_per_seg_s: float | None = None
+    try:
+        from memory.blackboard import get_blackboard as _gb
+        _rec = _gb(config, topic_slug=_safe_filename(topic)).read_decision()
+        if _rec is not None:
+            _dur = _rec.total_duration_min
+            if _dur.locked and _dur.provenance in ("user", "cli_flag"):
+                _requested_duration_per_seg_s = (_dur.value * 60) / max(1, n_segs)
+                log.info(
+                    f"[TTS] Per-segment target from locked duration: "
+                    f"{_dur.value}min / {n_segs} segs = {_requested_duration_per_seg_s:.1f}s"
+                )
+    except Exception as _e:
+        log.debug(f"[TTS] Could not read DecisionRecord for segment target: {_e}")
 
     from core.pipeline_graph import SegmentGraphBuilder, SegmentState
 
@@ -641,9 +658,17 @@ def make_process_segment(
             if _trimmed_parts:
                 script = " ".join(_trimmed_parts).strip()
 
-        cp_mgr.save(key, "script", {"data": script})
-
+        # Sanitize BEFORE checkpointing so TTS never sees artifacts
         script = _sanitize_narration(script)
+
+        # Reject unsafe leftovers after sanitization
+        if _reject_unsafe_narration(script) is None:
+            log.warning(f"  Seg {i}: narration unsafe after sanitization — falling back to sanitized text")
+            if not script or len(script) < 10:
+                log.error(f"  Seg {i}: narration rejected entirely after sanitization")
+                return {"devanagari_script": None, "script_for_tts": script, "narration_rejected": True}
+
+        cp_mgr.save(key, "script", {"data": script})
 
         devanagari_script = None
         _audio_lang = tts_cfg.get("lang", "hi")
@@ -689,6 +714,14 @@ def make_process_segment(
         else:
             script_for_tts = inject_emotion(script, mood, lang="en")
 
+        # Normalize Hindi characters for Supertonic compatibility
+        if audio_lang == "hi":
+            from core.pre_production import _normalize_hindi_for_tts as _norm_hin
+            _normalized = _norm_hin(script_for_tts)
+            if _normalized != script_for_tts:
+                log.info(f"  Seg {i}: normalized Hindi characters for TTS")
+                script_for_tts = _normalized
+
         from utils.emotion_control import get_mood_rate
 
         _tts_speed = get_mood_rate(mood)
@@ -700,16 +733,56 @@ def make_process_segment(
             torch.cuda.empty_cache()
 
         from audio.audio_proxy import rvc_convert, tts_generate
+        from utils import get_audio_duration as _get_audio_duration
 
-        with global_scheduler.task("heavy", f"Seg{i}:Coqui-XTTS"):
-            tts_out = tts_generate(
-                script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
-            )
-            audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
-            word_timestamps = tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
+        # Segment target duration in seconds for TTS duration guard
+        # Use user-locked target if available; otherwise fall back to seg_min * 60
+        _seg_target_s = (
+            _requested_duration_per_seg_s
+            if _requested_duration_per_seg_s is not None
+            else seg_min * 60
+        )
 
-            if not skip_rvc and config.get("rvc", {}).get("enabled", False):
-                audio_path = rvc_convert(audio_path, out_base / "audio")
+        for _tts_retry in range(2):  # at most 1 retry
+            with global_scheduler.task("heavy", f"Seg{i}:Coqui-XTTS"):
+                tts_out = tts_generate(
+                    script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
+                )
+                audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
+                word_timestamps = tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
+
+                if not skip_rvc and config.get("rvc", {}).get("enabled", False):
+                    audio_path = rvc_convert(audio_path, out_base / "audio")
+
+            # TTS duration guard: compare WAV duration against segment target
+            try:
+                _wav_dur = _get_audio_duration(Path(audio_path))
+                _dur_limit = max(_seg_target_s * 1.5, _seg_target_s + 30)
+                if _wav_dur > _dur_limit and _tts_retry == 0:
+                    log.warning(
+                        f"  Seg {i}: TTS audio duration {_wav_dur:.0f}s exceeds "
+                        f"limit {_dur_limit:.0f}s — retrying with truncated narration"
+                    )
+                    # Truncate to ~80% of segment target words
+                    _words = script_for_tts.split()
+                    _trunc_words = _words[:max(10, int(len(_words) * 0.6))]
+                    script_for_tts = " ".join(_trunc_words)
+                    continue
+                if _wav_dur > _dur_limit:
+                    log.error(
+                        f"  Seg {i}: TTS audio duration {_wav_dur:.0f}s exceeds "
+                        f"limit {_dur_limit:.0f}s after retry — failing segment"
+                    )
+                    raise RuntimeError(
+                        f"TTS duration {_wav_dur:.0f}s exceeds limit {_dur_limit:.0f}s"
+                    )
+            except Exception as _dur_err:
+                if _tts_retry == 0 and not isinstance(_dur_err, RuntimeError):
+                    log.warning(f"  Seg {i}: TTS duration check error ({_dur_err}), retrying")
+                    continue
+                raise
+
+            break  # success
 
         cp_mgr.save(
             key,
@@ -1084,11 +1157,14 @@ def make_process_segment(
                 review_result = {"memory_items": []}
 
             memory_items = review_result.get("memory_items", [])
-            for item in memory_items:
+            if memory_items:
                 try:
-                    self.mem.save_memory_item(item)
+                    from memory.permanent_memory import PermanentMemoryLog
+                    _perm = PermanentMemoryLog(topic=topic)
+                    for item in memory_items:
+                        _perm.save_memory_item(item)
                 except Exception as e:
-                    log.warning(f"[DIRECTOR] Failed to persist memory item: {e}")
+                    log.warning(f"[DIRECTOR] Failed to persist memory item via PermanentMemoryLog: {e}")
 
             return {"memory_items": memory_items}
 

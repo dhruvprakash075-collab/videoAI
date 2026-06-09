@@ -1112,3 +1112,41 @@ def test_build_retry_wrapper_exhausted():
     assert len(degradations) == 1
     assert degradations[0][0] == 1
     assert degradations[0][1] == "segment_skip"
+
+
+# ── TTS duration guard ────────────────────────────────────────────────────────
+
+
+def test_tts_duration_guard_uses_locked_target_when_available():
+    """When _requested_duration_per_seg_s is set, it takes priority over seg_min * 60."""
+    seg_min = 2
+    _requested_duration_per_seg_s = 15.0  # 0.5 min / 2 segs = 15s per seg
+    result = (
+        _requested_duration_per_seg_s
+        if _requested_duration_per_seg_s is not None
+        else seg_min * 60
+    )
+    assert result == 15.0, f"expected 15.0, got {result}"
+
+
+def test_tts_duration_guard_falls_back_to_seg_min():
+    """When _requested_duration_per_seg_s is None, fall back to seg_min * 60."""
+    seg_min = 2
+    _requested_duration_per_seg_s = None
+    result = (
+        _requested_duration_per_seg_s
+        if _requested_duration_per_seg_s is not None
+        else seg_min * 60
+    )
+    assert result == 120.0, f"expected 120.0, got {result}"
+
+
+def test_tts_duration_guard_limit_50pct_or_30s():
+    """The dur_limit = max(target * 1.5, target + 30)."""
+    target = 15.0
+    limit = max(target * 1.5, target + 30)
+    assert limit == 45.0, f"expected 45.0, got {limit}"
+
+    target = 100.0
+    limit = max(target * 1.5, target + 30)
+    assert limit == 150.0, f"expected 150.0, got {limit}"

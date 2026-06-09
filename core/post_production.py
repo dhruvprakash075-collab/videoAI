@@ -57,6 +57,7 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
         "final_video": result.get("output"),
         "duration_s": result.get("duration_s", 0),
         "quality_check": result.get("quality", {}),
+        "youtube_upload": result.get("youtube_upload", "not_attempted"),
     }
 
     try:
@@ -253,35 +254,52 @@ def finalize_production(
     if config.get("video", {}).get("generate_thumbnail", False):
         _thumbnail_path = _generate_thumbnail(final_video, topic)
 
-    # Quality check
+    # Quality check — read DecisionRecord for user-requested duration target
+    _requested_duration_s = None
+    try:
+        from memory.blackboard import get_blackboard
+        _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
+        _rec = _bb.read_decision()
+        if _rec is not None:
+            _dur = _rec.total_duration_min
+            if _dur.locked and _dur.provenance in ("user", "cli_flag"):
+                _requested_duration_s = _dur.value * 60
+                log.info(
+                    f"[QC] User locked duration = {_dur.value}min "
+                    f"({_requested_duration_s:.0f}s) — will validate against this target"
+                )
+    except Exception as _e:
+        log.debug(f"[QC] Could not read DecisionRecord for duration target: {_e}")
+
     log.info("Running quality checks...")
     _actual_duration_s = sum(get_video_duration(p) for p in mp4s if p is not None)
     qc = check_video(
         final_video,
         config,
         expected_duration_s=_actual_duration_s if _actual_duration_s > 0 else None,
+        requested_duration_s=_requested_duration_s,
     )
     log.info(f"  Quality: {'PASS' if qc['passed'] else 'FAIL'}")
     if qc["issues"]:
         for issue in qc["issues"]:
             log.warning(f"    - {issue}")
 
+    _quality_passed = qc["passed"]
     _success_result: dict[str, Any] = {
-        "status": "success",
+        "status": "success" if _quality_passed else "error",
         "output": str(final_video),
         "segments": len(mp4s),
         "duration_s": qc["details"].get("duration_s", 0),
         "quality": qc,
         "thumbnail": _thumbnail_path,
     }
-    write_manifest(topic, _success_result, config, n_segs, wall_time_s)
 
     # Chapters
     chapters = _write_chapters(outline, mp4s, final_out, topic)
     if chapters:
         _success_result["chapters"] = chapters
 
-    # Auto-Upload
+    # Auto-Upload (run BEFORE manifest so manifest includes upload status)
     upload_cfg = config.get("upload", {})
     if upload_cfg.get("enabled", False) and upload_cfg.get("platform") == "youtube":
         log.info("[YouTube] Auto-upload enabled. Initiating Playwright upload...")
@@ -307,5 +325,8 @@ def finalize_production(
             headless=True,
         )
         _success_result["youtube_upload"] = "success" if uploaded else "failed"
+
+    # Manifest (written after upload so youtube_upload status is included)
+    write_manifest(topic, _success_result, config, n_segs, wall_time_s)
 
     return _success_result

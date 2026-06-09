@@ -311,11 +311,11 @@ class TestP423FloatDurationFlow:
         """The `_clamp` static method must NOT truncate via int()."""
         from config.config_schemas import DecisionRecord
 
-        # Clamp at upper bound: 2.5 is within (1, 600) so it should be unchanged
+        # Clamp at upper bound: 2.5 is within (0.5, 600) so it should be unchanged
         assert DecisionRecord._clamp("total_duration_min", 2.5) == 2.5
-        # Clamp at lower bound: 0.1 should be raised to 1 but stay float
+        # Clamp at lower bound: 0.1 should be raised to 0.5 but stay float
         clamped = DecisionRecord._clamp("total_duration_min", 0.1)
-        assert clamped == 1
+        assert clamped == 0.5
         assert isinstance(clamped, (int, float))
         # Clamp at upper bound: 9999 should drop to 600
         clamped_hi = DecisionRecord._clamp("words_per_segment", 9999.5)

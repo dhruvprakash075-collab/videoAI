@@ -317,6 +317,43 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
     return "ok", "layered_v3 preflight passed (ComfyUI, workflows, nodes, models all present)"
 
 
+def _check_playwright(config: dict) -> tuple[Status, str]:
+    """When upload is enabled, verify Playwright browser is installed."""
+    upload = config.get("upload", {})
+    if not upload.get("enabled", False):
+        return "skip", "Upload not enabled — skipping Playwright check"
+    if upload.get("platform") != "youtube":
+        return "skip", "Non-YouTube upload — skipping Playwright check"
+
+    import sys
+    _fix_cmd = f"{sys.executable} -m playwright install chromium"
+
+    def _try_playwright(args: list[str]) -> int | None:
+        """Try `python -m playwright ...` first, then bare `playwright`."""
+        for cmd in ([sys.executable, "-m", "playwright", *args], ["playwright", *args]):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                return r.returncode
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                return None  # timeout marker
+        return None  # neither worked
+
+    try:
+        rc = _try_playwright(["install", "--dry-run"])
+        if rc == 0:
+            return "ok", "Playwright browsers found"
+        rc_chromium = _try_playwright(["install", "--dry-run", "chromium"])
+        if rc_chromium == 0:
+            return "ok", "Playwright Chromium found"
+        if rc is None and rc_chromium is None:
+            return "fail", f"Playwright not found via `python -m playwright` or bare `playwright`. Fix: {_fix_cmd}"
+        return "fail", f"Playwright browser not installed. Fix: {_fix_cmd}"
+    except Exception as e:
+        return "warn", f"Playwright check failed: {e}"
+
+
 def _check_ffmpeg() -> tuple[Status, str]:
     """Verify ffmpeg is in PATH and reports a version."""
     ffmpeg = shutil.which("ffmpeg")
@@ -370,6 +407,7 @@ def run_preflight(
         _timed(lambda: _check_indicf5(config), name="indicf5"),
         _timed(lambda: _check_layered_v3(config), name="layered_v3"),
         _timed(_check_ffmpeg, name="ffmpeg"),
+        _timed(lambda: _check_playwright(config), name="playwright"),
     ]
     for c in checks:
         result.checks.append(c)

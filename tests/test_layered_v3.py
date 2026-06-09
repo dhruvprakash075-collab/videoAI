@@ -209,6 +209,7 @@ class TestGenerateLayeredImages:
                     "port": 8188,
                     "root": "C:\\Video.AI\\external\\ComfyUI",
                     "timeout_seconds": 10,
+                    "auto_start_timeout": 5,
                 },
                 "layered_v3": {
                     "approval_mode": "hybrid",
@@ -226,10 +227,18 @@ class TestGenerateLayeredImages:
             }
         }
 
-        with patch("video.image_gen.layered_v3.preflight_layered_v3", return_value=[]):
-            with patch("video.image_gen.layered_v3._run_workflow", return_value=[]) as mock_run_wf:
-                generate_layered_images(["test prompt"], tmp_path, cfg)
-                assert mock_run_wf.called
+        with (
+            patch("video.image_gen.layered_v3.preflight_layered_v3", return_value=[]),
+            patch("video.image_gen.layered_v3._run_workflow", return_value=[]) as mock_run_wf,
+            patch("video.image_gen.comfyui_runtime.get_comfyui_runtime") as mock_get_runtime,
+        ):
+            mock_runtime = MagicMock()
+            mock_runtime.ensure_running.return_value = True
+            mock_runtime.base_url = "http://127.0.0.1:8188"
+            mock_get_runtime.return_value = mock_runtime
+
+            generate_layered_images(["test prompt"], tmp_path, cfg)
+            assert mock_run_wf.called
 
     def test_routes_to_one_pass_fallback_when_preflight_fails(self, tmp_path: Path):
         from video.image_gen.layered_v3 import generate_layered_images
@@ -320,6 +329,7 @@ class TestGenerateLayeredImages:
                     "host": "127.0.0.1",
                     "port": 8188,
                     "timeout_seconds": 10,
+                    "auto_start_timeout": 5,
                 },
                 "layered_v3": {
                     "approval_mode": "hybrid",
@@ -337,11 +347,19 @@ class TestGenerateLayeredImages:
             }
         }
 
-        with patch("video.image_gen.layered_v3.preflight_layered_v3", return_value=[]):
-            with patch("video.image_gen.layered_v3._run_workflow", return_value=[]) as mock_run_wf:
-                generate_layered_images("a; b; c", tmp_path, cfg)
+        with (
+            patch("video.image_gen.layered_v3.preflight_layered_v3", return_value=[]),
+            patch("video.image_gen.layered_v3._run_workflow", return_value=[]) as mock_run_wf,
+            patch("video.image_gen.comfyui_runtime.get_comfyui_runtime") as mock_get_runtime,
+        ):
+            mock_runtime = MagicMock()
+            mock_runtime.ensure_running.return_value = True
+            mock_runtime.base_url = "http://127.0.0.1:8188"
+            mock_get_runtime.return_value = mock_runtime
 
-                assert mock_run_wf.call_count >= 1
+            generate_layered_images("a; b; c", tmp_path, cfg)
+
+            assert mock_run_wf.call_count >= 1
 
 
 class TestComputeIdentityHash:

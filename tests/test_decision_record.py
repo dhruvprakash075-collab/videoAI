@@ -213,3 +213,24 @@ def test_build_default_from_config():
     assert rec.images_per_segment.value == 8
     # segment_count derived: ceil(12/3) = 4
     assert rec.segment_count.value == 4
+
+
+def test_clamp_total_duration_preserves_fractional_0_5():
+    r = DecisionRecord()
+    r.set("total_duration_min", 0.5, "cli_flag", lock=True)
+    assert r.total_duration_min.value == 0.5
+    assert r.total_duration_min.locked is True
+
+
+def test_clamp_total_duration_rounds_up_from_below_0_5():
+    r = DecisionRecord()
+    r.set("total_duration_min", 0.1, "cli_flag", lock=True)
+    assert r.total_duration_min.value == 0.5  # clamped to min 0.5
+
+
+def test_duration_0_5_produces_segment_count_1():
+    r = DecisionRecord()
+    r.set("total_duration_min", 0.5, "cli_flag", lock=True)
+    r.set("segment_duration_min", 2, "default")
+    r.resolve_conflicts()
+    assert r.segment_count.value == 1  # ceil(0.5/2) = 1

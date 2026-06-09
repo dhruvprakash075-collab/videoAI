@@ -124,3 +124,32 @@ def test_messy_fixture_cleaned():
     assert "<!--" not in result
     # Real narration must survive
     assert "ancient temple" in result or "hero" in result or "valley" in result
+
+
+def test_reject_unsafe_narration_json_leftover():
+    from core.pre_production import _reject_unsafe_narration
+
+    assert _reject_unsafe_narration('{"narration": "hello"}') is None
+    assert _reject_unsafe_narration('Hello world. {"segment": 1}') is None
+    assert _reject_unsafe_narration("Hello world") == "Hello world"
+    assert _reject_unsafe_narration("Short") is None  # < 10 chars
+
+
+def test_reject_unsafe_narration_remaining_tags():
+    from core.pre_production import _reject_unsafe_narration
+
+    assert _reject_unsafe_narration("Hello [/narration] world") is None
+    assert _reject_unsafe_narration("Hello [section] world") is None
+
+
+def test_normalize_hindi_for_tts():
+    from core.pre_production import _normalize_hindi_for_tts
+
+    # ऋ → रि
+    assert _normalize_hindi_for_tts("\u090b") == "\u0930\u093f"
+    # ॠ → री
+    assert _normalize_hindi_for_tts("\u0960") == "\u0930\u0940"
+    # ऌ → लि
+    assert _normalize_hindi_for_tts("\u090c") == "\u0932\u093f"
+    # Normal text unchanged
+    assert _normalize_hindi_for_tts("नमस्ते") == "नमस्ते"

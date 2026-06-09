@@ -172,3 +172,51 @@ def test_duration_na_from_ffprobe(tmp_path: Path):
         )
         out = check_video(p, {"video": {"resolution": "1920x1080", "total_duration_min": 1}})
     assert any("N/A" in i or "duration" in i.lower() for i in out["issues"])
+
+
+def test_requested_duration_causes_mismatch_when_too_long(tmp_path: Path):
+    p = tmp_path / "x.mp4"
+    p.write_bytes(b"x" * 200000)
+    with patch("subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(_probe_payload(duration=275.0)), stderr=""
+        )
+        out = check_video(
+            p,
+            {"video": {"resolution": "1920x1080"}},
+            expected_duration_s=275.0,
+            requested_duration_s=30.0,
+        )
+    assert out["passed"] is False
+    assert any("Duration mismatch" in i for i in out["issues"])
+
+
+def test_requested_duration_not_applied_when_none(tmp_path: Path):
+    p = tmp_path / "x.mp4"
+    p.write_bytes(b"x" * 200000)
+    with patch("subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(_probe_payload(duration=275.0)), stderr=""
+        )
+        out = check_video(
+            p,
+            {"video": {"resolution": "1920x1080"}},
+            expected_duration_s=275.0,
+            requested_duration_s=None,
+        )
+    assert out["passed"] is True  # matches expected_duration_s=275
+
+
+def test_requested_duration_zero_skips(tmp_path: Path):
+    p = tmp_path / "x.mp4"
+    p.write_bytes(b"x" * 200000)
+    with patch("subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(_probe_payload(duration=30.0)), stderr=""
+        )
+        out = check_video(
+            p,
+            {"video": {"resolution": "1920x1080", "total_duration_min": 0.5}},
+            requested_duration_s=0,  # zero → ignored
+        )
+    assert out["passed"] is True

@@ -376,11 +376,12 @@ class TestFinalizeProduction:
         result = self._run_production(tmp_path, monkeypatch)
         assert result["quality"]["passed"] is True
 
-    def test_qc_failure_logged_but_not_fatal(self, tmp_path, monkeypatch):
+    def test_qc_failure_returns_error_status(self, tmp_path, monkeypatch):
         qc = {"passed": False, "issues": ["short video"], "details": {"duration_s": 5.0}}
         result = self._run_production(tmp_path, monkeypatch, qc_result=qc)
-        assert result["status"] == "success"  # not fatal
+        assert result["status"] == "error"
         assert result["quality"]["passed"] is False
+        assert "output" in result  # file still available for inspection
 
     def test_concat_exception_returns_error(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

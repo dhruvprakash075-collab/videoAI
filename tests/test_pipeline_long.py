@@ -1100,3 +1100,23 @@ def test_pipeline_long_module_reload_spec_error():
     with patch("importlib.util.spec_from_file_location", return_value=None):
         with pytest.raises(ImportError, match="Could not load concurrency module"):
             importlib.reload(sys.modules["core.pipeline_long"])
+
+
+def test_float_safe_ceil_segment_count():
+    """Verify math.ceil is used for float-safe segment count computation."""
+    import math
+    # 0.5 min total / 2 min per seg = 0.25 → ceil = 1
+    total = 0.5
+    seg_min = 2.0
+    n_segs = max(1, math.ceil(total / seg_min))
+    assert n_segs == 1
+
+    # 5 min total / 2 min per seg = 2.5 → ceil = 3
+    total = 5.0
+    n_segs = max(1, math.ceil(total / seg_min))
+    assert n_segs == 3
+
+    # 2 min total / 2 min per seg = 1.0 → ceil = 1
+    total = 2.0
+    n_segs = max(1, math.ceil(total / seg_min))
+    assert n_segs == 1

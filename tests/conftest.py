@@ -17,6 +17,24 @@ from pathlib import Path
 import _pytest.pathlib as _pp
 import pytest
 
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-smoke", action="store_true", default=False, help="run smoke tests"
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "smoke: mark test as smoke test (ComfyUI integration)")
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-smoke"):
+        skip_smoke = pytest.mark.skip(reason="need --run-smoke option to run")
+        for item in items:
+            if "smoke" in item.keywords:
+                item.add_marker(skip_smoke)
+
 # Suppress pyarrow C++ shutdown crash on Windows (DLL unloading order).
 # The pyarrow Windows wheel triggers an access violation at process exit when
 # native DLLs are unloaded in the wrong order. This flag tells pyarrow to skip

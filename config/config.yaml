@@ -185,7 +185,7 @@ image_gen:
   fallback_backend: bonsai
   composition_mode: one_pass
   layered_v3:
-    approval_mode: hybrid
+    approval_mode: auto
     character_threshold: 0.3
     closeup_threshold: 0.8
     max_characters: 2
@@ -223,8 +223,6 @@ audio_fx:
   program_loudnorm: true
   loudnorm_two_pass: true
   target_lufs: -14
-  # ⚠ Missing SFX WAV files to generate: wind, rain, heartbeat,
-  # footsteps, door_creak, whisper, scream, explosion, bell
 rvc:
   enabled: false
 music:

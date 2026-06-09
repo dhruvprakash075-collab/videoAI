@@ -275,7 +275,8 @@ def run_long_pipeline(
         )
         config["video"]["total_duration_min"] = _rec.total_duration_min.value
     else:
-        n_segs = int(max(1, -(-total // seg_min)))
+        import math as _math
+        n_segs = max(1, _math.ceil(total / seg_min))
         words_per_seg = config.get("script", {}).get("words_per_segment", 130)
         _seg_count_locked = False
         log.info(
@@ -657,14 +658,20 @@ if __name__ == "__main__":
         print("=" * 60)
         print(f"Status: {result.get('status', 'unknown').upper()}")
 
-        if result.get("status") == "success":
-            print(f"Output: {result.get('output')}")
+        if result.get("status") in ("success", "error"):
+            if result.get("output"):
+                print(f"Output: {result.get('output')}")
             print(f"Segments: {result.get('segments')}")
             _dur = result.get("duration_s")
             if isinstance(_dur, (int, float)) and not isinstance(_dur, bool):
                 print(f"Duration: {_dur:.1f}s")
             else:
                 print(f"Duration: {_dur}")
+            if result.get("status") == "error":
+                _qc = result.get("quality", {})
+                if _qc.get("issues"):
+                    for _issue in _qc["issues"]:
+                        print(f"  Quality issue: {_issue}")
         elif result.get("status") == "dry_run":
             print(f"Would generate: {result.get('segments')} segments")
             print(f"Output would be: {result.get('output')}")

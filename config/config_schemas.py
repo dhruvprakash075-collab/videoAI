@@ -490,7 +490,7 @@ class DecisionRecord(BaseModel):
     def _clamp(field: str, value: Any) -> Any:
         """Clamp numeric structural fields to safe ranges."""
         clamps = {
-            "total_duration_min": (1, 600),
+            "total_duration_min": (0.5, 600),
             "segment_count": (1, 200),
             "segment_duration_min": (1, 30),
             "words_per_segment": (50, 800),

@@ -62,6 +62,10 @@ def setup_run_logging(log_dir: Path) -> None:
 
     logging.root.setLevel(logging.DEBUG)
 
+    # Suppress noisy library debug logs
+    for _noisy in ("httpcore", "httpx", "huggingface", "huggingface_hub", "urllib3", "PIL"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
     log.info(f"Logging to {log_file}")
 
 

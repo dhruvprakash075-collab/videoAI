@@ -576,3 +576,16 @@ def test_validate_memory_item_rejects_low_importance():
     assert _validate_memory_item({"type": "costume", "name": "t", "importance": "medium"}) is not None
     assert _validate_memory_item({"type": "costume", "name": "t", "importance": "high"}) is not None
     assert _validate_memory_item({"type": "costume", "name": "t", "importance": "core"}) is not None
+
+
+def test_storymemory_does_not_have_save_memory_item():
+    """StoryMemory should NOT have save_memory_item — the plan says to use
+    PermanentMemoryLog for structured memory persistence instead."""
+    from memory.memory import StoryMemory
+    assert not hasattr(StoryMemory, "save_memory_item")
+
+
+def test_permanent_memory_log_has_save_memory_item():
+    """PermanentMemoryLog IS the correct target for structured memory persistence."""
+    from memory.permanent_memory import PermanentMemoryLog
+    assert hasattr(PermanentMemoryLog, "save_memory_item")

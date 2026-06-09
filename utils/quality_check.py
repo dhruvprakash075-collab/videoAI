@@ -9,7 +9,12 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-def check_video(video_path: Path, config: dict, expected_duration_s: float | None = None) -> dict:
+def check_video(
+    video_path: Path,
+    config: dict,
+    expected_duration_s: float | None = None,
+    requested_duration_s: float | None = None,
+) -> dict:
     """Run quality checks on the final video.
 
     Checks:
@@ -26,6 +31,9 @@ def check_video(video_path: Path, config: dict, expected_duration_s: float | Non
             instead of ``total_duration_min * 60``.  Pass the sum of actual TTS
             segment durations so the check reflects real output length rather
             than the config target (P3-10 fix).
+        requested_duration_s: When the user supplied a hard ``--duration`` target,
+            pass it here so the quality check validates the output against the
+            requested contract rather than the sum of segment durations.
 
     Returns {"passed": bool, "issues": List[str], "details": Dict}
     """
@@ -86,10 +94,12 @@ def check_video(video_path: Path, config: dict, expected_duration_s: float | Non
         issues.append("Could not read video duration (ffprobe returned N/A or invalid value)")
     details["duration_s"] = round(duration, 2)
 
-    # P3-10 fix: compare against the actual TTS-driven duration when provided,
-    # not the config target (total_duration_min * 60).  The config target is a
-    # planning estimate; real output length is determined by TTS pacing/mood.
-    if expected_duration_s is not None and expected_duration_s > 0:
+    # When the user supplied a hard ``--duration`` target, use it as the
+    # primary comparison so a 30s request cannot pass with a 275s output.
+    if requested_duration_s is not None and requested_duration_s > 0:
+        expected_s = requested_duration_s
+        log.debug(f"QC: using requested_duration_s={expected_s:.1f}s (user target)")
+    elif expected_duration_s is not None and expected_duration_s > 0:
         expected_s = expected_duration_s
         log.debug(f"QC: using caller-supplied expected_duration_s={expected_s:.1f}s")
     else:
