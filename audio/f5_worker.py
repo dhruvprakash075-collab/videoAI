@@ -212,7 +212,7 @@ def _detect_dit_config(ckpt_file: str) -> dict:
 
             sd = load_file(ckpt_file)
         else:
-            obj = torch.load(ckpt_file, map_location="cpu", weights_only=False)
+            obj = torch.load(ckpt_file, map_location="cpu", weights_only=True)
             # EMA checkpoints nest weights under "ema_model_state_dict" or "model_state_dict"
             for key in ("ema_model_state_dict", "model_state_dict", "model"):
                 if isinstance(obj, dict) and key in obj:

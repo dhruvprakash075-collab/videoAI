@@ -1,0 +1,27 @@
+exclude:
+  - '**/venv*'
+  - '**/indicf5*'
+  - '**/__pycache__'
+  - '**/*cache*'
+  - '**/node_modules*'
+  - '**/dist*'
+  - '**/build*'
+  - '**/external*'
+  - '**/studio_outputs*'
+  - '**/hf_cache*'
+  - '**/tests*'
+
+checks:
+  dead_code: true
+  security: true
+  secrets: true
+  quality: true
+  dependencies: true
+
+output:
+  format: json
+  file: diagnostics/skylos_scan_results.json
+
+max_files: 1000
+parallelism: 4
+

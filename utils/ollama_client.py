@@ -1,5 +1,4 @@
 """ollama_client.py - Centralized Ollama HTTP client with 3-state circuit breaker.
-
 B1: Replaces the duplicated urllib+retry loops scattered across director_agent,
 audio_proxy, and pipeline_long with a single client that has:
   - One retry policy (exponential backoff, transient errors only)
@@ -8,14 +7,12 @@ audio_proxy, and pipeline_long with a single client that has:
     * Closed:    requests pass through normally
     * Open:      fail fast for breaker_cooldown_s after breaker_fails consecutive failures
     * Half-Open: allow ONE probe after cooldown; success → Closed, failure → Open
-
 Usage:
     from utils.ollama_client import OllamaClient
     client = OllamaClient(config)
     text = client.generate("Hello", model="hermes-director")
     text = client.chat([{"role": "user", "content": "Hi"}], model="sarvam-translate")
 """
-
 import contextlib
 import json
 import logging
@@ -25,15 +22,11 @@ import urllib.error
 import urllib.request
 
 log = logging.getLogger(__name__)
-
-
 class _BreakerState:
     """Per-model circuit breaker state (thread-safe)."""
-
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
-
     def __init__(self, fails_threshold: int, cooldown_s: float):
         self._lock = threading.Lock()
         self._state = self.CLOSED
@@ -41,7 +34,6 @@ class _BreakerState:
         self._open_until = 0.0
         self._fails_thresh = fails_threshold
         self._cooldown_s = cooldown_s
-
     def allow_request(self) -> bool:
         """Return True if the request should be attempted."""
         with self._lock:
@@ -55,14 +47,12 @@ class _BreakerState:
                 return False
             # HALF_OPEN: allow exactly one probe (caller must call record_success/failure)
             return True
-
     def record_success(self) -> None:
         with self._lock:
             self._fail_count = 0
             if self._state != self.CLOSED:
                 log.info("[Breaker] → Closed (probe succeeded)")
             self._state = self.CLOSED
-
     def record_failure(self) -> None:
         with self._lock:
             self._fail_count += 1
@@ -78,15 +68,12 @@ class _BreakerState:
                     f"[Breaker] → Open after {self._fail_count} failures "
                     f"(cooldown {self._cooldown_s:.0f}s)"
                 )
-
     @property
     def state(self) -> str:
         with self._lock:
             return self._state
-
     def cooldown_remaining_s(self) -> float:
         """Return seconds until the breaker auto-transitions OPEN → HALF_OPEN.
-
         Returns 0.0 if the breaker is not OPEN (closed or already half-open).
         Used by callers (e.g. `utils.crewai_breaker`) to report a useful
         `BreakerOpen.cooldown_s` to the user instead of a hardcoded 0.
@@ -95,26 +82,26 @@ class _BreakerState:
             if self._state != self.OPEN:
                 return 0.0
             return max(0.0, self._open_until - time.time())
-
-
 class OllamaClient:
     """Centralized Ollama HTTP client.
-
     Thread-safe. One instance per pipeline run is sufficient.
     """
-
     def __init__(self, config: dict):
         import os as _os
-
         self._config = config
         _ollama = config.get("ollama", {})
-
         # Check standard environment variables first to allow external server settings
         _env_host = _os.environ.get("OLLAMA_HOST") or _os.environ.get("OLLAMA_BASE_URL")
         if _env_host:
-            self._host = _env_host.rstrip("/")
+            _env_host = _env_host.rstrip("/")
+            if not self._is_local_host(_env_host):
+                raise ValueError(f"OLLAMA_HOST must be a local address (localhost/127.0.0.1/::1), got: {_env_host}")
+            self._host = _env_host
         else:
-            self._host = _ollama.get("host", "http://localhost:11434").rstrip("/")
+            host = _ollama.get("host", "http://localhost:11434").rstrip("/")
+            if not self._is_local_host(host):
+                raise ValueError(f"ollama.host must be a local address (localhost/127.0.0.1/::1), got: {host}")
+            self._host = host
         self._timeout = int(_ollama.get("request_timeout", 240))
         self._keep_alive = _ollama.get("keep_alive", "3m")
         _fails = int(_ollama.get("breaker_fails", 3))
@@ -122,15 +109,70 @@ class OllamaClient:
         self._breakers: dict[str, _BreakerState] = {}
         self._breaker_defaults = (_fails, _cooldown)
         self._lock = threading.Lock()
-
     def _breaker(self, model: str) -> _BreakerState:
         with self._lock:
             if model not in self._breakers:
                 self._breakers[model] = _BreakerState(*self._breaker_defaults)
             return self._breakers[model]
+    def _is_local_host(self, host: str) -> bool:
+        """Check if the host is a local address (localhost/127.0.0.1/::1).
+        Valid formats:
+        - localhost
+        - 127.0.0.1
+        - ::1
+        - http://localhost, http://localhost:11434
+        - http://127.0.0.1, http://127.0.0.1:11434
+        - http://[::1], http://[::1]:11434
+        Rejects:
+        - localhost.evil.com
+        - 127.0.0.1.evil.com
+        - http://attacker.com?localhost
+        """
+        import ipaddress
+        import urllib.parse
 
+        # Handle raw IPv6 addresses
+        if host.lower() in {"::1", "[::1]", "http://[::1]", "http://[::1]:11434"}:
+            return True
+
+        # Normalize host: remove scheme and port
+        parsed = urllib.parse.urlparse(host)
+        netloc = parsed.netloc or host
+
+        # Handle IPv6 brackets (e.g., [::1]:11434)
+        if netloc.startswith('[') and ']' in netloc:
+            ipv6_end = netloc.find(']')
+            if ipv6_end != -1:
+                netloc = netloc[1:ipv6_end]
+
+        # Strip port if present
+        if ':' in netloc:
+            netloc = netloc.split(':')[0]
+
+        # Define valid localhost patterns
+        valid_hosts = {
+            "localhost",
+            "127.0.0.1",
+            "::1"
+        }
+
+        # Check hostname
+        if netloc in valid_hosts:
+            return True
+
+        # Check IP
+        try:
+            ip = ipaddress.ip_address(netloc)
+            return ip.is_loopback
+        except ValueError:
+            return False
     def _post(self, url: str, payload: dict, timeout: int) -> dict:
         """Raw POST with retry on transient errors. Raises on permanent failure."""
+        # Validate URL before making the request to prevent SSRF
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        if not self._is_local_host(parsed.netloc):
+            raise ValueError(f"Ollama requests are only allowed to local hosts, got: {parsed.netloc}")
         data = json.dumps(payload).encode("utf-8")
         last_err = None
         for attempt in range(1, 4):
@@ -149,7 +191,6 @@ class OllamaClient:
                         f"[OllamaClient] Request timed out after {timeout}s. Skipping retries to prevent blocking the pipeline."
                     )
                     break
-
                 # Transient error — retry with backoff
                 if attempt < 3:
                     delay = 2.0**attempt
@@ -161,17 +202,14 @@ class OllamaClient:
                 # Non-transient (e.g. JSON decode) — don't retry
                 raise
         raise RuntimeError(f"Ollama request failed after attempt {attempt}: {last_err}")
-
     def _clean_response(self, text: str) -> str:
         """Strip <think>…</think> reasoning blocks from the response."""
         import re
-
         if "<think>" in text:
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             if "<think>" in text:
                 text = text[: text.index("<think>")].strip()
         return text.strip()
-
     def generate(
         self,
         prompt: str,
@@ -186,7 +224,6 @@ class OllamaClient:
         if not breaker.allow_request():
             log.warning(f"[OllamaClient] Breaker OPEN for '{model}' — failing fast")
             return ""
-
         payload: dict = {
             "model": model,
             "prompt": prompt,
@@ -199,7 +236,6 @@ class OllamaClient:
         if seed is not None:
             payload["options"]["seed"] = int(seed) % (2**32)
             payload["options"]["temperature"] = 0.0
-
         try:
             res = self._post(f"{self._host}/api/generate", payload, self._timeout)
             text = self._clean_response((res.get("response") or "").strip())
@@ -214,7 +250,6 @@ class OllamaClient:
             breaker.record_failure()
             log.exception(f"[OllamaClient] generate failed ({model}): {e}")
             return ""
-
     def chat(
         self,
         messages: list[dict],
@@ -228,12 +263,10 @@ class OllamaClient:
         if not breaker.allow_request():
             log.warning(f"[OllamaClient] Breaker OPEN for '{model}' — failing fast")
             return ""
-
         _msgs = []
         if system_msg:
             _msgs.append({"role": "system", "content": system_msg})
         _msgs.extend(messages)
-
         payload = {
             "model": model,
             "messages": _msgs,
@@ -241,7 +274,6 @@ class OllamaClient:
             "keep_alive": self._keep_alive,
             "options": {"temperature": temperature, "num_predict": num_predict},
         }
-
         try:
             res = self._post(f"{self._host}/api/chat", payload, self._timeout)
             text = self._clean_response((res.get("message", {}).get("content") or "").strip())
@@ -252,14 +284,12 @@ class OllamaClient:
             breaker.record_failure()
             log.exception(f"[OllamaClient] chat failed ({model}): {e}")
             return ""
-
     def stream(self, prompt: str, model: str) -> str:
         """Stream /api/generate tokens, accumulate and return full response."""
         breaker = self._breaker(model)
         if not breaker.allow_request():
             log.warning(f"[OllamaClient] Breaker OPEN for '{model}' — failing fast")
             return ""
-
         payload = json.dumps(
             {
                 "model": model,
@@ -269,7 +299,6 @@ class OllamaClient:
                 "options": {"temperature": 0.0},
             }
         ).encode("utf-8")
-
         full = []
         try:
             req = urllib.request.Request(
@@ -296,7 +325,6 @@ class OllamaClient:
             breaker.record_failure()
             log.exception(f"[OllamaClient] stream failed ({model}): {e}")
             return "".join(full).strip()
-
     def evict(self, model: str) -> None:
         """Send keep_alive=0 to evict a model from VRAM (best-effort, non-fatal)."""
         with contextlib.suppress(Exception):
@@ -306,7 +334,6 @@ class OllamaClient:
                 timeout=3,
             )
         # eviction is best-effort
-
     def get_resident_models(self) -> list[str]:
         """Return list of currently loaded model names via /api/ps."""
         try:
@@ -316,13 +343,9 @@ class OllamaClient:
                 return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
         except Exception:
             return []
-
-
 # ── Module-level singleton (lazy-initialized) ─────────────────────────────
 _client_instance: OllamaClient | None = None
 _client_lock = threading.Lock()
-
-
 def get_ollama_client(config: dict) -> OllamaClient:
     """Return the module-level OllamaClient singleton, creating it if needed."""
     global _client_instance
@@ -331,8 +354,6 @@ def get_ollama_client(config: dict) -> OllamaClient:
             _client_instance = OllamaClient(config)
             log.info("[OllamaClient] Singleton created")
         return _client_instance
-
-
 def reset_ollama_client() -> None:
     """Reset the singleton (call between pipeline runs in tests)."""
     global _client_instance

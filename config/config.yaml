@@ -219,6 +219,8 @@ performance:
   lookahead_segments: 3
 audio_fx:
   enabled: true
+  # Note: The following 9 SFX WAV files are currently missing and treated as no-ops:
+  # wind, rain, heartbeat, footsteps, door_creak, whisper, scream, explosion, bell.
   volume: 0.25
   program_loudnorm: true
   loudnorm_two_pass: true

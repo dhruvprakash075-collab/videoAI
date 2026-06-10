@@ -241,15 +241,16 @@ def test_translate_hinglish_delegates_and_records_seg_on_failure():
     reset_ollama_client()
 
 
-def test_environment_variables_are_honored():
-    """OllamaClient should prioritize OLLAMA_HOST or OLLAMA_BASE_URL environment variables."""
+def test_environment_variables_reject_remote_hosts():
+    """OllamaClient should reject non-localhost OLLAMA_HOST or OLLAMA_BASE_URL environment variables."""
     import os
 
     reset_ollama_client()
 
-    # Test OLLAMA_HOST
-    with patch.dict(os.environ, {"OLLAMA_HOST": "http://my-remote-ollama-host:11434"}):
-        client = OllamaClient(
+    # Test OLLAMA_HOST rejects remote host
+    with patch.dict(os.environ, {"OLLAMA_HOST": "http://my-remote-ollama-host:11434"}), \
+         pytest.raises(ValueError, match="must be a local address"):
+        OllamaClient(
             {
                 "ollama": {
                     "host": "http://localhost:11434",
@@ -257,15 +258,31 @@ def test_environment_variables_are_honored():
                 }
             }
         )
-        assert client._host == "http://my-remote-ollama-host:11434"
 
     reset_ollama_client()
 
-    # Test OLLAMA_BASE_URL
-    # Ensure OLLAMA_HOST is not in env
-    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://my-other-remote-host:11434"}):
-        if "OLLAMA_HOST" in os.environ:
-            del os.environ["OLLAMA_HOST"]
+    # Test OLLAMA_BASE_URL rejects remote host
+    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://my-remote-host:11434"}), \
+         pytest.raises(ValueError, match="must be a local address"):
+        OllamaClient(
+            {
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "request_timeout": 10,
+                }
+            }
+        )
+    reset_ollama_client()
+
+
+def test_environment_variables_accept_localhost():
+    """OllamaClient should accept localhost OLLAMA_HOST or OLLAMA_BASE_URL environment variables."""
+    import os
+
+    reset_ollama_client()
+
+    # Test OLLAMA_HOST accepts localhost
+    with patch.dict(os.environ, {"OLLAMA_HOST": "http://localhost:11434"}):
         client = OllamaClient(
             {
                 "ollama": {
@@ -274,7 +291,21 @@ def test_environment_variables_are_honored():
                 }
             }
         )
-        assert client._host == "http://my-other-remote-host:11434"
+        assert client._host == "http://localhost:11434"
+
+    reset_ollama_client()
+
+    # Test OLLAMA_BASE_URL accepts localhost
+    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://127.0.0.1:11434"}):
+        client = OllamaClient(
+            {
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "request_timeout": 10,
+                }
+            }
+        )
+        assert client._host == "http://127.0.0.1:11434"
     reset_ollama_client()
 
 
@@ -526,3 +557,16 @@ def test_get_resident_models_exception():
     with patch("urllib.request.urlopen", side_effect=OSError("down")):
         res = client.get_resident_models()
     assert res == []
+
+def test_ollama_ipv6_localhost():
+    '''Test that IPv6 localhost is accepted'''
+    client = OllamaClient({'ollama': {'host': 'http://localhost:11434', 'request_timeout': 10}})
+    assert client._is_local_host('http://[::1]:11434') is True
+    assert client._is_local_host('::1') is True
+
+def test_ollama_non_local_ipv6():
+    '''Test that non-local IPv6 is rejected'''
+    client = OllamaClient({'ollama': {'host': 'http://localhost:11434', 'request_timeout': 10}})
+    assert client._is_local_host('http://[2001:db8::1]:11434') is False
+    assert client._is_local_host('2001:db8::1') is False
+

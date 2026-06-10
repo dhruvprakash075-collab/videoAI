@@ -108,3 +108,5 @@ AUDITOR_GUIDANCE.md
 GITHUB_SETUP_INSTRUCTIONS.md
 Video_AI_Source_Code.zip
 files_to_zip.csv
+diagnostics/
+skylos_*.json

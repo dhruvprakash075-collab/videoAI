@@ -26,6 +26,7 @@ from jobs.job_store import JobStore
 from utils import load_config
 from utils.concurrency import global_scheduler
 from utils.ollama_client import get_ollama_client
+from utils.path_utils import is_safe_path
 
 # Initialize global job store
 job_store = JobStore()
@@ -161,12 +162,13 @@ def _sanitize_path_component(value: str) -> str:
     """P2-3: Sanitize a user-supplied path component.
 
     Rejects values containing path separators, ``..``, or absolute-path
-    indicators.  The value is then reduced to safe characters
+    indicators. The value is then reduced to safe characters
     (alphanumerics, underscores, hyphens) so it can be used as a directory
     name without risk of traversal.
 
     Raises ``ValueError`` if the raw value looks malicious.
     """
+
     # Reject obvious traversal attempts before any transformation
     if ".." in value:
         raise ValueError(f"Path component contains '..': {value!r}")
@@ -175,7 +177,14 @@ def _sanitize_path_component(value: str) -> str:
     if os.path.isabs(value):
         raise ValueError(f"Path component is absolute: {value!r}")
     # Reduce to safe characters
-    return re.sub(r"[^a-zA-Z0-9_\-]", "_", value)
+    safe_value = re.sub(r"[^a-zA-Z0-9_\-]", "_", value)
+
+    # Validate confinement to a root directory (defense-in-depth)
+    root_dir = Path().resolve()
+    if not is_safe_path(root_dir, safe_value):
+        raise ValueError(f"Path component escapes root directory: {safe_value!r}")
+
+    return safe_value
 
 
 # Mount output directory to serve final videos
@@ -590,7 +599,7 @@ async def preview_voice(character: str):
     wav_path = (voices_dir / f"{safe_name}.wav").resolve()
 
     # Ensure the resolved path stays inside character_voices/
-    if not str(wav_path).startswith(str(voices_dir)):
+    if not is_safe_path(voices_dir, str(wav_path.relative_to(voices_dir))):
         return JSONResponse(status_code=400, content={"error": "Invalid character name"})
 
     if not wav_path.exists():
@@ -1003,13 +1012,19 @@ async def ab_pick(job_id: str = Form(...), choice: str = Form(...), segment_num:
 
     # Assert both resolved paths stay under the output root (defence-in-depth)
     try:
-        variant_dir_resolved = variant_dir.resolve()
-        seg_images_dir_resolved = seg_images_dir.resolve()
-        if not str(variant_dir_resolved).startswith(str(_AB_OUTPUT_ROOT)):
-            raise ValueError(f"variant_dir escapes output root: {variant_dir_resolved}")
-        if not str(seg_images_dir_resolved).startswith(str(_AB_OUTPUT_ROOT)):
-            raise ValueError(f"seg_images_dir escapes output root: {seg_images_dir_resolved}")
-    except ValueError as exc:
+        # Resolve both paths to absolute
+        variant_abs = variant_dir.resolve()
+        seg_abs = seg_images_dir.resolve()
+        output_abs = _AB_OUTPUT_ROOT.resolve()
+
+        try:
+            # Check if variant_abs is under output_abs
+            variant_abs.relative_to(output_abs)
+            # Check if seg_abs is under output_abs
+            seg_abs.relative_to(output_abs)
+        except ValueError as exc:
+            raise ValueError(f"Path escapes output root: {exc}") from None
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
         log.warning(f"[A/B] Path traversal attempt blocked: {exc}")
         return JSONResponse(status_code=400, content={"error": "Invalid path"})
 
