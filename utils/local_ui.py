@@ -60,6 +60,10 @@ _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [
 # H3 fix: serialize config.yaml read-modify-write saves
 _config_save_lock = threading.Lock()
 
+# H5 fix: bounds for in-memory chat sessions
+_CHAT_SESSION_TTL_S = 6 * 3600  # evict sessions idle > 6h
+_CHAT_MAX_MESSAGES = 60  # cap stored history per session
+
 # Chat sessions v1 — in-memory only
 _chat_sessions_lock = threading.Lock()
 _chat_sessions: dict = {}  # {session_id: {"messages": [{"role":str, "content":str}], "created_at": float}}
@@ -1119,13 +1123,19 @@ async def chat(body: dict = Body(...)):
                 "reply": "",
             })
 
-        session["messages"].append({"role": "user", "content": message})
-        session["messages"].append({"role": "assistant", "content": reply})
+        # H5 fix: append under the lock (race fix) and cap stored history so
+        # neither memory nor the response payload grows without bound.
+        with _chat_sessions_lock:
+            session["messages"].append({"role": "user", "content": message})
+            session["messages"].append({"role": "assistant", "content": reply})
+            if len(session["messages"]) > _CHAT_MAX_MESSAGES:
+                session["messages"] = session["messages"][-_CHAT_MAX_MESSAGES:]
+            messages_out = list(session["messages"])
 
         return JSONResponse(content={
             "session_id": session_id,
             "reply": reply,
-            "messages": session["messages"],
+            "messages": messages_out,
         })
     except Exception as e:
         log.exception("Chat error")
