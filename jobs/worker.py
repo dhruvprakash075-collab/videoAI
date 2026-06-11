@@ -180,8 +180,11 @@ class Worker:
 
         proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NEW_PROCESS_GROUP)
 
-        # Start heartbeat thread
-        hb_thread = threading.Thread(target=self._heartbeat_loop, args=(job_id,), daemon=True)
+        # Start heartbeat thread with a per-job stop event (H1 fix)
+        job_stop = threading.Event()
+        hb_thread = threading.Thread(
+            target=self._heartbeat_loop, args=(job_id, job_stop), daemon=True
+        )
         hb_thread.start()
 
         # Start output streaming thread
