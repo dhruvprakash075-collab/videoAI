@@ -39,3 +39,9 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 - L4 bootstrap_pipeline.py: --file read without existence check (raw traceback).
 - L5 indicf5_worker.py _chunk_text: re.split removes sentence punctuation; TTS loses prosody marks (omnivoice keeps them).
 - L6 indicf5_worker.py: speed silently ignored when model lacks config.speed.
+- L7 omnivoice/f5 workers: empty synthesis writes near-silent WAV and reports success (silent failure family).
+- L8 omnivoice_worker.py: one-shot default num_step=24 vs persistent default 40 (inconsistent quality).
+- L9 f5_worker.py: missing checkpoint falls through to cryptic crash instead of clean error.
+- L10 f5/omnivoice workers: process-global torchaudio.load monkeypatch ignores normalize/format kwargs.
+- L11 supertonic_worker.py: SUPPORTED_LANGS defined but never enforced.
+- L12 local_ui.py upload_voice: all-symbol character_name sanitizes to empty -> writes '.wav'; no size cap on uploads.
