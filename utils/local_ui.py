@@ -1070,10 +1070,20 @@ async def chat(body: dict = Body(...)):
     if not session_id:
         session_id = uuid.uuid4().hex[:12]
 
+    now = time.time()
     with _chat_sessions_lock:
+        # H5 fix: evict sessions idle past the TTL so memory is bounded.
+        expired = [
+            sid
+            for sid, s in _chat_sessions.items()
+            if now - s.get("last_used", s.get("created_at", now)) > _CHAT_SESSION_TTL_S
+        ]
+        for sid in expired:
+            _chat_sessions.pop(sid, None)
         if session_id not in _chat_sessions:
-            _chat_sessions[session_id] = {"messages": [], "created_at": time.time()}
+            _chat_sessions[session_id] = {"messages": [], "created_at": now}
         session = _chat_sessions[session_id]
+        session["last_used"] = now
 
     try:
         cfg = load_config()
