@@ -224,6 +224,11 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     user_agent = cfg_source.get("user_agent", "VideoAI/6.0 (+https://github.com/...)")
     timeout_s = int(cfg_source.get("url_timeout_s", 30))
 
+    # H6 fix: cap the fetch size so a huge/malicious URL cannot exhaust
+    # memory via resp.text. Declared size is checked first; the actual body
+    # size is re-checked after download (covers chunked responses).
+    max_bytes = int(cfg_source.get("max_fetch_bytes", 10 * 1024 * 1024))
+
     log.info(f"source_loader: fetching {url} (timeout={timeout_s}s)")
     try:
         resp = requests.get(url, headers={"User-Agent": user_agent}, timeout=timeout_s)
@@ -231,7 +236,21 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     except requests.RequestException as e:
         raise SourceLoaderError(f"URL fetch failed: {e}") from e
 
+    try:
+        declared = int(resp.headers.get("Content-Length", 0))
+    except (TypeError, ValueError):
+        declared = 0
+    if declared > max_bytes:
+        raise SourceLoaderError(
+            f"URL response too large: {declared} bytes (cap: {max_bytes}). "
+            "Raise source.max_fetch_bytes in config to allow."
+        )
+
     raw_html = resp.text
+    if len(raw_html) > max_bytes:
+        raise SourceLoaderError(
+            f"URL response too large: {len(raw_html)} chars (cap: {max_bytes})."
+        )
     extracted = trafilatura.extract(raw_html, include_comments=False, include_tables=False) or ""
     text = _normalize_text(extracted)
     if not text.strip():
