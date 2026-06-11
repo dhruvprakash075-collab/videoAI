@@ -45,3 +45,17 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 - L10 f5/omnivoice workers: process-global torchaudio.load monkeypatch ignores normalize/format kwargs.
 - L11 supertonic_worker.py: SUPPORTED_LANGS defined but never enforced.
 - L12 local_ui.py upload_voice: all-symbol character_name sanitizes to empty -> writes '.wav'; no size cap on uploads.
+- L13 local_ui.py: voice_engine and numeric form fields unvalidated (ranges/allowed values); list_jobs limit unbounded.
+- L14 local_ui.py: TOCTOU on UIState.status in manual_pause/consultation_reply; topic interpolated into chat system prompt (prompt injection).
+- L15 jobs/worker.py: run_forever logs crashes to magic job_id=0; VENV_PY hardcodes Windows path.
+- L16 local_ui.py: duplicate bool parsers (_form_bool vs inner _parse_bool).
+
+## Corrections to scanner results
+
+- skylos 'unsafe archive extraction source_loader.py:235' is a FALSE POSITIVE (line is trafilatura.extract, no archives in file).
+- skylos 'unused imports' in pipeline_long/image_gen/context_manager/pre_production are intentional re-exports (noqa: F401); do not remove.
+- skylos 'unused parameter indicf5:135' and 'unused variable SUPPORTED_LANGS' are REAL bugs (M1, L11).
+
+## Summary
+
+7 HIGH, 14 MEDIUM, 16 LOW = 37 verified findings. Tested zone (95% coverage) is clean; all findings concentrate in the untested zone. Recommended fix order: H1-H7, then M1-M14.
