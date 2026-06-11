@@ -24,3 +24,9 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 - M6 local_ui.py ab_generate: eviction drops first 5 jobs regardless of status; in-flight GPU jobs lose tracking (404 for pollers).
 - M7 local_ui.py ab_pick: empty variant dir returns status committed with 0 images (silent false success).
 - M8 local_ui.py upload_script: does not call _validate_job_request (unlike /api/jobs); run_mode etc. unvalidated.
+- M9 local_ui.py: 7+ endpoints return str(e) in 500 responses (internal detail leak). Same pattern in core/post_production.py:250.
+- M10 local_ui.py /api/chat: session list appended outside the lock (race).
+- M11 jobs/worker.py: temp content file leaks if Popen raises (cleanup only on happy path).
+- M12 jobs/worker.py: cancel vs natural-exit TOCTOU; job can be marked CANCELED despite rc==0.
+- M13 utils/seo_generator.py:295: XSS, HTML built from unescaped user input (skylos, confirmed pattern).
+- M14 agents/director_agent.py:1966: ask_cache_ttl stub with only pass; silently does nothing.
