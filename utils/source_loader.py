@@ -324,7 +324,16 @@ def load_source(source: Any, config: dict | None = None) -> SourceDocument:
         path = source
     elif isinstance(source, str) and not _is_url(source):
         stripped = source.strip()
-        if any(stripped.lower().endswith(ext) for ext in allowed):
+        # H7 fix: only treat the string as a file path when it could actually
+        # be one - single line and bounded length. Pasted documents contain
+        # newlines; without this check, paste text accidentally ending in an
+        # allowed extension was read from disk (arbitrary local file read).
+        looks_like_path = (
+            "\n" not in stripped
+            and len(stripped) <= 4096
+            and any(stripped.lower().endswith(ext) for ext in allowed)
+        )
+        if looks_like_path:
             path = Path(stripped)
         else:
             doc = _load_paste(source)
