@@ -123,11 +123,15 @@ class Worker:
                 cmd += [arg, str(v)]
         return cmd
 
-    def _heartbeat_loop(self, job_id: int):
-        while not self._stop.is_set():
+    def _heartbeat_loop(self, job_id: int, stop_event: threading.Event):
+        # Per-job stop event (H1 fix): the previous shared self._stop was
+        # cleared after a 2s join timeout (shorter than the 10s sleep),
+        # reviving the old thread which heartbeated the finished job forever.
+        # Event.wait() also exits promptly instead of sleeping out the interval.
+        while not stop_event.is_set():
             with suppress(Exception):
                 self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-            time.sleep(HEARTBEAT_INTERVAL)
+            stop_event.wait(HEARTBEAT_INTERVAL)
 
     def _stream_process(self, proc: subprocess.Popen, job_id: int):
         if proc.stdout is None:
