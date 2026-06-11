@@ -59,8 +59,10 @@ def test_load_config_project_missing():
     ):
         cfg = load_config(Path("config.yaml"), project_name="missing_project")
         # should warn about missing project
+        # Build the expected path with pathlib so the assertion works on both
+        # Windows (backslash) and Linux CI runners (forward slash).
         mock_warning.assert_any_call(
-            "Project configuration not found: projects\\missing_project.yaml"
+            f"Project configuration not found: {Path('projects') / 'missing_project.yaml'}"
         )
         assert "models" in cfg
 
