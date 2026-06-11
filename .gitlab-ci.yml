@@ -1,0 +1,48 @@
+stages:
+  - test
+  - scan
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .cache/pip
+    - .cache/npm
+    - dashboard/node_modules/
+
+python-test:
+  stage: test
+  image: python:3.12
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - python -m ruff check .
+    - python -m pytest -q --tb=short
+
+frontend-test:
+  stage: test
+  image: node:24
+  script:
+    - cd dashboard
+    - npm ci --no-audit --no-fund
+    - npm run lint
+    - npm run test:run
+    - npm run build
+
+skylos-scan:
+  stage: scan
+  image: python:3.12
+  before_script:
+    - pip install uv
+    - mkdir -p diagnostics
+  script:
+    - uvx skylos . -a --exclude "**/venv* **/indicf5* **/__pycache__ **/*cache* **/external* **/studio_outputs*" --format concise --output-file diagnostics/skylos_ci_scan.txt
+  artifacts:
+    paths:
+      - diagnostics/skylos_ci_scan.txt
+    when: always
+    expire_in: 1 week
