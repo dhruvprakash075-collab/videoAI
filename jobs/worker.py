@@ -213,12 +213,12 @@ class Worker:
                     break
                 time.sleep(1)
         finally:
-            # Allow threads to stop and reset stop event for next job
-            self._stop.set()
+            # H1 fix: signal only this job's heartbeat thread. Event.wait()
+            # wakes immediately, so the join succeeds; no clear() needed and
+            # no other job's threads are affected.
+            job_stop.set()
             out_thread.join(timeout=2)
             hb_thread.join(timeout=2)
-            # Clear stop event so heartbeat/output threads run for next job
-            self._stop.clear()
 
         rc = proc.poll()
         # Only update status if not already canceled
