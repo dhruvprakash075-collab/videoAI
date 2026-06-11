@@ -13,3 +13,10 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 - H5 local_ui.py /api/chat: unbounded session memory leak; full history returned each reply. Fix: TTL eviction + message cap.
 - H6 source_loader.py _load_url: no response size cap (OOM) and no scheme/host validation (SSRF). Fix: stream + byte cap.
 - H7 source_loader.py load_source: pasted text ending in .txt/.md/.pdf/.docx is treated as a file path and read from disk = arbitrary local file read. Fix: explicit paste-vs-path flag.
+
+## MEDIUM severity
+
+- M1 indicf5_worker.py: nfe_step accepted but never passed to the model (silent no-op).
+- M2 indicf5_worker.py: WAV written with requested sample_rate, not the model's actual rate.
+- M3 omnivoice_worker.py _prepare_ref_audio: non-atomic cache write; corrupt partial file reused forever.
+- M4 f5_worker.py _resolve_model_path: docstring promises refs/main resolution; code picks first snapshot dir (stale model risk).
