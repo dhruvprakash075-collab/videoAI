@@ -1204,7 +1204,12 @@ async def list_artifacts():
 
 @app.get("/api/artifacts/{run_id:path}")
 async def get_artifact_detail(run_id: str):
-    safe = _sanitize_path_component(run_id)
+    # H4 fix: the :path converter accepts '/', and the sanitizer raises on
+    # separators/'..' — catch it so malformed ids are a 400, not a 500.
+    try:
+        safe = _sanitize_path_component(run_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid run id"})
     run_dir = Path("studio_outputs") / safe
     if not run_dir.exists() or not run_dir.is_dir():
         return JSONResponse(status_code=404, content={"error": "Run not found"})
