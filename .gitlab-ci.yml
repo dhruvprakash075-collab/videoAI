@@ -2,23 +2,38 @@ stages:
   - test
   - scan
 
+# Avoid duplicate pipelines: run MR pipelines when an MR is open,
+# and branch pipelines only when no MR exists for the branch.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
   npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
 
+# Cache only package-manager download caches. dashboard/node_modules was
+# removed: `npm ci` deletes node_modules before installing, so caching it
+# only added upload/download time without ever being reused.
 cache:
   key: "$CI_COMMIT_REF_SLUG"
   paths:
     - .cache/pip
+    - .cache/uv
     - .cache/npm
-    - dashboard/node_modules/
 
 python-test:
   stage: test
   image: python:3.12
   before_script:
-    - python -m pip install --upgrade pip
-    - pip install -r requirements.txt
+    # uv resolves and installs wheels in parallel — much faster than pip
+    # for this large requirements set (torch + CUDA wheels).
+    - pip install uv
+    - uv pip install --system -r requirements.txt
   script:
     - python -m ruff check .
     - python -m pytest -q --tb=short
@@ -36,6 +51,9 @@ frontend-test:
 skylos-scan:
   stage: scan
   image: python:3.12
+  # needs: [] lets this job start immediately instead of waiting for the
+  # test stage — it does not consume any artifacts from those jobs.
+  needs: []
   # The scan is advisory: newer skylos versions exit non-zero when they
   # find dead code. The report artifact is what matters — findings
   # should be reviewed, not block the pipeline.
