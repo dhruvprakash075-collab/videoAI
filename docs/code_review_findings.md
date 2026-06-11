@@ -20,3 +20,7 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 - M2 indicf5_worker.py: WAV written with requested sample_rate, not the model's actual rate.
 - M3 omnivoice_worker.py _prepare_ref_audio: non-atomic cache write; corrupt partial file reused forever.
 - M4 f5_worker.py _resolve_model_path: docstring promises refs/main resolution; code picks first snapshot dir (stale model risk).
+- M5 supertonic_worker.py: seed from abs(hash(text)) is salted per process; 'deterministic' output is not reproducible. Use hashlib.
+- M6 local_ui.py ab_generate: eviction drops first 5 jobs regardless of status; in-flight GPU jobs lose tracking (404 for pollers).
+- M7 local_ui.py ab_pick: empty variant dir returns status committed with 0 images (silent false success).
+- M8 local_ui.py upload_script: does not call _validate_job_request (unlike /api/jobs); run_mode etc. unvalidated.
