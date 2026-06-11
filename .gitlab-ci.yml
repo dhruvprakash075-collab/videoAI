@@ -40,7 +40,10 @@ skylos-scan:
     - pip install uv
     - mkdir -p diagnostics
   script:
-    - uvx skylos . -a --exclude "**/venv* **/indicf5* **/__pycache__ **/*cache* **/external* **/studio_outputs*" --format concise --output-file diagnostics/skylos_ci_scan.txt
+    # skylos renamed --output-file to --output in a recent release; uvx
+    # always installs the latest version, which broke this job without
+    # any change on our side. Consider pinning (uvx skylos==X.Y.Z).
+    - uvx skylos . -a --exclude "**/venv* **/indicf5* **/__pycache__ **/*cache* **/external* **/studio_outputs*" --format concise --output diagnostics/skylos_ci_scan.txt
   artifacts:
     paths:
       - diagnostics/skylos_ci_scan.txt
