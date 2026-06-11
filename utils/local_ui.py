@@ -57,6 +57,9 @@ app.add_middleware(
 _ab_jobs_lock = threading.Lock()
 _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [...], "error": str}}
 
+# H3 fix: serialize config.yaml read-modify-write saves
+_config_save_lock = threading.Lock()
+
 # Chat sessions v1 — in-memory only
 _chat_sessions_lock = threading.Lock()
 _chat_sessions: dict = {}  # {session_id: {"messages": [{"role":str, "content":str}], "created_at": float}}
@@ -818,12 +821,19 @@ async def save_ui_config(
             comfy_cfg["unload_after_batch"] = _form_bool(comfyui_unload_after_batch, True)
             comfy_cfg["open_browser"] = _form_bool(comfyui_open_browser, False)
 
-        # Save to config.yaml
+        # Save to config.yaml atomically (H3 fix): write a temp file and
+        # os.replace() it so a crash mid-write can never corrupt the only
+        # config. The lock serializes concurrent saves (read-modify-write).
         config_path = Path("config/config.yaml")
         import yaml
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        with _config_save_lock:
+            tmp_path = config_path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    config, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+                )
+            os.replace(tmp_path, config_path)
 
         UIState.add_log(f"Backend: UI configuration saved successfully (engine={voice_engine})")
         return {"status": "success", "message": "Configuration saved successfully."}
