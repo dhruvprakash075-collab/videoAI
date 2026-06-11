@@ -13,8 +13,8 @@ from pathlib import Path
 def bootstrap():
     """Apply patches and environment setup before any imports."""
 
-    # Guard: ensure we run inside the project venv
-    if not hasattr(sys, "real_prefix") and not (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix):
+    # Guard: ensure we run inside the project venv (skipped in CI)
+    if not os.environ.get("CI") and not hasattr(sys, "real_prefix") and not (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix):
         print("ERROR: This pipeline must run inside the project virtual environment.")
         print("Use: .\\venv\\Scripts\\python.exe bootstrap_pipeline.py [args]")
         sys.exit(1)

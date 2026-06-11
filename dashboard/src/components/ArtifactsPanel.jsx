@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiGet } from '../lib/api.js';
-import { FileText, Video, Image, Loader, ExternalLink } from 'lucide-react';
+import { FileText, Video, Loader, ExternalLink } from 'lucide-react';
 
 export default function ArtifactsPanel() {
   const [artifacts, setArtifacts] = useState([]);
@@ -9,7 +9,6 @@ export default function ArtifactsPanel() {
   const [detail, setDetail] = useState(null);
 
   useEffect(() => {
-    setLoading(true);
     apiGet('/api/artifacts')
       .then((data) => setArtifacts(data.artifacts || []))
       .catch(() => {})
