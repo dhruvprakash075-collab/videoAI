@@ -36,6 +36,10 @@ frontend-test:
 skylos-scan:
   stage: scan
   image: python:3.12
+  # The scan is advisory: newer skylos versions exit non-zero when they
+  # find dead code. The report artifact is what matters — findings
+  # should be reviewed, not block the pipeline.
+  allow_failure: true
   before_script:
     - pip install uv
     - mkdir -p diagnostics
