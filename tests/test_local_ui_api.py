@@ -148,6 +148,7 @@ class TestConfigExtension:
         assert data["layeredV3"]["workflows"]["characterSheet"] == "wf1.json"
         assert data["layeredV3"]["workflows"]["background"] == "wf2.json"
 
+    @patch("os.replace", MagicMock())
     @patch("builtins.open", new_callable=mock_open)
     @patch("yaml.safe_dump")
     @patch("utils.local_ui.load_config")
