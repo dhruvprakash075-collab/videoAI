@@ -1,11 +1,14 @@
 # ── Python ────────────────────────────────────────────────────────
 venv/
 venv*/
-**/Lib/
-**/Lib64/
-**/Scripts/
-**/Include/
-**/share/
+# Scoped to virtualenvs only: the previous '**/Lib/' pattern matched
+# 'dashboard/src/lib/' on Windows (case-insensitive ignore matching),
+# which silently excluded frontend source files from the repository.
+venv*/Lib/
+venv*/Lib64/
+venv*/Scripts/
+venv*/Include/
+venv*/share/
 *_env/
 *_venv/
 __pycache__/
