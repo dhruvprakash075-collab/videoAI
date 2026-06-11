@@ -123,11 +123,15 @@ class Worker:
                 cmd += [arg, str(v)]
         return cmd
 
-    def _heartbeat_loop(self, job_id: int):
-        while not self._stop.is_set():
+    def _heartbeat_loop(self, job_id: int, stop_event: threading.Event):
+        # Per-job stop event (H1 fix): the previous shared self._stop was
+        # cleared after a 2s join timeout (shorter than the 10s sleep),
+        # reviving the old thread which heartbeated the finished job forever.
+        # Event.wait() also exits promptly instead of sleeping out the interval.
+        while not stop_event.is_set():
             with suppress(Exception):
                 self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-            time.sleep(HEARTBEAT_INTERVAL)
+            stop_event.wait(HEARTBEAT_INTERVAL)
 
     def _stream_process(self, proc: subprocess.Popen, job_id: int):
         if proc.stdout is None:
@@ -176,8 +180,11 @@ class Worker:
 
         proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NEW_PROCESS_GROUP)
 
-        # Start heartbeat thread
-        hb_thread = threading.Thread(target=self._heartbeat_loop, args=(job_id,), daemon=True)
+        # Start heartbeat thread with a per-job stop event (H1 fix)
+        job_stop = threading.Event()
+        hb_thread = threading.Thread(
+            target=self._heartbeat_loop, args=(job_id, job_stop), daemon=True
+        )
         hb_thread.start()
 
         # Start output streaming thread
@@ -206,12 +213,12 @@ class Worker:
                     break
                 time.sleep(1)
         finally:
-            # Allow threads to stop and reset stop event for next job
-            self._stop.set()
+            # H1 fix: signal only this job's heartbeat thread. Event.wait()
+            # wakes immediately, so the join succeeds; no clear() needed and
+            # no other job's threads are affected.
+            job_stop.set()
             out_thread.join(timeout=2)
             hb_thread.join(timeout=2)
-            # Clear stop event so heartbeat/output threads run for next job
-            self._stop.clear()
 
         rc = proc.poll()
         # Only update status if not already canceled

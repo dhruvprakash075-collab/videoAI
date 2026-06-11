@@ -57,6 +57,13 @@ app.add_middleware(
 _ab_jobs_lock = threading.Lock()
 _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [...], "error": str}}
 
+# H3 fix: serialize config.yaml read-modify-write saves
+_config_save_lock = threading.Lock()
+
+# H5 fix: bounds for in-memory chat sessions
+_CHAT_SESSION_TTL_S = 6 * 3600  # evict sessions idle > 6h
+_CHAT_MAX_MESSAGES = 60  # cap stored history per session
+
 # Chat sessions v1 — in-memory only
 _chat_sessions_lock = threading.Lock()
 _chat_sessions: dict = {}  # {session_id: {"messages": [{"role":str, "content":str}], "created_at": float}}
@@ -818,12 +825,19 @@ async def save_ui_config(
             comfy_cfg["unload_after_batch"] = _form_bool(comfyui_unload_after_batch, True)
             comfy_cfg["open_browser"] = _form_bool(comfyui_open_browser, False)
 
-        # Save to config.yaml
+        # Save to config.yaml atomically (H3 fix): write a temp file and
+        # os.replace() it so a crash mid-write can never corrupt the only
+        # config. The lock serializes concurrent saves (read-modify-write).
         config_path = Path("config/config.yaml")
         import yaml
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        with _config_save_lock:
+            tmp_path = config_path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    config, f, default_flow_style=False, allow_unicode=True, sort_keys=False
+                )
+            os.replace(tmp_path, config_path)
 
         UIState.add_log(f"Backend: UI configuration saved successfully (engine={voice_engine})")
         return {"status": "success", "message": "Configuration saved successfully."}
@@ -1060,10 +1074,20 @@ async def chat(body: dict = Body(...)):
     if not session_id:
         session_id = uuid.uuid4().hex[:12]
 
+    now = time.time()
     with _chat_sessions_lock:
+        # H5 fix: evict sessions idle past the TTL so memory is bounded.
+        expired = [
+            sid
+            for sid, s in _chat_sessions.items()
+            if now - s.get("last_used", s.get("created_at", now)) > _CHAT_SESSION_TTL_S
+        ]
+        for sid in expired:
+            _chat_sessions.pop(sid, None)
         if session_id not in _chat_sessions:
-            _chat_sessions[session_id] = {"messages": [], "created_at": time.time()}
+            _chat_sessions[session_id] = {"messages": [], "created_at": now}
         session = _chat_sessions[session_id]
+        session["last_used"] = now
 
     try:
         cfg = load_config()
@@ -1099,13 +1123,19 @@ async def chat(body: dict = Body(...)):
                 "reply": "",
             })
 
-        session["messages"].append({"role": "user", "content": message})
-        session["messages"].append({"role": "assistant", "content": reply})
+        # H5 fix: append under the lock (race fix) and cap stored history so
+        # neither memory nor the response payload grows without bound.
+        with _chat_sessions_lock:
+            session["messages"].append({"role": "user", "content": message})
+            session["messages"].append({"role": "assistant", "content": reply})
+            if len(session["messages"]) > _CHAT_MAX_MESSAGES:
+                session["messages"] = session["messages"][-_CHAT_MAX_MESSAGES:]
+            messages_out = list(session["messages"])
 
         return JSONResponse(content={
             "session_id": session_id,
             "reply": reply,
-            "messages": session["messages"],
+            "messages": messages_out,
         })
     except Exception as e:
         log.exception("Chat error")
@@ -1194,7 +1224,12 @@ async def list_artifacts():
 
 @app.get("/api/artifacts/{run_id:path}")
 async def get_artifact_detail(run_id: str):
-    safe = _sanitize_path_component(run_id)
+    # H4 fix: the :path converter accepts '/', and the sanitizer raises on
+    # separators/'..' — catch it so malformed ids are a 400, not a 500.
+    try:
+        safe = _sanitize_path_component(run_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid run id"})
     run_dir = Path("studio_outputs") / safe
     if not run_dir.exists() or not run_dir.is_dir():
         return JSONResponse(status_code=404, content={"error": "Run not found"})

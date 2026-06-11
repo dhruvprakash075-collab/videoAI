@@ -54,6 +54,7 @@ class TestConfigAPI:
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
+    @patch("os.replace", MagicMock())
     @patch("yaml.safe_dump")
     def test_save_config_updates_image_backend_to_comfyui(self, mock_yaml_dump, mock_load_config, mock_config):
         mock_load_config.return_value = mock_config.copy()
@@ -80,6 +81,7 @@ class TestConfigAPI:
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
+    @patch("os.replace", MagicMock())
     @patch("yaml.safe_dump")
     def test_save_config_updates_comfyui_settings(self, mock_yaml_dump, mock_load_config, mock_config):
         mock_load_config.return_value = mock_config.copy()
@@ -168,6 +170,7 @@ class TestConfigAPI:
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
+    @patch("os.replace", MagicMock())
     @patch("yaml.safe_dump")
     def test_save_config_accepts_bonsai_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
         mock_load_config.return_value = mock_config.copy()
@@ -194,6 +197,7 @@ class TestConfigAPI:
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
+    @patch("os.replace", MagicMock())
     @patch("yaml.safe_dump")
     def test_save_config_accepts_none_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
         mock_load_config.return_value = mock_config.copy()
