@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
@@ -61,76 +61,23 @@ fn main() -> Result<()> {
 }
 
 fn open_job_db(db_path: &Path) -> Result<Connection> {
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create database directory {}", parent.display()))?;
+    if !db_path.is_file() {
+        bail!(
+            "job database not found: {} — start the Python app once to create it",
+            db_path.display()
+        );
     }
 
     let conn = Connection::open_with_flags(
         db_path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .with_context(|| format!("failed to open job database {}", db_path.display()))?;
+    .with_context(|| format!("job database not found or unreadable: {}", db_path.display()))?;
 
     conn.busy_timeout(Duration::from_millis(5_000))
         .context("failed to set SQLite busy timeout")?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .context("failed to enable SQLite WAL mode")?;
-    conn.pragma_update(None, "busy_timeout", 5_000)
-        .context("failed to apply SQLite busy_timeout pragma")?;
-    conn.pragma_update(None, "foreign_keys", "ON")
-        .context("failed to enable SQLite foreign keys")?;
-
-    ensure_schema(&conn)?;
 
     Ok(conn)
-}
-
-fn ensure_schema(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS schema_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        );
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            status TEXT NOT NULL,
-            topic TEXT,
-            request_json TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            heartbeat_at TEXT,
-            progress INTEGER DEFAULT 0,
-            attempt INTEGER DEFAULT 0,
-            image_backend TEXT,
-            comfyui_checkpoint TEXT,
-            fallback_backend TEXT,
-            output_path TEXT,
-            error TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
-        CREATE TABLE IF NOT EXISTS job_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            ts TEXT NOT NULL,
-            event_type TEXT,
-            message TEXT,
-            FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS job_artifacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            key TEXT,
-            path TEXT,
-            meta TEXT,
-            FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        );
-        "#,
-    )
-    .context("failed to ensure job database schema")?;
-
-    Ok(())
 }
 
 fn list_jobs(conn: &Connection, limit: u32, offset: u32) -> Result<Vec<JobSummary>> {
@@ -173,12 +120,68 @@ fn print_jobs(jobs: &[JobSummary]) -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn list_jobs_orders_newest_first_and_projects_expected_columns() -> Result<()> {
+    fn create_seeded_job_db(seed_sql: &str) -> Result<(tempfile::TempDir, Connection)> {
         let temp_dir = tempfile::tempdir()?;
         let db_path = temp_dir.path().join("jobs.db");
-        let conn = open_job_db(&db_path)?;
+        let conn = Connection::open(&db_path)?;
+        create_test_schema(&conn)?;
+        conn.execute_batch(seed_sql)?;
+        drop(conn);
+
+        let read_conn = open_job_db(&db_path)?;
+        Ok((temp_dir, read_conn))
+    }
+
+    fn create_test_schema(conn: &Connection) -> Result<()> {
         conn.execute_batch(
+            r#"
+            CREATE TABLE schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            CREATE TABLE jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL,
+                topic TEXT,
+                request_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                heartbeat_at TEXT,
+                progress INTEGER DEFAULT 0,
+                attempt INTEGER DEFAULT 0,
+                image_backend TEXT,
+                comfyui_checkpoint TEXT,
+                fallback_backend TEXT,
+                output_path TEXT,
+                error TEXT
+            );
+            CREATE INDEX idx_jobs_status_created ON jobs(status, created_at);
+            CREATE TABLE job_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                ts TEXT NOT NULL,
+                event_type TEXT,
+                message TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+            CREATE TABLE job_artifacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                key TEXT,
+                path TEXT,
+                meta TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+            "#,
+        )
+        .context("failed to create test job database schema")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn list_jobs_orders_newest_first_and_projects_expected_columns() -> Result<()> {
+        let (_temp_dir, conn) = create_seeded_job_db(
             r#"
             INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
             VALUES
@@ -199,10 +202,7 @@ mod tests {
 
     #[test]
     fn list_jobs_respects_limit_and_offset() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let db_path = temp_dir.path().join("jobs.db");
-        let conn = open_job_db(&db_path)?;
-        conn.execute_batch(
+        let (_temp_dir, conn) = create_seeded_job_db(
             r#"
             INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
             VALUES
@@ -216,6 +216,20 @@ mod tests {
 
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].topic.as_deref(), Some("Second"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn missing_database_errors_without_creating_files() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("missing").join("jobs.db");
+
+        let err = open_job_db(&db_path).expect_err("missing database should error");
+
+        assert!(err.to_string().contains("job database not found"));
+        assert!(!db_path.exists());
+        assert!(!db_path.parent().expect("db path has parent").exists());
 
         Ok(())
     }
