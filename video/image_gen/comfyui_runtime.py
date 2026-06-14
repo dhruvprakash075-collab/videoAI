@@ -122,15 +122,33 @@ class ComfyUIRuntime:
                     "PYTHONIOENCODING": "utf-8",
                     "PYTHONUTF8": "1",
                 }
+                creationflags = (
+                    subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                )
                 stdout_handle, stderr_handle = self._open_log_handles(root_path)
 
-                self._process = subprocess.Popen(
-                    cmd,
-                    cwd=str(root_path),
-                    env=env,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                )
+                try:
+                    self._process = subprocess.Popen(
+                        cmd,
+                        cwd=str(root_path),
+                        env=env,
+                        stdout=stdout_handle,
+                        stderr=stderr_handle,
+                        creationflags=creationflags,
+                    )
+                except PermissionError:
+                    log.warning(
+                        "[ComfyUI] Hidden process launch was denied; retrying without "
+                        "Windows creation flags"
+                    )
+                    stdout_handle, stderr_handle = self._open_log_handles(root_path)
+                    self._process = subprocess.Popen(
+                        cmd,
+                        cwd=str(root_path),
+                        env=env,
+                        stdout=stdout_handle,
+                        stderr=stderr_handle,
+                    )
 
                 log.info(f"[ComfyUI] Started process PID {self._process.pid}")
 
