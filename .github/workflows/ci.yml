@@ -55,7 +55,16 @@ jobs:
           pip install mypy pydantic pyyaml httpx
       - name: Type check with mypy
         run: |
-          python -m mypy core config utils audio video agents tests
+          python -m mypy config/config.py config/config_schemas.py \
+                         utils/errors.py utils/retry_manager.py \
+                         utils/crewai_breaker.py utils/checkpoint.py \
+                         utils/circuit_breaker.py agents/ui_state.py \
+                         core/post_production.py \
+                         tests/test_config.py tests/test_config_schemas.py \
+                         tests/test_post_production.py tests/test_uistate.py \
+                         tests/test_retry_manager.py tests/test_crewai_breaker.py \
+                         tests/test_checkpoint.py tests/test_circuit_breaker.py \
+                         tests/unit/ tests/integration/
 
   test:
     runs-on: ubuntu-latest
