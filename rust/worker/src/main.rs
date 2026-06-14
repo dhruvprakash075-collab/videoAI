@@ -911,7 +911,10 @@ fn send_interrupt(child_id: u32) {
     #[cfg(unix)]
     {
         let process_group = format!("-{child_id}");
-        let _ = StdCommand::new("kill").arg("-INT").arg(process_group).status();
+        let _ = StdCommand::new("kill")
+            .arg("-INT")
+            .arg(process_group)
+            .status();
     }
 
     #[cfg(windows)]
@@ -1039,7 +1042,10 @@ mod tests {
                 "output_path".to_string(),
                 row.get::<_, Option<String>>(4)?.unwrap_or_default(),
             );
-            map.insert("error".to_string(), row.get::<_, Option<String>>(5)?.unwrap_or_default());
+            map.insert(
+                "error".to_string(),
+                row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            );
             Ok(map)
         })?;
         Ok(row)
@@ -1153,9 +1159,18 @@ mod tests {
         let job = fetch_job(&db_path, 1)?;
         assert_eq!(job.get("status").map(String::as_str), Some("succeeded"));
         assert_eq!(job.get("progress").map(String::as_str), Some("100"));
-        assert!(job.get("output_path").is_some_and(|p| p.ends_with("out.mp4")));
+        assert!(job
+            .get("output_path")
+            .is_some_and(|p| p.ends_with("out.mp4")));
         assert_eq!(count_rows(&db_path, "job_artifacts", "WHERE job_id=1")?, 2);
-        assert_eq!(count_rows(&db_path, "job_events", "WHERE job_id=1 AND event_type='log'")?, 1);
+        assert_eq!(
+            count_rows(
+                &db_path,
+                "job_events",
+                "WHERE job_id=1 AND event_type='log'"
+            )?,
+            1
+        );
 
         Ok(())
     }
@@ -1168,7 +1183,10 @@ mod tests {
             VALUES ('queued', 'Cancel Topic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
             "#,
         )?;
-        let fake = write_fake_python(temp_dir.path(), "#!/bin/sh\necho started\nsleep 60\nexit 0\n")?;
+        let fake = write_fake_python(
+            temp_dir.path(),
+            "#!/bin/sh\necho started\nsleep 60\nexit 0\n",
+        )?;
         let worker = worker_for(&temp_dir, db_path.clone(), fake);
         let db_for_thread = db_path.clone();
         let handle = thread::spawn(move || worker.run_once());
@@ -1220,7 +1238,10 @@ mod tests {
             VALUES ('queued', 'Read Topic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
             "#,
         )?;
-        let fake = write_fake_python(temp_dir.path(), "#!/bin/sh\necho started\nsleep 2\nexit 0\n")?;
+        let fake = write_fake_python(
+            temp_dir.path(),
+            "#!/bin/sh\necho started\nsleep 2\nexit 0\n",
+        )?;
         let worker = worker_for(&temp_dir, db_path.clone(), fake);
         let handle = thread::spawn(move || worker.run_once());
 
