@@ -117,7 +117,11 @@ struct ManifestReference {
 }
 
 pub fn run(cli: AssetsCli) -> Result<()> {
-    match cli.command {
+    run_command(cli.command)
+}
+
+pub fn run_command(command: AssetsCommand) -> Result<()> {
+    match command {
         AssetsCommand::Inspect(args) => {
             let manifest = inspect(&args.run_dir, args.min_free_gb)?;
             write_asset_manifest(&args.run_dir, &manifest)?;
