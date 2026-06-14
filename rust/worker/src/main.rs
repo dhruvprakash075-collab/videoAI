@@ -578,7 +578,11 @@ impl Worker {
         let job = get_job_path(&self.config.db_path, job_id)?.context("job disappeared before artifact capture")?;
         let topic_raw = job.topic.unwrap_or_else(|| "unknown".to_string());
         let topic_slug = safe_filename(&topic_raw);
-        let output_root = self.config.repo_root.join("studio_outputs").join(topic_slug);
+        let output_root = self
+            .config
+            .repo_root
+            .join("studio_outputs")
+            .join(topic_slug);
         if !output_root.exists() {
             return Ok(());
         }
@@ -607,8 +611,18 @@ impl Worker {
 
         if let Some((video, _)) = latest_video {
             let video_path = video.to_string_lossy().to_string();
-            update_job_path(&self.config.db_path, job_id, &[JobUpdate::OutputPath(&video_path)])?;
-            add_artifact_path(&self.config.db_path, job_id, "output_video", &video_path, None)?;
+            update_job_path(
+                &self.config.db_path,
+                job_id,
+                &[JobUpdate::OutputPath(&video_path)],
+            )?;
+            add_artifact_path(
+                &self.config.db_path,
+                job_id,
+                "output_video",
+                &video_path,
+                None,
+            )?;
             let video_name = video
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -738,12 +752,21 @@ fn http_get_root(host: &str, port: u16) -> Result<()> {
     let mut stream = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    stream.write_all(format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").as_bytes())?;
+    stream.write_all(
+        format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").as_bytes(),
+    )?;
 
     let mut response = [0_u8; 64];
     let n = stream.read(&mut response)?;
     let status = String::from_utf8_lossy(&response[..n]);
-    if status.starts_with("HTTP/") && !status.starts_with("HTTP/1.0 2") && !status.starts_with("HTTP/1.1 2") && !status.starts_with("HTTP/2 2") && !status.starts_with("HTTP/3 2") && !status.starts_with("HTTP/1.0 3") && !status.starts_with("HTTP/1.1 3") {
+    if status.starts_with("HTTP/")
+        && !status.starts_with("HTTP/1.0 2")
+        && !status.starts_with("HTTP/1.1 2")
+        && !status.starts_with("HTTP/2 2")
+        && !status.starts_with("HTTP/3 2")
+        && !status.starts_with("HTTP/1.0 3")
+        && !status.starts_with("HTTP/1.1 3")
+    {
         bail!("ComfyUI server returned error");
     }
     Ok(())
@@ -889,7 +912,12 @@ where
                     let _ = update_job_path(&db_path, job_id, &[JobUpdate::Heartbeat(&heartbeat)]);
                 }
                 Err(err) => {
-                    let _ = append_event_path(&db_path, job_id, &format!("stream_error: {err}"), "system");
+                    let _ = append_event_path(
+                        &db_path,
+                        job_id,
+                        &format!("stream_error: {err}"),
+                        "system",
+                    );
                     break;
                 }
             }
