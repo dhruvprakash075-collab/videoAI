@@ -147,11 +147,7 @@ fn main() -> Result<()> {
                 worker.run_forever()?;
             }
         }
-        Commands::Doctor {
-            db_path,
-            json,
-            strict,
-        } => doctor::run_doctor(db_path, json, strict)?,
+        Commands::Doctor { db_path, json, strict } => doctor::run_doctor(db_path, json, strict)?,
     }
 
     Ok(())
