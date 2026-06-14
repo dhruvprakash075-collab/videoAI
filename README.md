@@ -10,7 +10,8 @@ Already a pro? Just edit this README.md and make it your own. Want to make it ea
 
 ## Add your files
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
+* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload)
+ files
 * [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
 
 ```
@@ -41,6 +42,18 @@ Use the built-in continuous integration in GitLab.
 * [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
 * [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
 * [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+
+## Rust worker sidecar
+
+The Rust worker lives in `rust/worker` as a standalone sidecar binary named `videoai-worker`. It is a process supervisor only: it reads the existing SQLite job queue and, in later phases, will spawn `bootstrap_pipeline.py` without importing Python ML components.
+
+For the initial scaffold, use the read-only CLI to inspect queued jobs:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs
+```
+
+The command opens `studio_projects/jobs/video_ai_jobs.db` with WAL mode, a 5000 ms busy timeout, and foreign keys enabled, then prints `id`, `status`, `topic`, and `created_at` in the same newest-first order as `JobStore.list_jobs()`.
 
 ***
 
