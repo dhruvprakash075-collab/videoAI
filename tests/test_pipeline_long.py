@@ -680,6 +680,8 @@ def test_run_long_pipeline_errors_and_edge_cases(tmp_path):
     with (
         patch("utils.load_config", return_value=cfg),
         patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.main.create_writer"),
+        patch("core.main.create_director"),
     ):
         with pytest.raises(ValueError, match="segment_duration_min must be > 0"):
             run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
