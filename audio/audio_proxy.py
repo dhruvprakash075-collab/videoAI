@@ -700,7 +700,6 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
     host = cfg.get("ollama", {}).get("host", "http://localhost:11434")
     f"{host.rstrip('/')}/api/generate"
 
-    engine = cfg.get("tts", {}).get("engine", "supertonic")
     from config.config import get_language
 
     tts_lang = get_language(cfg)

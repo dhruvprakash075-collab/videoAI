@@ -1,6 +1,5 @@
 """Additional tests for supported audio_proxy paths."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from audio import audio_proxy

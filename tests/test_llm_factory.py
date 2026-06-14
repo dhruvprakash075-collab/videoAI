@@ -192,11 +192,12 @@ def test_ollama_model_available_model_not_found(monkeypatch):
 
 def test_ollama_model_available_network_error_raises_recoverable_error():
     """_ollama_model_available raises RecoverableError on network error."""
-    import pytest
     from unittest.mock import patch
-    from utils.errors import RecoverableError
+
+    import pytest
 
     import core.main as cm
+    from utils.errors import RecoverableError
 
     with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")):
         with pytest.raises(RecoverableError) as exc_info:
