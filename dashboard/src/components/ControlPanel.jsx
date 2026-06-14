@@ -4,14 +4,12 @@ import { API_BASE } from '../lib/api.js';
 import ToggleRow from './ToggleRow.jsx';
 
 const VOICE_ENGINES = [
-  { id: 'omnivoice', label: 'OmniVoice (Default)', description: 'Ultra-expressive local cloning.' },
   { id: 'supertonic', label: 'Supertonic 3',       description: 'CPU-only, 31 languages, custom voice JSON.' },
-  { id: 'edge',      label: 'Edge TTS',           description: 'Fast, reliable cloud voices.' },
-  { id: 'indicf5',   label: 'IndicF5 (Hindi)',    description: 'High-quality Hindi/Indic TTS from ai4bharat.' },
+  { id: 'omnivoice', label: 'OmniVoice',           description: 'Ultra-expressive local cloning.' },
 ];
 
 const DEFAULT_CONFIG = {
-  voiceEngine: 'omnivoice',
+  voiceEngine: 'supertonic',
   dynamicSubtitles: true,
   uncappedScaling: false,
   maxImagesPerSegment: 6,

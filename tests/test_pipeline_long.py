@@ -651,7 +651,6 @@ def test_run_long_pipeline_worker_shutdown_exceptions(tmp_path):
         patch("core.post_production.finalize_dry_run") as mock_finalize,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
         patch("audio.audio_proxy.shutdown_omnivoice_worker", side_effect=Exception("shutdown err")),
-        patch("audio.audio_proxy.shutdown_f5_worker", side_effect=Exception("shutdown f5 err")),
     ):
         mock_plan_outline.return_value = [{"seg": 1}]
         mock_make_seg.side_effect = fake_make_seg
@@ -999,7 +998,7 @@ def test_run_long_pipeline_preview_and_exceptions(tmp_path):
         patch("core.pipeline_long.plan_outline") as mock_plan_outline,
         patch("core.pipeline_long.make_process_segment"),
         patch(
-            "audio.audio_proxy.normalize_tts_engine", return_value="edge"
+            "audio.audio_proxy.normalize_tts_engine", return_value="supertonic"
         ),  # different from invalid-engine
         patch("core.pipeline_long.build_retry_wrapper") as mock_wrapper,
     ):

@@ -10,7 +10,7 @@ Install (operator, one-time — NOT auto-installed):
   venv\\Scripts\\huggingface-cli.exe download lllyasviel/FramePack --local-dir hf_cache\\framepack
 
 6GB constraint: FramePack MUST run in the HEAVY scheduler slot after a verified
-VRAM evict. Never co-resident with SD, LLM, or F5-TTS.
+VRAM evict. Never co-resident with SD, LLM, or local TTS workers.
 """
 
 import logging

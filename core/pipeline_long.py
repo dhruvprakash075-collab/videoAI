@@ -211,7 +211,7 @@ def run_long_pipeline(
     # Normalize TTS engine
     from audio.audio_proxy import normalize_tts_engine as _normalize_tts_engine
 
-    _raw_tts_engine = config.get("tts", {}).get("engine", "omnivoice")
+    _raw_tts_engine = config.get("tts", {}).get("engine", "supertonic")
     _normalized_engine = _normalize_tts_engine(_raw_tts_engine)
     if _normalized_engine != _raw_tts_engine:
         log.warning(
@@ -443,7 +443,7 @@ def run_long_pipeline(
         log.info("=" * 60)
 
     # ── Build process_segment closure (once, inside the executor block) ──
-    _cfg_workers = config.get("performance", {}).get("max_workers", 2)
+    _cfg_workers = config.get("performance", {}).get("max_workers", 1)
     max_workers = min(n_segs, _cfg_workers)
     log.info(f"Workers: {max_workers} (from config performance.max_workers={_cfg_workers})")
 
@@ -560,15 +560,11 @@ def run_long_pipeline(
         # B16: stop persistent TTS workers so models are released
         try:
             from audio.audio_proxy import (
-                shutdown_f5_worker,
-                shutdown_indicf5_worker,
                 shutdown_omnivoice_worker,
                 shutdown_supertonic_worker,
             )
             shutdown_supertonic_worker()
             shutdown_omnivoice_worker()
-            shutdown_f5_worker()
-            shutdown_indicf5_worker()
         except Exception as _sw_err:
             log.debug(f"TTS worker shutdown error: {_sw_err}")
 
@@ -648,7 +644,7 @@ if __name__ == "__main__":
             project_name=args.project,
             resume=not args.no_resume,
             skip_rvc=args.skip_rvc,
-            dry_run=args.dry_run,
+            dry_run=args.dry_run or args.fast_dry_run,
             fast_dry_run=args.fast_dry_run,
             duration_min=args.duration,
             director_mode=args.director_mode,

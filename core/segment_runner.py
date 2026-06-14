@@ -10,7 +10,7 @@ work that runs N times (one per segment):
   • Local word-count enforcement (W4)
   • Devanagari translation (Director or fallback)
   • WorldState update (B3)
-  • TTS (OmniVoice / F5 / edge-tts) + SFX + mastering
+  • TTS (Supertonic / OmniVoice) + SFX + mastering
   • Stable Diffusion image generation (OOM ladder)
   • FramePack image-to-video motion (V1, opt-in)
   • FFmpeg MP4 assembly (Hyperframes renderer or fallback)
@@ -788,7 +788,7 @@ def make_process_segment(
         )
 
         for _tts_retry in range(2):  # at most 1 retry
-            with global_scheduler.task("heavy", f"Seg{i}:Coqui-XTTS"):
+            with global_scheduler.task("heavy", f"Seg{i}:TTS"):
                 tts_out = tts_generate(
                     script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
                 )
@@ -1219,6 +1219,9 @@ def make_process_segment(
             return render_node(state)
 
         def do_memory_review(self, state):
+            if fast_dry_run:
+                return {"memory_items": []}
+
             script = state.get("script", "")
             plan = state["plan"]
             images = state.get("images", [])

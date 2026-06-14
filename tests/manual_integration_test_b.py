@@ -3,7 +3,7 @@
 Run #2: flips every gated flag to its NON-default state to exercise the OTHER
 code paths that the default-config run (manual_integration_test.py) did not:
   - performance.staged_loop = True, lookahead_segments = 2
-  - tts.engine = "edge", tts.lang = "en"  (English, not Hindi/omnivoice)
+  - tts.engine = "supertonic", tts.lang = "en"  (English, not Hindi/omnivoice)
   - music.ducking = True, duck_ratio = 0.6 (heavier ducking)
   - image_gen.preview_steps path (dry/preview)
   - image_gen.token_budget = {identity:40, style:10, scene:20} (identity-heavy)
@@ -49,7 +49,7 @@ def _alt_config():
     cfg["performance"]["staged_loop"] = True
     cfg["performance"]["lookahead_segments"] = 2
     cfg.setdefault("tts", {})
-    cfg["tts"]["engine"] = "edge"
+    cfg["tts"]["engine"] = "supertonic"
     cfg["tts"]["lang"] = "en"
     cfg.setdefault("music", {})
     cfg["music"]["ducking"] = True
@@ -201,16 +201,16 @@ def t_ducking_alt_ratio():
     return "ducking at ratio=7.0 (duck_ratio 0.6)"
 
 
-# ── 6. edge-TTS English translation path (alt: lang=en, engine=edge) ──────
-def t_edge_english_path():
-    # With engine=edge + lang!=hi, translate_hinglish should pick the Romanized
+# ── 6. Supertonic English translation path (alt: lang=en) ─────────────────
+def t_supertonic_english_path():
+    # With lang!=hi, translate_hinglish should pick the Romanized
     # Hinglish prompt (not the Devanagari one). We don't need a live call to verify
     # the branch — patch the client to capture the prompt.
     from unittest.mock import patch
 
     import audio.audio_proxy as ap
 
-    cfg = _alt_config()  # engine=edge, lang=en
+    cfg = _alt_config()  # engine=supertonic, lang=en
     captured = {}
 
     class _FakeClient:
@@ -223,11 +223,11 @@ def t_edge_english_path():
         patch("utils.ollama_client.get_ollama_client", return_value=_FakeClient()),
     ):
         out = ap.translate_hinglish("The hero walked into the dark forest.", seg=2)
-    # edge+en path uses the Romanized-Hinglish instruction
+    # supertonic+en path uses the Romanized-Hinglish instruction
     assert "Romanized" in captured.get("prompt", "") or "Latin alphabet" in captured.get(
         "prompt", ""
-    ), "edge+en did not select the Romanized Hinglish prompt"
-    return f"edge+en selected Romanized path -> {out[:40]!r}"
+    ), "supertonic+en did not select the Romanized Hinglish prompt"
+    return f"supertonic+en selected Romanized path -> {out[:40]!r}"
 
 
 # ── 7. B3 world-state live, English script (alt lang) ─────────────────────
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     check("3. B1 breaker_fails=2 opens after 2", t_breaker_fails_2)
     check("4. A3 loudnorm at -16 LUFS", t_loudnorm_alt_target)
     check("5. D5 ducking ratio=7.0 (duck_ratio 0.6)", t_ducking_alt_ratio)
-    check("6. edge-TTS English Romanized path", t_edge_english_path)
+    check("6. Supertonic English Romanized path", t_supertonic_english_path)
     check("7. B3 world-state live (English)", t_world_state_english)
     check("8. C1 staged batching (lookahead=2)", t_staged_batches)
     check("9. A4 preview steps resolver", t_preview_steps)

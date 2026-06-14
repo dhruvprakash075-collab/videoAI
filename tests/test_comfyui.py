@@ -342,37 +342,39 @@ class TestCreateDefaultWorkflow:
 
 class TestBackendRouting:
     def test_generate_images_routes_to_comfyui(self):
-        with patch("video.image_gen.image_gen._comfyui") as mock_comfyui:
+        import video.image_gen.image_gen as image_gen_module
+
+        with patch.object(image_gen_module, "_comfyui") as mock_comfyui:
             mock_comfyui.return_value = [Path("test.png")]
 
-            from video.image_gen.image_gen import generate_images
-
             config = {"image_gen": {"backend": "comfyui", "comfyui": {}, "fallback_backend": "bonsai"}}
-            result = generate_images("test prompt", Path("/tmp"), config)
+            result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
 
             mock_comfyui.assert_called_once()
             assert len(result) == 1
 
     def test_generate_images_routes_to_bonsai(self):
-        with patch("video.image_gen.image_gen._bonsai") as mock_bonsai:
+        import video.image_gen.image_gen as image_gen_module
+
+        with patch.object(image_gen_module, "_bonsai") as mock_bonsai:
             mock_bonsai.return_value = [Path("test.png")]
 
-            from video.image_gen.image_gen import generate_images
-
             config = {"image_gen": {"backend": "bonsai"}}
-            result = generate_images("test prompt", Path("/tmp"), config)
+            result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
 
             mock_bonsai.assert_called_once()
             assert len(result) == 1
 
     def test_generate_images_falls_back_to_bonsai_on_comfyui_failure(self):
-        with patch("video.image_gen.image_gen._comfyui") as mock_comfyui, \
-             patch("video.image_gen.image_gen._bonsai") as mock_bonsai:
+        import video.image_gen.image_gen as image_gen_module
+
+        with (
+            patch.object(image_gen_module, "_comfyui") as mock_comfyui,
+            patch.object(image_gen_module, "_bonsai") as mock_bonsai,
+        ):
 
             mock_comfyui.side_effect = Exception("ComfyUI failed")
             mock_bonsai.return_value = [Path("fallback.png")]
-
-            from video.image_gen.image_gen import generate_images
 
             config = {
                 "image_gen": {
@@ -381,17 +383,17 @@ class TestBackendRouting:
                     "fallback_backend": "bonsai",
                 }
             }
-            result = generate_images("test prompt", Path("/tmp"), config)
+            result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
 
             mock_comfyui.assert_called_once()
             mock_bonsai.assert_called_once()
             assert result[0].name == "fallback.png"
 
     def test_generate_images_raises_when_fallback_disabled(self):
-        with patch("video.image_gen.image_gen._comfyui") as mock_comfyui:
-            mock_comfyui.side_effect = RuntimeError("ComfyUI not running")
+        import video.image_gen.image_gen as image_gen_module
 
-            from video.image_gen.image_gen import generate_images
+        with patch.object(image_gen_module, "_comfyui") as mock_comfyui:
+            mock_comfyui.side_effect = RuntimeError("ComfyUI not running")
 
             config = {
                 "image_gen": {
@@ -402,4 +404,4 @@ class TestBackendRouting:
             }
 
             with pytest.raises(RuntimeError):
-                generate_images("test prompt", Path("/tmp"), config)
+                image_gen_module.generate_images("test prompt", Path("/tmp"), config)

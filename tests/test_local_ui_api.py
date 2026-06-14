@@ -132,7 +132,7 @@ class TestConfigExtension:
                     },
                 },
             },
-            "tts": {"engine": "edge"},
+            "tts": {"engine": "supertonic"},
             "subtitles": {"format": "classic"},
             "script": {},
         }
@@ -196,7 +196,7 @@ class TestConfigExtension:
     def test_post_config_rejects_invalid_approval_mode(self, mock_load_config):
         mock_load_config.return_value = {"image_gen": {}, "tts": {}, "subtitles": {}, "script": {}}
         resp = client.post("/api/config", data={
-            "voice_engine": "edge",
+            "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
             "uncapped_scaling": "false",
             "max_images_per_segment": 6,
@@ -208,7 +208,7 @@ class TestConfigExtension:
     def test_post_config_rejects_out_of_range_threshold(self, mock_load_config):
         mock_load_config.return_value = {"image_gen": {}, "tts": {}, "subtitles": {}, "script": {}}
         resp = client.post("/api/config", data={
-            "voice_engine": "edge",
+            "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
             "uncapped_scaling": "false",
             "max_images_per_segment": 6,

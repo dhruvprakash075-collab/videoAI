@@ -233,6 +233,7 @@ def test_cache_key_invalidates_on_portrait_change(monkeypatch, tmp_path):
 
     image_gen._bonsai_pipe = fake_pipe
     image_gen._bonsai_model_id = "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
+    monkeypatch.setattr(image_gen, "unload_bonsai_pipeline", lambda: None)
 
     # First run with portrait hash v1
     generate_images(

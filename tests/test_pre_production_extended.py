@@ -21,9 +21,8 @@ def test_run_preflight_checks_edge_cases(monkeypatch):
         # run_preflight_checks(config, dry_run)
         run_preflight_checks(config={"tts": {"engine": "omnivoice"}}, dry_run=True)
 
-    # 2. Test tts_engine="edge" and import edge_tts fails
-    monkeypatch.setitem(sys.modules, "edge_tts", None)
-    run_preflight_checks(config={"tts": {"engine": "edge"}}, dry_run=True)
+    # 2. Test unsupported TTS engine is reported as failed.
+    run_preflight_checks(config={"tts": {"engine": "unsupported"}}, dry_run=True)
 
     # 3. Test tts_engine="assumed_working"
     run_preflight_checks(config={"tts": {"engine": "assumed_working"}}, dry_run=True)

@@ -194,7 +194,7 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         checks["OmniVoice Python Environment"]["info"] = f"Using system Python: {os.sys.executable}"
 
     # 2.7 TTS engine — validate only supported engines
-    _KNOWN_TTS_ENGINES = {"supertonic", "omnivoice", "f5", "edge"}
+    _KNOWN_TTS_ENGINES = {"supertonic", "omnivoice"}
     tts_engine = config.get("tts", {}).get("engine", "supertonic")
     checks[f"TTS Engine '{tts_engine}'"] = {"status": "PENDING", "info": ""}
     if tts_engine not in _KNOWN_TTS_ENGINES:
@@ -218,23 +218,6 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         else:
             checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
             checks[f"TTS Engine '{tts_engine}'"]["info"] = "audio/omnivoice_worker.py NOT FOUND!"
-    elif tts_engine == "f5":
-        worker_script = Path("audio/f5_worker.py")
-        if worker_script.exists():
-            checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
-            checks[f"TTS Engine '{tts_engine}'"]["info"] = "F5 worker script available"
-        else:
-            checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
-            checks[f"TTS Engine '{tts_engine}'"]["info"] = "audio/f5_worker.py NOT FOUND!"
-    elif tts_engine == "edge":
-        try:
-            import edge_tts
-
-            checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
-            checks[f"TTS Engine '{tts_engine}'"]["info"] = "edge-tts module installed"
-        except ImportError:
-            checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
-            checks[f"TTS Engine '{tts_engine}'"]["info"] = "edge-tts module NOT installed!"
 
     # 2.5 Disk space
     checks.setdefault("Disk Space Availability", {})
@@ -427,6 +410,7 @@ def generate_master_portrait(
 
     if not candidates:
         log.error(f"[Portrait] All 3 candidates failed for {char_name}")
+        unload_bonsai_pipeline()
         return None
 
     candidates.sort(key=lambda t: t[0], reverse=True)
@@ -435,12 +419,14 @@ def generate_master_portrait(
         best_img.save(str(out_path), "PNG")
     except Exception as e:
         log.exception(f"[Portrait] Could not save master.png: {e}")
+        unload_bonsai_pipeline()
         return None
 
     log.info(
         f"[Portrait] Saved {char_name} master (score={best_score:.4f}) -> {out_path}"
     )
     _record_portrait_to_store(char_key, project_id, out_path)
+    unload_bonsai_pipeline()
     return out_path
 
 
@@ -766,7 +752,7 @@ def run_pre_production(
         user_responses = {
             "visual_style": prev_overlay.get("visual", {}).get("style", ""),
             "subtitle_style": prev_overlay.get("subtitles", {}).get("format", "classic"),
-            "tts_engine": prev_overlay.get("tts", {}).get("engine", "omnivoice"),
+            "tts_engine": prev_overlay.get("tts", {}).get("engine", "supertonic"),
             "custom_instructions": prev_overlay.get("production_notes", {}).get(
                 "custom_instructions", ""
             ),

@@ -60,11 +60,11 @@ def test_dry_run_golden_snapshot(tmp_path, monkeypatch):
     ]
 
     with (
-        patch("core.pipeline_long.run_pre_production", return_value={}) as mock_pre_prod,
-        patch("core.pipeline_long.run_preflight_checks") as mock_preflight,
-        patch("core.pipeline_long.plan_outline", return_value=mock_outline) as mock_plan_outline,
-        patch("core.main.create_writer") as mock_create_writer,
-        patch("core.main.create_director") as mock_create_director,
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("core.pipeline_long.plan_outline", return_value=mock_outline),
+        patch("core.main.create_writer"),
+        patch("core.main.create_director"),
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
         patch("utils.load_config", return_value=cfg),
     ):

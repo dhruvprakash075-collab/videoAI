@@ -251,7 +251,7 @@ def test_validate_vision_doc_missing_fields(agent):
     assert result["theme"] == "untitled"
     assert result["emotions"] == "neutral"
     assert result["pacing"] == "moderate"
-    assert result["tts_recommendation"] == "omnivoice"
+    assert result["tts_recommendation"] == "supertonic"
     assert result["ambiguity_detected"] is False
     assert result["ambiguity_question"] == ""
     assert result["ambiguity_fields"] == []
@@ -283,7 +283,7 @@ def test_validate_vision_doc_tts_recommendation_non_string(agent):
     """LLM sometimes returns True/False for tts_recommendation."""
     vision = {"tts_recommendation": True}
     result = agent._validate_vision_doc(vision)
-    assert result["tts_recommendation"] == "omnivoice"
+    assert result["tts_recommendation"] == "supertonic"
 
 
 def test_validate_vision_doc_string_fields(agent):
@@ -608,24 +608,37 @@ def test_ask_cache_ttl_is_noop(agent):
     agent.ask_cache_ttl()  # should not raise
 
 
-def test_ask_search_online_yes(agent, monkeypatch):
+def test_ask_search_online_auto_accept_uses_safe_default(agent, monkeypatch):
     UIState.auto_accept = True
     UIState.is_ui_mode = False
-    # First option = "Yes"
+    # Auto-accept chooses the safe default: no web search.
+    result = agent.ask_search_online()
+    assert result is False
+    UIState.auto_accept = False
+
+
+def test_ask_search_online_explicit_yes(agent, monkeypatch):
+    UIState.auto_accept = False
+    monkeypatch.setattr(agent, "consult_user", lambda *args, **kwargs: "Yes, search online")
     result = agent.ask_search_online()
     assert result is True
-    UIState.auto_accept = False
 
 
-def test_ask_create_from_scratch_no(agent, monkeypatch):
+def test_ask_create_from_scratch_auto_accept_uses_safe_default(agent, monkeypatch):
     UIState.auto_accept = True
     UIState.is_ui_mode = False
-    # First option = "Yes, create from scratch" → returns True
-    # Second call has no options → returns "Proceed as planned."
+    # Auto-accept chooses the safe default: do not invent a new story.
     result = agent.ask_create_from_scratch("topic")
-    assert result[0] is True
-    assert isinstance(result[1], str)
+    assert result == (False, "")
     UIState.auto_accept = False
+
+
+def test_ask_create_from_scratch_explicit_yes(agent, monkeypatch):
+    UIState.auto_accept = False
+    replies = iter(["Yes, create from scratch", "use a tiny smoke story"])
+    monkeypatch.setattr(agent, "consult_user", lambda *args, **kwargs: next(replies))
+    result = agent.ask_create_from_scratch("topic")
+    assert result == (True, "use a tiny smoke story")
 
 
 # ── consult_on_duration ─────────────────────────────────────────────────────
@@ -1434,7 +1447,7 @@ def test_produce_runtime_config_full_mode(agent):
     writer_input = {"segment_count": 5, "image_count_per_segment": 6, "words_per_segment": 200}
     result = agent.produce_runtime_config(vision, user_responses, writer_input, mode="full")
     assert result["visual"]["style"] == "cinematic"
-    assert result["tts"]["engine"] == "omnivoice"
+    assert result["tts"]["engine"] == "supertonic"
     assert result["script"]["words_per_segment"] == 200
     assert result["video"]["total_duration_min"] == 10  # 5 * 2
     assert "aria" in result["characters"]
@@ -1548,10 +1561,10 @@ def test_produce_runtime_config_tts_engine_xtts(agent):
 
 
 def test_produce_runtime_config_tts_engine_edge(agent):
-    """edge keyword → edge engine."""
+    """Removed edge keyword → supertonic default."""
     vision = {"characters": [{"name": "A"}]}
     result = agent.produce_runtime_config(vision, {"tts_engine": "edge"}, {})
-    assert result["tts"]["engine"] == "edge"
+    assert result["tts"]["engine"] == "supertonic"
 
 
 def test_produce_runtime_config_tts_engine_omnivoice(agent):

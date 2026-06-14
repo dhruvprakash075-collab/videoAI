@@ -26,7 +26,7 @@ This document consolidates confirmed historical bug fixes with references to liv
 | **P4-8** | `audio_fx.enabled` flipped to `true` in `config/config.yaml` to enable bundled SFX. |
 | **P4-18** | LIGHT slot wait reduced from 300s → **60s** (`utils/concurrency.py`). |
 | **P4-23** | `BreakerOpen.cooldown_s` now returns the **real** remaining cooldown (was hardcoded 0). |
-| **P4-27** | `run_pipeline.py` hardcoded "Real Hero" smoke test. |
+| **P4-27** | `run_pipeline.py` no longer hardcodes "Real Hero"; it delegates to the real pipeline CLI and honors flags such as `--fast-dry-run`. |
 | **P5-1** | `BreakerOpen` real-cooldown contract — `cooldown_s` is the actual remaining seconds from `OllamaClient._breaker()`. |
 | **P5-2 to P5-4** | Additional 2026-06-01 fix sweep — see `tests/test_2026_06_fixes.py` (25 regression tests). |
 | **P6-1** | **Supertonic 3 danda (।) chunker bug** (2026-06-04). Upstream `supertonic/utils.py:39` chunker regex `r"(?<=[.!?])\s+"` only splits on Latin punctuation. Hindi text with 2+ sentences collapses into one chunk > ONNX attention limit, crashes with `Mul_13 broadcast error`. Fix: `text.replace("।", ". ")` in `audio/supertonic_worker.py` ~line 92. Plus `tts.supertonic.max_chunk_length: 150` config to force chunking. |

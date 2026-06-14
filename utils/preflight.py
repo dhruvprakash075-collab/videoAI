@@ -185,64 +185,6 @@ def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
     return "fail", f"supertonic voice JSON not found: {p}"
 
 
-def _check_indicf5(config: dict) -> tuple[Status, str]:
-    """Verify IndicF5 environment and configuration are available."""
-    tts = config.get("tts", {})
-    if tts.get("engine") != "indicf5":
-        return "skip", "TTS engine is not indicf5"
-
-    indicf5 = tts.get("indicf5", {})
-    if not indicf5.get("enabled", False) and tts.get("engine") == "indicf5":
-        return "warn", "indicf5 engine selected but tts.indicf5.enabled is false"
-
-    python_path = indicf5.get("python", "")
-    if not python_path:
-        python_path = "indicf5_env/Scripts/python.exe"
-
-    p = Path(python_path)
-    if not p.is_absolute():
-        p = Path.cwd() / p
-
-    if not p.exists():
-        return "fail", (
-            f"IndicF5 python not found at {p}. Run scripts/setup_indicf5.ps1 to create "
-            "the indicf5 conda environment."
-        )
-
-    ref_audio = indicf5.get("ref_audio", "")
-    if ref_audio:
-        ref_p = Path(ref_audio)
-        if not ref_p.is_absolute():
-            ref_p = Path.cwd() / ref_p
-        if not ref_p.exists():
-            return "fail", f"IndicF5 ref_audio not found: {ref_p}"
-
-    ref_text = indicf5.get("ref_text", "")
-    if not ref_text:
-        return (
-            "warn",
-            "IndicF5 ref_text not configured (will use reference audio without transcript)",
-        )
-
-    device = indicf5.get("device", "cuda")
-    if device == "cuda":
-        try:
-            import torch
-
-            if not torch.cuda.is_available():
-                return (
-                    "warn",
-                    "IndicF5 configured for CUDA but no GPU available; will use CPU (slow)",
-                )
-            free_gb = torch.cuda.mem_get_info(0)[0] / (1024**3)
-            if free_gb < 5.0:
-                return "warn", f"IndicF5: only {free_gb:.1f} GB VRAM free; may OOM with ComfyUI"
-        except ImportError:
-            return "warn", "IndicF5: torch not available, will use CPU"
-
-    return "ok", f"IndicF5 environment ready: {p}"
-
-
 def _check_layered_v3(config: dict) -> tuple[Status, str]:
     """Check layered_v3 prerequisites: ComfyUI, workflows, custom nodes, checkpoints."""
     img = config.get("image_gen", {}) or {}
@@ -414,7 +356,6 @@ def run_preflight(
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
-        _timed(lambda: _check_indicf5(config), name="indicf5"),
         _timed(lambda: _check_layered_v3(config), name="layered_v3"),
         _timed(_check_ffmpeg, name="ffmpeg"),
         _timed(lambda: _check_playwright(config), name="playwright"),

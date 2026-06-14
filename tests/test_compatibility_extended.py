@@ -38,13 +38,17 @@ def test_check_dependencies():
         missing = compatibility.check_dependencies()
         assert isinstance(missing, list)
 
-    # Test when import fails (missing package)
+    # Test when import fails (missing package). PEFT is checked by spec because
+    # importing it can initialize heavy optional Torch paths on Windows.
     def fake_import(name, *args, **kwargs):
-        if name in ("peft", "crewai"):
+        if name == "crewai":
             raise ImportError("module not found")
         return MagicMock()
 
-    with patch("builtins.__import__", side_effect=fake_import):
+    with (
+        patch("builtins.__import__", side_effect=fake_import),
+        patch("utils.compatibility.find_spec", side_effect=lambda name: None if name == "peft" else MagicMock()),
+    ):
         missing = compatibility.check_dependencies()
         assert "peft" in missing
         assert "crewai" in missing

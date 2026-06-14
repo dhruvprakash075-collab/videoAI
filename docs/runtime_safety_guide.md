@@ -123,7 +123,7 @@ import the real module inside that test only.
 
 ## 6. TTS Worker Subprocess Safety (2026-06-04)
 
-All TTS engines (Supertonic 3, OmniVoice, F5, etc.) use a **persistent
+All local TTS engines (Supertonic 3, OmniVoice, etc.) use a **persistent
 `--serve` worker subprocess** pattern — the parent process spawns the
 worker once, then sends JSON-over-stdin requests and receives binary
 WAV on stdout. This avoids the ~3s ONNX model load on every TTS call.
@@ -166,7 +166,7 @@ exclamation `!` in another language), this catches it.
   `utils/shutdown.py` cleanup chain).
 - If a worker crashes mid-request, `_SupertonicWorker._send()` raises
   and the parent's `tts_generate()` falls back to the next engine in
-  the chain (`omnivoice` → `edge-tts`).
+  the chain (`supertonic` → `omnivoice`).
 - **Don't** call `tts_generate()` from multiple threads simultaneously
   with the same engine — the worker is single-threaded. Use
   `global_scheduler.task("light", ...)` to serialize.
@@ -184,8 +184,6 @@ the parent catches and falls back to omnivoice.
 |---|---|---|---|
 | Supertonic 3 | Yes | 0 | High (4 threads) |
 | OmniVoice | Yes | ~2 GB | Low |
-| Edge TTS | No (network) | 0 | 0 |
-| F5 | Yes | ~1.5 GB | Medium |
 
 Since Supertonic 3 is **CPU-only**, it does **NOT** need to participate
 in the Ollama eviction dance. It can run concurrently with Stable

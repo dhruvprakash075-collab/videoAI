@@ -8,6 +8,7 @@ since CrewAI 1.14+ is independent of langchain and we target Python 3.12.
 
 import logging
 import sys
+from importlib.util import find_spec
 
 log = logging.getLogger(__name__)
 
@@ -57,9 +58,11 @@ def check_dependencies():
     except ImportError:
         missing.append("diffusers")
 
-    try:
-        import peft
-    except ImportError:
+    # `import peft` can transitively initialize heavy/optional Torch compile
+    # paths on Windows. For startup validation we only need to know whether the
+    # distribution is installed; functional PEFT failures should surface at the
+    # actual call site.
+    if find_spec("peft") is None:
         missing.append("peft")
 
     return missing

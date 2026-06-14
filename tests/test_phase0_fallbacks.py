@@ -1,5 +1,6 @@
 """test_phase0_fallbacks.py - Unit/regression tests for Phase 0 loud fallbacks and timeouts."""
 
+import contextlib
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -65,10 +66,8 @@ def test_create_writer_fallback_records_degradation(monkeypatch):
         "ollama": {"host": "http://localhost:11434", "request_timeout": 240},
     }
 
-    try:
+    with contextlib.suppress(Exception):
         cm.create_writer(cfg)
-    except Exception:
-        pass
 
     assert len(UIState.degradations) == 1
     assert UIState.degradations[0]["stage"] == "create_writer"
@@ -136,14 +135,11 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
         ]
     )
 
-    with patch("crewai.Crew"), patch("crewai.Task"), patch("contextlib.suppress"):
-        try:
+    with patch("crewai.Crew"), patch("crewai.Task"):
+        with contextlib.suppress(Exception):
             process_seg(1)
-        except Exception:
-            pass
 
     # Verification: should have recorded translation degradation in UIState
     assert len(UIState.degradations) > 0
     stages = [d["stage"] for d in UIState.degradations]
     assert "translate_node" in stages
-
