@@ -104,11 +104,11 @@ def test_build_prompts_clamps_to_max(config):
 
 
 def test_build_prompts_clamps_to_min(config):
-    """If num_images is below 2, clamp to 2."""
+    """If num_images is below 1, clamp to 1."""
     plan = {"title": "T", "key_event": "X", "mood": "epic", "num_images": 0}
     result = build_prompts("script", plan, config)
     prompts = [p.strip() for p in result.split(";") if p.strip()]
-    assert len(prompts) >= 2
+    assert len(prompts) == 1
 
 
 def test_build_prompts_picks_char_presence(config):

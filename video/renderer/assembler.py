@@ -787,12 +787,8 @@ def _write_srt(
 
     # ------------------------------------------------------------------ #
     # Step 1: Try word_timestamps_json (real audio timing, all formats)   #
-    # Skip this path when subtitle_language != "auto" and != source lang  #
-    # (e.g. subtitle_language="en" + audio is Hindi) because the JSON     #
-    # contains source-language text. Fall through to Whisper translate.   #
     # ------------------------------------------------------------------ #
-    _wants_translation = subtitle_language and subtitle_language != "auto"
-    if word_timestamps_json and word_timestamps_json.exists() and not _wants_translation:
+    if word_timestamps_json and word_timestamps_json.exists():
         try:
             log.info(
                 f"Using provided word timestamps JSON for subtitles ({format_style}): {word_timestamps_json.name}"

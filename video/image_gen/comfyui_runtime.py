@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 class ComfyUIRuntime:
     def __init__(self, config: dict):
-        self.config = config.get("comfyui", {})
+        self.config = config.get("comfyui") or config.get("image_gen", {}).get("comfyui", {})
         self.server = self.config.get("server", "127.0.0.1")
         self.host = self.config.get("host", "127.0.0.1")
         self.port = self.config.get("port", 8188)
@@ -26,8 +26,16 @@ class ComfyUIRuntime:
         self._process_lock = threading.Lock()
         self._base_url = f"http://{self.host}:{self.port}"
         self._project_root = Path(__file__).resolve().parents[2]
+        self._stdout_handle = None
+        self._stderr_handle = None
 
-    def _resolve_path(self, path_value: str, *, base: Path | None = None) -> Path:
+    def _resolve_path(
+        self,
+        path_value: str,
+        *,
+        base: Path | None = None,
+        require_file: bool = False,
+    ) -> Path:
         path = Path(path_value)
         if path.is_absolute():
             return path
@@ -36,9 +44,30 @@ class ComfyUIRuntime:
             candidates.append(base / path)
         candidates.append(self._project_root / path)
         for candidate in candidates:
-            if candidate.exists():
+            if candidate.exists() and (not require_file or candidate.is_file()):
                 return candidate
+        if require_file:
+            return path
         return candidates[-1]
+
+    def _open_log_handles(self, root_path: Path) -> tuple[object, object]:
+        self._close_log_handles()
+        stdout_path = root_path / "comfyui_stdout.log"
+        stderr_path = root_path / "comfyui_stderr.log"
+        self._stdout_handle = stdout_path.open("ab", buffering=0)
+        self._stderr_handle = stderr_path.open("ab", buffering=0)
+        return self._stdout_handle, self._stderr_handle
+
+    def _close_log_handles(self) -> None:
+        for handle_attr in ("_stdout_handle", "_stderr_handle"):
+            handle = getattr(self, handle_attr, None)
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception as e:
+                    log.debug(f"[ComfyUI] Error closing log handle: {e}")
+                finally:
+                    setattr(self, handle_attr, None)
 
     def is_running(self, timeout: float = 2.0) -> bool:
         """Check if ComfyUI is running and responding."""
@@ -69,7 +98,7 @@ class ComfyUIRuntime:
                 return True
 
             root_path = self._resolve_path(self.root)
-            python_path = self._resolve_path(self.python, base=root_path)
+            python_path = self._resolve_path(self.python, base=root_path, require_file=True)
 
             log.info(f"[ComfyUI] Starting at {self._base_url} (root: {root_path})")
 
@@ -88,19 +117,19 @@ class ComfyUIRuntime:
 
                 cmd.extend(["--preview-method", "auto"])
 
+                env = {
+                    **os.environ,
+                    "PYTHONIOENCODING": "utf-8",
+                    "PYTHONUTF8": "1",
+                }
+                stdout_handle, stderr_handle = self._open_log_handles(root_path)
+
                 self._process = subprocess.Popen(
                     cmd,
                     cwd=str(root_path),
-                    env={
-                        **os.environ,
-                        "PYTHONIOENCODING": "utf-8",
-                        "PYTHONUTF8": "1",
-                    },
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                    if hasattr(subprocess, "CREATE_NO_WINDOW")
-                    else 0,
+                    env=env,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
                 )
 
                 log.info(f"[ComfyUI] Started process PID {self._process.pid}")
@@ -108,6 +137,7 @@ class ComfyUIRuntime:
             except Exception as e:
                 log.error(f"[ComfyUI] Failed to start: {e}")
                 self._process = None
+                self._close_log_handles()
                 return False
 
         start_time = time.time()
@@ -134,6 +164,7 @@ class ComfyUIRuntime:
                     log.warning(f"[ComfyUI] Error stopping: {e}")
                 finally:
                     self._process = None
+                    self._close_log_handles()
 
     @property
     def base_url(self) -> str:
