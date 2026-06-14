@@ -340,23 +340,43 @@ impl Worker {
         }
 
         let mut canceled = false;
-        while child.try_wait().context("failed to poll worker subprocess")?.is_none() {
+        while child
+            .try_wait()
+            .context("failed to poll worker subprocess")?
+            .is_none()
+        {
             if let Some(status) = get_job_status_path(&self.config.db_path, job_id)? {
                 if status == STATUS_CANCEL_REQUESTED {
                     canceled = true;
-                    append_event_path(&self.config.db_path, job_id, "cancellation_requested", "system")?;
+                    append_event_path(
+                        &self.config.db_path,
+                        job_id,
+                        "cancellation_requested",
+                        "system",
+                    )?;
                     send_interrupt(child_id);
                     let deadline = Instant::now() + Duration::from_secs(CANCEL_WAIT_SECONDS);
-                    while child.try_wait().context("failed to poll worker subprocess")?.is_none()
+                    while child
+                        .try_wait()
+                        .context("failed to poll worker subprocess")?
+                        .is_none()
                         && Instant::now() < deadline
                     {
                         thread::sleep(Duration::from_secs(1));
                     }
-                    if child.try_wait().context("failed to poll worker subprocess")?.is_none() {
+                    if child
+                        .try_wait()
+                        .context("failed to poll worker subprocess")?
+                        .is_none()
+                    {
                         let _ = child.kill();
                     }
                     let _ = child.wait();
-                    update_job_path(&self.config.db_path, job_id, &[JobUpdate::Status(STATUS_CANCELED)])?;
+                    update_job_path(
+                        &self.config.db_path,
+                        job_id,
+                        &[JobUpdate::Status(STATUS_CANCELED)],
+                    )?;
                     break;
                 }
             }
@@ -370,14 +390,21 @@ impl Worker {
         }
 
         if !canceled {
-            let status = child.wait().context("failed to wait for worker subprocess")?;
+            let status = child
+                .wait()
+                .context("failed to wait for worker subprocess")?;
             let rc = status.code().unwrap_or(-1);
-            if get_job_status_path(&self.config.db_path, job_id)?.as_deref() != Some(STATUS_CANCELED) {
+            if get_job_status_path(&self.config.db_path, job_id)?.as_deref()
+                != Some(STATUS_CANCELED)
+            {
                 if rc == 0 {
                     update_job_path(
                         &self.config.db_path,
                         job_id,
-                        &[JobUpdate::Status(STATUS_SUCCEEDED), JobUpdate::Progress(100)],
+                        &[
+                            JobUpdate::Status(STATUS_SUCCEEDED),
+                            JobUpdate::Progress(100),
+                        ],
                     )?;
                     append_event_path(
                         &self.config.db_path,
@@ -397,7 +424,10 @@ impl Worker {
                     update_job_path(
                         &self.config.db_path,
                         job_id,
-                        &[JobUpdate::Status(STATUS_FAILED), JobUpdate::Error(&format!("exit_code:{rc}"))],
+                        &[
+                            JobUpdate::Status(STATUS_FAILED),
+                            JobUpdate::Error(&format!("exit_code:{rc}")),
+                        ],
                     )?;
                     append_event_path(
                         &self.config.db_path,
