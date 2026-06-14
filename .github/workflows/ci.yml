@@ -79,7 +79,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-mock pytest-cov
-          pip install pydantic pyyaml httpx
+          pip install pydantic pyyaml httpx tqdm
       - name: Run CI test suite with coverage report
         run: |
           python -m pytest tests/test_config.py tests/test_config_schemas.py \
