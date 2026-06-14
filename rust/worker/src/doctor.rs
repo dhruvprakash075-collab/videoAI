@@ -189,7 +189,11 @@ fn check_python(python: &Path) -> CheckResult {
         Ok(output) => CheckResult::fail(
             "python",
             Severity::Critical,
-            format!("{} --version exited with {}", python.display(), output.status),
+            format!(
+                "{} --version exited with {}",
+                python.display(),
+                output.status
+            ),
             "verify the Python interpreter works",
         ),
         Err(err) => CheckResult::fail(
@@ -517,7 +521,11 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
 }
 
 fn count_status(conn: &Connection, status: &str) -> Result<i64> {
-    Ok(conn.query_row("SELECT COUNT(*) FROM jobs WHERE status=?1", [status], |row| row.get(0))?)
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM jobs WHERE status=?1",
+        [status],
+        |row| row.get(0),
+    )?)
 }
 
 fn read_image_backend(repo_root: &Path) -> Option<String> {
