@@ -201,7 +201,7 @@ def test_director_analyze_with_research(agent, tmp_path):
             "visual_style": "Watercolor",
             "theme": "Topic Theme",
             "shot_distribution": {"establishing": 0.2, "environment": 0.8},
-            "tts_recommendation": "edge",
+            "tts_recommendation": "omnivoice",
             "recommended_duration_min": 15,
         }
     )
@@ -210,7 +210,7 @@ def test_director_analyze_with_research(agent, tmp_path):
         vision = agent.analyze_with_research("Topic Theme", research)
         assert vision["visual_style"] == "Watercolor"
         assert vision["recommended_duration_min"] == 15
-        assert vision["tts_recommendation"] == "edge"
+        assert vision["tts_recommendation"] == "omnivoice"
 
 
 def test_director_produce_runtime_config(agent):
@@ -242,7 +242,7 @@ def test_director_produce_runtime_config(agent):
 
     res = agent.produce_runtime_config(vision_doc, user_responses, writer_input, mode="full")
     assert "watercolor" in res["visual"]["style"]
-    assert res["tts"]["engine"] == "edge"
+    assert res["tts"]["engine"] == "supertonic"
     assert "hero" in res["characters"]
     assert "villain" in res["characters"]
 

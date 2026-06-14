@@ -446,7 +446,7 @@ def _collect_preflight(config: dict) -> dict:
     ollama_host = config.get("ollama", {}).get("host", "http://localhost:11434")
     director_model = config.get("models", {}).get("director", "hermes-director")
     writer_model = config.get("models", {}).get("writer", "zephyr-writer")
-    tts_engine = config.get("tts", {}).get("engine", "omnivoice")
+    tts_engine = config.get("tts", {}).get("engine", "supertonic")
 
     # FFmpeg
     ffmpeg = shutil.which("ffmpeg")
@@ -464,20 +464,13 @@ def _collect_preflight(config: dict) -> dict:
         }
     except Exception as e:
         checks["Disk Space"] = {"status": "FAILED", "info": str(e)}
-    # TTS
-    if tts_engine == "edge":
-        try:
-            import edge_tts
-
-            checks[f"TTS ({tts_engine})"] = {"status": "OK", "info": "edge-tts installed"}
-        except ImportError:
-            checks[f"TTS ({tts_engine})"] = {"status": "FAILED", "info": "edge-tts not installed"}
-    else:
-        worker = _PROJECT_ROOT / "audio" / "omnivoice_worker.py"
-        checks[f"TTS ({tts_engine})"] = {
-            "status": "OK" if worker.exists() else "WARN",
-            "info": str(worker) if worker.exists() else "omnivoice_worker.py not found",
-        }
+    # TTS — supertonic (CPU ONNX) is default; omnivoice is the GPU fallback.
+    _tts_worker_name = "omnivoice_worker.py" if tts_engine == "omnivoice" else "supertonic_worker.py"
+    worker = _PROJECT_ROOT / "audio" / _tts_worker_name
+    checks[f"TTS ({tts_engine})"] = {
+        "status": "OK" if worker.exists() else "WARN",
+        "info": str(worker) if worker.exists() else f"{_tts_worker_name} not found",
+    }
     # Ollama
     try:
         req = urllib.request.Request(

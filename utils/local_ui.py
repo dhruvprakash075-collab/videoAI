@@ -690,8 +690,10 @@ async def save_ui_config(
 ):
     try:
         # Load, modify, and save config
+        from audio.audio_proxy import normalize_tts_engine
+
         config = load_config()
-        config.setdefault("tts", {})["engine"] = voice_engine
+        config.setdefault("tts", {})["engine"] = normalize_tts_engine(voice_engine)
         config.setdefault("subtitles", {})["format"] = (
             "tiktok" if dynamic_subtitles.lower() == "true" else "classic"
         )

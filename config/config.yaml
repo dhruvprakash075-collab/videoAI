@@ -23,17 +23,6 @@ tts:
     speed: 1.0
     silence_duration: 0.1
     max_chunk_length: 150
-  f5:
-    model_path: hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/488556290bc8e35d3883554662f77eda413a7eb4
-    ref_audio: character_voices/narration_ref_9s_mono24k.wav
-    ref_text:
-      एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
-      उनके बाकी सभी दाँत गिर गए हैं।
-    nfe_step: 16
-  edge:
-    voice: hi-IN-MadhurNeural
-    rate: +5%
-    volume: +0%
   omnivoice:
     speed: 0.5
     num_step: 16
@@ -41,26 +30,8 @@ tts:
     ref_text:
       एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
       उनके बाकी सभी दाँत गिर गए हैं।
-  indicf5:
-    enabled: false
-    python: indicf5_env/Scripts/python.exe
-    model_id: ai4bharat/IndicF5
-    cache_dir: hf_cache/indicf5
-    ref_audio: character_voices/optimized/omnivoice_story_ref_mono24k.wav
-    ref_text:
-      रात शांत थी। एक छोटी लड़की लालटेन लेकर जंगल के रास्ते पर चल रही थी।
-      उसे डर लग रहा था, फिर भी उसने हिम्मत रखी और सुबह से पहले घर लौट आई।
-    sample_rate: 24000
-    device: cuda
-    nfe_step: 16
-    speed: 1.0
-    timeout_seconds: 600
-    max_chars_per_chunk: 220
   voice_samples_dir: character_voices
   voice_profile:
-    edge_voice: hi-IN-MadhurNeural
-    edge_rate: +5%
-    edge_volume: +0%
     sentence_gap_ms: 200
   devanagari:
     max_latin_ratio: 0.1
@@ -174,7 +145,7 @@ image_gen:
     host: 127.0.0.1
     port: 8188
     root: external/ComfyUI
-    python: python
+    python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true
     open_browser: false
     workflow_path: config/comfyui/workflows/text_to_image_api.json
@@ -239,7 +210,7 @@ music:
   ducking: true
   duck_ratio: 0.3
 upload:
-  enabled: true
+  enabled: false
   platform: youtube
   visibility: private
   profile_dir: chrome_profile

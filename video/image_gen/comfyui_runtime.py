@@ -1,11 +1,13 @@
 """ComfyUI runtime management - checks if running, auto-starts when enabled."""
 
 import logging
+import os
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +25,20 @@ class ComfyUIRuntime:
         self._process: subprocess.Popen | None = None
         self._process_lock = threading.Lock()
         self._base_url = f"http://{self.host}:{self.port}"
+        self._project_root = Path(__file__).resolve().parents[2]
+
+    def _resolve_path(self, path_value: str, *, base: Path | None = None) -> Path:
+        path = Path(path_value)
+        if path.is_absolute():
+            return path
+        candidates = []
+        if base is not None:
+            candidates.append(base / path)
+        candidates.append(self._project_root / path)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[-1]
 
     def is_running(self, timeout: float = 2.0) -> bool:
         """Check if ComfyUI is running and responding."""
@@ -52,11 +68,14 @@ class ComfyUIRuntime:
                 log.info("[ComfyUI] Already starting or running")
                 return True
 
-            log.info(f"[ComfyUI] Starting at {self._base_url} (root: {self.root})")
+            root_path = self._resolve_path(self.root)
+            python_path = self._resolve_path(self.python, base=root_path)
+
+            log.info(f"[ComfyUI] Starting at {self._base_url} (root: {root_path})")
 
             try:
                 cmd = [
-                    self.python,
+                    str(python_path),
                     "main.py",
                     "--listen",
                     self.host,
@@ -65,15 +84,20 @@ class ComfyUIRuntime:
                 ]
 
                 if not self.open_browser:
-                    cmd.append("--disable-browser")
+                    cmd.append("--disable-auto-launch")
 
                 cmd.extend(["--preview-method", "auto"])
 
                 self._process = subprocess.Popen(
                     cmd,
-                    cwd=self.root,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    cwd=str(root_path),
+                    env={
+                        **os.environ,
+                        "PYTHONIOENCODING": "utf-8",
+                        "PYTHONUTF8": "1",
+                    },
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     creationflags=subprocess.CREATE_NO_WINDOW
                     if hasattr(subprocess, "CREATE_NO_WINDOW")
                     else 0,

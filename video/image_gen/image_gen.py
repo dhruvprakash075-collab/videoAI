@@ -1,8 +1,10 @@
-"""image_gen.py - Image generation: bonsai (FLUX.2-Klein ternary via diffusers).
+"""image_gen.py - Image generation.
 
-Bonsai 4B ternary (gemlite 2-bit) is the only image backend. Character face
-consistency is achieved via IP-Adapter FLUX v2 (XLabs-AI/flux-ip-adapter-v2)
-referencing a per-character master portrait stored in the project store.
+ComfyUI is the primary image backend (config image_gen.backend: comfyui).
+Bonsai 4B ternary (gemlite 2-bit, via diffusers) is the fallback backend used
+when ComfyUI fails. Character face consistency on the Bonsai path is achieved
+via IP-Adapter FLUX v2 (XLabs-AI/flux-ip-adapter-v2) referencing a per-character
+master portrait stored in the project store.
 
 Public surface:
 - generate_images(prompts, output_dir, config, char_presence=None)
@@ -542,6 +544,10 @@ def _bonsai(
             torch.cuda.empty_cache()
     except Exception as e:
         log.debug(f"[Bonsai] CUDA cleanup failed: {e}")
+
+    # Bonsai is the fallback path only; free the 4B model so it does not stay
+    # resident in VRAM and starve the next sequential GPU task.
+    unload_bonsai_pipeline()
 
     return images
 

@@ -14,7 +14,7 @@ Persistent request (one JSON object per line on stdin):
    "silence_duration": 0.3, "max_chunk_length": 120,
    "seed": -1}
 Response (one JSON object per line on stdout):
-  {"status": "success", "wav_path": "...", "duration_s": 3.42}
+  {"status": "success", "wav_path": "...", "duration_s": 3.42, "word_timestamps": null}
   {"status": "error", "message": "..."}
 A line {"cmd": "shutdown"} cleanly stops the persistent worker.
 
@@ -130,7 +130,12 @@ def _synthesize_once(
     sr = int(getattr(tts, "sample_rate", SUPERTONIC_SAMPLE_RATE))
     sf.write(str(out_path), wav_1d, sr)
     duration_s = float(len(wav_1d) / sr)
-    return {"status": "success", "wav_path": str(out_path), "duration_s": duration_s}
+    return {
+        "status": "success",
+        "wav_path": str(out_path),
+        "duration_s": duration_s,
+        "word_timestamps": None,
+    }
 
 
 def _serve() -> int:

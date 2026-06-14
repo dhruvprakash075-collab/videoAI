@@ -10,7 +10,7 @@ Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown ke
 
 > **2026-06-08:** `normalize_tts_engine()` in `audio/audio_proxy.py` normalizes
 > free-text engine names from the LLM to valid engines. Unknown engines default
-> to `supertonic`. Valid engines: `supertonic`, `omnivoice`, `f5`, `edge`.
+> to `supertonic`. Valid engines: `supertonic`, `omnivoice`.
 > Legacy aliases (`xtts`, `coqui`, `chattts`) removed.
 
 ### Key Sections & Ground-Truth Values
@@ -20,7 +20,7 @@ Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown ke
 | `models` | `director` | `"hermes-director"` | Planning / translation LLM |
 | `models` | `writer` | `"zephyr-writer"` | Script generation LLM |
 | `tts.omnivoice` | `num_step` | `16` | Was 24 — reduced for speed |
-| `tts` | `engine` | **"supertonic"** | **Active default (2026-06-04)**. Fallback chain: `supertonic → omnivoice → edge-tts` |
+| `tts` | `engine` | **"supertonic"** | **Active default**. Fallback chain: `supertonic → omnivoice` |
 | `tts.supertonic` | `voice` | `"character_voices/dhruv_voice_polished.json"` | DIY extract, 18s polished, loss 0.2721 |
 | `tts.supertonic` | `steps` | **16** | Was 8 — A/B winner 2026-06-04 (less hiss) |
 | `tts.supertonic` | `speed` | **1.0** | Was 1.05 — A/B winner 2026-06-04 (natural pace) |
@@ -43,9 +43,7 @@ crashed worker, missing voice JSON), `audio/audio_proxy.py::tts_generate()`
 auto-tries:
 1. **supertonic** (active) — CPU ONNX, 4.5x faster than OmniVoice
 2. **omnivoice** — GPU DiT, 1.2x realtime, richer timbre
-3. **edge-tts** — Cloud-free Azure neural TTS, last resort
-
-The chain mirrors the F5 fallback pattern. To force a specific engine,
+To force a specific engine,
 set `tts.engine` directly.
 
 ### DIY voice style JSONs (Supertonic 3)

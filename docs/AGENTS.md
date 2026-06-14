@@ -455,7 +455,7 @@ These are the live values; if a doc disagrees, **the live values win**:
 | `bootstrap_pipeline.py` | **Primary CLI.** Patches + preflight + args + calls `run_long_pipeline`. Supports `--skip-preflight` and `--preflight-only`. **v6**: `--source <path-or-URL>` for upload-source mode (.txt/.md/.pdf/.docx). |
 | `studio_tui.py` | Operator TUI (Textual). `venv\Scripts\python.exe studio_tui.py` |
 | `run.bat` | Windows menu launcher: UI / CLI / Tests. Has the TUI fallback. |
-| `run_pipeline.py` | Hardcoded `"Real Hero"` smoke test (P4-27). |
+| `run_pipeline.py` | Thin root launcher for the real pipeline CLI; delegates to `core.pipeline_long` and honors CLI flags. |
 | `utils/local_ui.py` | FastAPI backend for the React dashboard (port 8000). |
 | ~~`train_lora.py`~~ | **REMOVED 2026-06-04** (P7-1) — character consistency is now via IP-Adapter FLUX v2 referencing per-character master portraits. |
 

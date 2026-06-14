@@ -71,7 +71,7 @@ class VisionDocument(BaseModel):
     emotions: str = "neutral"
     pacing: str = "moderate"
     shot_distribution: ShotDistribution = ShotDistribution()
-    tts_recommendation: Literal["supertonic", "omnivoice", "f5", "edge", "indicf5"] = "supertonic"
+    tts_recommendation: Literal["supertonic", "omnivoice"] = "supertonic"
     subtitle_style: SubtitleConfig = SubtitleConfig()
     ambiguity_detected: bool = False
     ambiguity_question: str = ""
@@ -144,43 +144,12 @@ class SuperTonicSubConfig(BaseModel):
     max_chunk_length: int = 150
 
 
-class F5SubConfig(BaseModel):
-    model_config = {"extra": "forbid"}
-    model_path: str = ""
-    ref_audio: str = ""
-    ref_text: str = ""
-    nfe_step: int = 16
-
-
-class EdgeSubConfig(BaseModel):
-    model_config = {"extra": "forbid"}
-    voice: str = "hi-IN-MadhurNeural"
-    rate: str = "+5%"
-    volume: str = "+0%"
-
-
 class OmniVoiceSubConfig(BaseModel):
     model_config = {"extra": "forbid"}
     speed: float = 0.5
     num_step: int = 16
     guidance_scale: float = 2.5
     ref_text: str = ""
-
-
-class IndicF5SubConfig(BaseModel):
-    model_config = {"extra": "forbid"}
-    enabled: bool = False
-    python: str = ""
-    model_id: str = ""
-    cache_dir: str = ""
-    ref_audio: str = ""
-    ref_text: str = ""
-    sample_rate: int = 24000
-    device: str = "cuda"
-    nfe_step: int = 16
-    speed: float = 1.0
-    timeout_seconds: int = 600
-    max_chars_per_chunk: int = 220
 
 
 class DevanagariConfig(BaseModel):
@@ -191,25 +160,19 @@ class DevanagariConfig(BaseModel):
 
 class VoiceProfileConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    edge_voice: str = "hi-IN-MadhurNeural"
-    edge_rate: str = "+5%"
-    edge_volume: str = "+0%"
     sentence_gap_ms: int = 200
 
 
 class TTSConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    engine: Literal["supertonic", "omnivoice", "f5", "edge", "indicf5"] = "supertonic"
+    engine: Literal["supertonic", "omnivoice"] = "supertonic"
     lang: str = "hi"
     slow: bool = False
     voice_samples_dir: str = "character_voices"
     voice_profile: VoiceProfileConfig = Field(default_factory=VoiceProfileConfig)
     devanagari: DevanagariConfig = Field(default_factory=DevanagariConfig)
     supertonic: SuperTonicSubConfig = Field(default_factory=SuperTonicSubConfig)
-    f5: F5SubConfig = Field(default_factory=F5SubConfig)
-    edge: EdgeSubConfig = Field(default_factory=EdgeSubConfig)
     omnivoice: OmniVoiceSubConfig = Field(default_factory=OmniVoiceSubConfig)
-    indicf5: IndicF5SubConfig = Field(default_factory=IndicF5SubConfig)
     # Fish Speech specific settings — empty string means "find in PATH"
     fish_speech_model_path: str = ""
     fish_speech_temperature: float = 0.7

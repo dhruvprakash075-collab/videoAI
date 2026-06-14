@@ -93,9 +93,9 @@ def test_tts_worker_source_contains_word_timestamps_key():
     assert '"word_timestamps"' in src, (
         "omnivoice_worker.py must emit 'word_timestamps' key in success JSON"
     )
-    src2 = Path("audio/f5_worker.py").read_text(encoding="utf-8")
+    src2 = Path("audio/supertonic_worker.py").read_text(encoding="utf-8")
     assert '"word_timestamps"' in src2, (
-        "f5_worker.py must emit 'word_timestamps' key in success JSON"
+        "supertonic_worker.py must emit 'word_timestamps' key in success JSON"
     )
 
 

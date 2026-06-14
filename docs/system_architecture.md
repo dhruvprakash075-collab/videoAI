@@ -31,11 +31,10 @@ c:\Video.AI
 │   ├── llm_client.py           # DirectorLlmClient (Ollama raw plumbing)
 │   └── decision_engine.py      # Authority hierarchy (default < director < writer < user)
 ├── audio/                  # TTS, SFX, Loudnorm mastering
-│   ├── audio_proxy.py          # Unified TTS facade (Supertonic 3 default → omnivoice → edge-tts fallback chain, 2026-06-04)
+│   ├── audio_proxy.py          # Unified TTS facade (Supertonic 3 default → omnivoice fallback)
 │   ├── audio_fx.py             # Loudnorm two-pass, music ducking, SFX mixing
 │   ├── omnivoice_worker.py     # OmniVoice persistent worker (fallback engine)
 │   ├── supertonic_worker.py    # Supertonic 3 persistent worker (CPU ONNX, has danda fix P6-1, 2026-06-04)
-│   └── f5_worker.py            # F5-TTS persistent worker
 ├── config/                 # YAML config + Pydantic schema validation
 │   ├── config.yaml             # ← LIVE source of truth for all tunables
 │   ├── config.py               # Loader (load_config)
@@ -79,11 +78,10 @@ c:\Video.AI
 |---|---|---|---|---|---|
 | **Supertonic 3** (default) | CPU ONNX | 0 GB | 5.1x | Free (MIT + OpenRAIL-M) | All Hindi narration |
 | OmniVoice | GPU DiT | ~2 GB | 1.2x | Free | Higher-quality fallback |
-| Edge TTS | Cloud neural | 0 GB | (network) | Free | Last-resort fallback |
 
 ### Fallback chain
-`audio/audio_proxy.py::tts_generate()` tries **supertonic → omnivoice → edge-tts** in
-order. Mirrors the existing F5 fallback pattern. Failure of any one engine
+`audio/audio_proxy.py::tts_generate()` tries **supertonic → omnivoice** in
+order. Failure of any one engine
 silently cascades to the next. To disable fallback, set `tts.engine` to the
 exact engine name (no `~` prefix) and remove the chain in `audio_proxy.py`.
 
@@ -176,7 +174,7 @@ core/pipeline_long.py      ← thin orchestrator (never run directly)
   ├─► core/segment_runner.py  ← per-segment loop (uses SegmentState from pipeline_graph.py)
   │     ├─► Writer Agent             (script generation, or bypass if source_chunk set)
   │     ├─► utils/critic.py          (5-dim rubric: Hook/Arc/Pacing/Retention/TTS ≥ 60/100)
-  │     ├─► audio/audio_proxy.py     (TTS dispatch: supertonic → omnivoice → edge-tts, 2026-06-04)
+  │     ├─► audio/audio_proxy.py     (TTS dispatch: supertonic → omnivoice)
   │     │     └─► supertonic_worker.py  (default, CPU ONNX, ~5x realtime, has danda fix for Hindi)
   │     └─► video/image_gen/image_gen.py  (Bonsai 4B ternary + IP-Adapter v2, 2-tier OOM, 2026-06-04)
   │

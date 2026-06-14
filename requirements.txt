@@ -7,7 +7,6 @@ crewai>=1.14.0
 ollama>=0.6.0
 
 # ── TTS Engines ────────────────────────────────────────────────────
-edge-tts>=7.0.0
 nest-asyncio>=1.6.0
 # OmniVoice TTS (install separately: pip install omnivoice)
 # omnivoice>=0.1.0

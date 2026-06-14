@@ -905,7 +905,7 @@ class DirectorAgent:
                         "emotional_detail": 0.10,
                         "action": 0.05,
                     },
-                    "tts_recommendation": "omnivoice",
+                    "tts_recommendation": "supertonic",
                     "subtitle_style": {
                         "format": "classic",
                         "size": "small",
@@ -1291,7 +1291,7 @@ class DirectorAgent:
             "emotions": "neutral",
             "pacing": "moderate",
             "shot_distribution": {},
-            "tts_recommendation": "omnivoice",
+            "tts_recommendation": "supertonic",
             "subtitle_style": {},
             "ambiguity_detected": False,
             "ambiguity_question": "",
@@ -1318,7 +1318,7 @@ class DirectorAgent:
         # tts_recommendation: must be a valid engine ID
         tts_rec = vision.get("tts_recommendation")
         if not isinstance(tts_rec, str):
-            vision["tts_recommendation"] = "omnivoice"
+            vision["tts_recommendation"] = "supertonic"
         else:
             try:
                 from audio.audio_proxy import normalize_tts_engine
@@ -1595,7 +1595,7 @@ class DirectorAgent:
         # -- TTS (skip for video-only) --
         if _mode != "video-only":
             tts_response = str(user_responses.get("tts_engine", "")).lower()
-            engine = vision_doc.get("tts_recommendation", "omnivoice") or "omnivoice"
+            engine = vision_doc.get("tts_recommendation", "supertonic") or "supertonic"
             if tts_response:
                 try:
                     from audio.audio_proxy import normalize_tts_engine
@@ -1971,7 +1971,7 @@ class DirectorAgent:
         """Ask user whether to search online for research."""
 
         choice = self.consult_user(
-            "Search online for story context?", options=["Yes, search online", "No, use story only"]
+            "Search online for story context?", options=["No, use story only", "Yes, search online"]
         )
 
         return "yes" in choice.lower()
@@ -1981,7 +1981,7 @@ class DirectorAgent:
 
         choice = self.consult_user(
             f"Create original story for '{topic}'?",
-            options=["Yes, create from scratch", "No, I have a story"],
+            options=["No, I have a story", "Yes, create from scratch"],
         )
 
         if "yes" in choice.lower():

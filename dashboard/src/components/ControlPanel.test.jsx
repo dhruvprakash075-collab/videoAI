@@ -65,43 +65,30 @@ describe('ControlPanel', () => {
     expect(screen.getByRole('button', { name: /Auto Start/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('renders all three voice engine buttons with the active one pressed', async () => {
+  it('renders both voice engine buttons with the active one pressed', async () => {
     render(<ControlPanel onClose={onClose} />);
     await flush();
     const omnivoice = screen.getByRole('button', { name: /OmniVoice/i });
     const supertonic = screen.getByRole('button', { name: /Supertonic 3/i });
-    const edge = screen.getByRole('button', { name: /Edge TTS/i });
-    expect(omnivoice).toHaveAttribute('aria-pressed', 'true');
-    expect(supertonic).toHaveAttribute('aria-pressed', 'false');
-    expect(edge).toHaveAttribute('aria-pressed', 'false');
+    expect(supertonic).toHaveAttribute('aria-pressed', 'true');
+    expect(omnivoice).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('switches the active engine when Supertonic is clicked', async () => {
+  it('switches the active engine when OmniVoice is clicked', async () => {
     const user = userEvent.setup();
     render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Supertonic 3/i }));
-    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('switches the active engine when Edge TTS is clicked', async () => {
-    const user = userEvent.setup();
-    render(<ControlPanel onClose={onClose} />);
-    await user.click(screen.getByRole('button', { name: /Edge TTS/i }));
-    expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByRole('button', { name: /OmniVoice/i }));
+    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('loads config from /api/config on mount and sets the active voice engine (edge)', async () => {
-    const fetchMock = mockGetFetch({ voiceEngine: 'edge', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 });
+  it('loads config from /api/config on mount and sets the active voice engine (omnivoice)', async () => {
+    const fetchMock = mockGetFetch({ voiceEngine: 'omnivoice', dynamicSubtitles: false, uncappedScaling: true, maxImagesPerSegment: 9 });
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-      expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'false');
-      expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'true');
     });
   });
 
@@ -112,7 +99,6 @@ describe('ControlPanel', () => {
       expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/api/config`, expect.objectContaining({ signal: expect.any(AbortSignal) }));
       expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'false');
       expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.getByRole('button', { name: /Edge TTS/i })).toHaveAttribute('aria-pressed', 'false');
     });
   });
 
@@ -140,7 +126,7 @@ describe('ControlPanel', () => {
     mockGetFetch({ status: 'error', message: 'nope' });
     render(<ControlPanel onClose={onClose} />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: /OmniVoice/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Supertonic 3/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('logs (but does not throw) when the config fetch fails with a non-Abort error', async () => {

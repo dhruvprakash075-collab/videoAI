@@ -75,7 +75,7 @@ ignore = [
     "E701",   # multiple-statements-on-one-line-colon — common in log/debug lines
     "E702",   # multiple-statements-on-one-line-semicolon — common in log/debug lines
     "B008",   # function-call-in-default-arg — common in Pydantic / FastAPI patterns
-    "PLC0415",# import-outside-top-level — the codebase uses 100+ `try: import X except ImportError` blocks for optional deps (crewai, edge_tts, diffusers, etc.). Ruff can't tell which are intentional lazy-imports vs real smells.
+    "PLC0415",# import-outside-top-level — the codebase uses 100+ `try: import X except ImportError` blocks for optional deps (crewai, diffusers, etc.). Ruff can't tell which are intentional lazy-imports vs real smells.
     "PLR0913",# too-many-arguments — common in pipeline code
     "PLR2004",# magic-value-comparison — too noisy for a numeric-tunable-heavy codebase
     "TRY003", # too-long-exception-message — exceptions are user-facing
@@ -137,10 +137,7 @@ ignore = [
 "core/main.py" = [
     "E402",   # sys.path + compat patches BEFORE pipeline imports
 ]
-"core/pre_production.py" = [
-    "E402",
-    "F401",   # optional `edge_tts` availability check
-]
+"core/pre_production.py" = ["E402"]
 "core/segment_runner.py" = ["E402"]
 "core/post_production.py" = ["E402"]
 "agents/director_agent.py" = [
@@ -213,7 +210,6 @@ ignore = [
 "isolated_tests*.py" = ["E402", "T201", "S101"]
 "verify_fixes.py" = ["E402", "T201", "S101"]
 "style_resolver.py" = ["E402"]
-"download_f5.py" = ["E402", "T201"]
 
 # ── isort config ───────────────────────────────────────────────────────────
 [tool.ruff.lint.isort]
@@ -316,8 +312,6 @@ module = [
     "utils.web_search",
     "utils.utils",
     "utils.local_ui",
-    "audio.indicf5_worker",
-    "audio.f5_worker",
     "video.image_gen.image_gen",
     "video.image_gen.layered_v3",
     "video.renderer.assembler",
