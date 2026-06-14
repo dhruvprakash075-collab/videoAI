@@ -11,7 +11,6 @@ use axum::routing::get;
 use axum::{Json, Router};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio::net::TcpListener;
 
 #[derive(Clone)]
@@ -313,7 +312,10 @@ fn row_to_job_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobRecord> {
     })
 }
 
-fn collect_rows<T>(rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>) -> Result<Vec<T>> {
+fn collect_rows<T, F>(rows: rusqlite::MappedRows<'_, F>) -> Result<Vec<T>>
+where
+    F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+{
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
@@ -326,6 +328,7 @@ mod tests {
     use super::*;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
+    use serde_json::json;
     use tower::ServiceExt;
 
     fn create_test_db() -> Result<(tempfile::TempDir, PathBuf)> {
