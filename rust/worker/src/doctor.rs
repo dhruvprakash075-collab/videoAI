@@ -149,7 +149,8 @@ fn print_human_results(results: &[CheckResult]) {
 fn should_fail(results: &[CheckResult], strict: bool) -> bool {
     results.iter().any(|result| {
         result.status == CheckStatus::Fail
-            && (result.severity == Severity::Critical || (strict && result.severity == Severity::Warn))
+            && (result.severity == Severity::Critical
+                || (strict && result.severity == Severity::Warn))
     })
 }
 
@@ -335,7 +336,10 @@ fn check_comfyui_checkpoints(repo_root: &Path, backend: Option<&str>) -> CheckRe
             )
         }
     };
-    let count = entries.filter_map(Result::ok).filter(|entry| entry.path().is_file()).count();
+    let count = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_file())
+        .count();
     if count == 0 {
         CheckResult::fail(
             "comfyui_checkpoints",
@@ -387,7 +391,11 @@ fn check_disk_space(repo_root: &Path) -> CheckResult {
             format!("{} free", format_bytes(bytes)),
             "free at least 5 GB for comfortable video generation",
         ),
-        Ok(bytes) => CheckResult::pass("disk_space", Severity::Warn, format!("{} free", format_bytes(bytes))),
+        Ok(bytes) => CheckResult::pass(
+            "disk_space",
+            Severity::Warn,
+            format!("{} free", format_bytes(bytes)),
+        ),
         Err(err) => CheckResult::fail(
             "disk_space",
             Severity::Warn,
@@ -399,17 +407,28 @@ fn check_disk_space(repo_root: &Path) -> CheckResult {
 
 fn check_gpu() -> CheckResult {
     match StdCommand::new("nvidia-smi")
-        .args(["--query-gpu=memory.total,memory.free", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=memory.total,memory.free",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
     {
         Ok(output) if output.status.success() => {
             let text = String::from_utf8_lossy(&output.stdout);
             let Some(line) = text.lines().next() else {
-                return CheckResult::skip("gpu_vram", Severity::Info, "nvidia-smi returned no GPU rows");
+                return CheckResult::skip(
+                    "gpu_vram",
+                    Severity::Info,
+                    "nvidia-smi returned no GPU rows",
+                );
             };
             let parts = line.split(',').map(str::trim).collect::<Vec<_>>();
             if parts.len() < 2 {
-                return CheckResult::skip("gpu_vram", Severity::Info, "could not parse nvidia-smi output");
+                return CheckResult::skip(
+                    "gpu_vram",
+                    Severity::Info,
+                    "could not parse nvidia-smi output",
+                );
             }
             let total = parts[0].parse::<i64>().unwrap_or(0);
             let free = parts[1].parse::<i64>().unwrap_or(0);
@@ -428,13 +447,20 @@ fn check_gpu() -> CheckResult {
                 )
             }
         }
-        Ok(_) => CheckResult::skip("gpu_vram", Severity::Info, "nvidia-smi returned a nonzero status"),
+        Ok(_) => CheckResult::skip(
+            "gpu_vram",
+            Severity::Info,
+            "nvidia-smi returned a nonzero status",
+        ),
         Err(_) => CheckResult::skip("gpu_vram", Severity::Info, "nvidia-smi not found"),
     }
 }
 
 fn check_writable_dirs(repo_root: &Path) -> CheckResult {
-    let dirs = [repo_root.join("studio_outputs"), repo_root.join("studio_projects").join("jobs")];
+    let dirs = [
+        repo_root.join("studio_outputs"),
+        repo_root.join("studio_projects").join("jobs"),
+    ];
     let mut missing = Vec::new();
     let mut readonly = Vec::new();
     for dir in &dirs {
@@ -453,7 +479,11 @@ fn check_writable_dirs(repo_root: &Path) -> CheckResult {
             "create studio_outputs and studio_projects/jobs with write permissions",
         );
     }
-    CheckResult::pass("writable_dirs", Severity::Warn, "expected output/job directories exist")
+    CheckResult::pass(
+        "writable_dirs",
+        Severity::Warn,
+        "expected output/job directories exist",
+    )
 }
 
 fn first_nonempty_line(stdout: &[u8], stderr: &[u8]) -> String {
@@ -485,7 +515,11 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
 }
 
 fn count_status(conn: &Connection, status: &str) -> Result<i64> {
-    Ok(conn.query_row("SELECT COUNT(*) FROM jobs WHERE status=?1", [status], |row| row.get(0))?)
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM jobs WHERE status=?1",
+        [status],
+        |row| row.get(0),
+    )?)
 }
 
 fn read_image_backend(repo_root: &Path) -> Option<String> {
@@ -497,7 +531,8 @@ fn read_image_backend(repo_root: &Path) -> Option<String> {
             in_image_gen = true;
             continue;
         }
-        if in_image_gen && !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
+        if in_image_gen && !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty()
+        {
             in_image_gen = false;
         }
         if in_image_gen && trimmed.starts_with("backend:") {
@@ -605,7 +640,10 @@ mod tests {
     fn doctor_gpu_check_skips_when_nvidia_smi_absent_or_reports() {
         let result = check_gpu();
 
-        assert!(matches!(result.status, CheckStatus::Skip | CheckStatus::Pass | CheckStatus::Fail));
+        assert!(matches!(
+            result.status,
+            CheckStatus::Skip | CheckStatus::Pass | CheckStatus::Fail
+        ));
     }
 
     #[test]
