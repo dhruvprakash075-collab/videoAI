@@ -1060,4 +1060,344 @@ impl<T> OptionalExtension<T> for rusqlite::Result<T> {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn create_seeded_job_db(seed_sql: &str) -> Result<(tempfile::TempDir, PathBuf)> {
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("jobs.db");
+        let conn = Connection::open(&db_path)?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        create_test_schema(&conn)?;
+        conn.execute_batch(seed_sql)?;
+        drop(conn);
+        Ok((temp_dir, db_path))
+    }
+
+    fn create_test_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            CREATE TABLE jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL,
+                topic TEXT,
+                request_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                heartbeat_at TEXT,
+                progress INTEGER DEFAULT 0,
+                attempt INTEGER DEFAULT 0,
+                image_backend TEXT,
+                comfyui_checkpoint TEXT,
+                fallback_backend TEXT,
+                output_path TEXT,
+                error TEXT
+            );
+            CREATE INDEX idx_jobs_status_created ON jobs(status, created_at);
+            CREATE TABLE job_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                ts TEXT NOT NULL,
+                event_type TEXT,
+                message TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+            CREATE TABLE job_artifacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                key TEXT,
+                path TEXT,
+                meta TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            );
+            "#,
+        )
+        .context("failed to create test job database schema")?;
+
+        Ok(())
+    }
+
+    fn worker_for(temp_dir: &tempfile::TempDir, db_path: PathBuf, fake_python: PathBuf) -> Worker {
+        Worker::new(WorkerConfig {
+            repo_root: temp_dir.path().to_path_buf(),
+            db_path,
+            python: fake_python,
+            bootstrap: temp_dir.path().join("bootstrap_pipeline.py"),
+        })
+    }
+
+    fn write_fake_python(repo_root: &Path, body: &str) -> Result<PathBuf> {
+        #[cfg(windows)]
+        {
+            let path = repo_root.join("fake_python.cmd");
+            let body = if body.contains("mkdir -p studio_outputs/Happy_Topic") {
+                "@echo off\r\necho fake-log\r\nmkdir studio_outputs\\Happy_Topic\r\necho video> studio_outputs\\Happy_Topic\\out.mp4\r\necho {}> studio_outputs\\Happy_Topic\\run_manifest.json\r\nexit /b 0\r\n"
+            } else if body.contains("sleep 60") {
+                "@echo off\r\necho started\r\nping 127.0.0.1 -n 61 > nul\r\nexit /b 0\r\n"
+            } else if body.contains("sleep 2") {
+                "@echo off\r\necho started\r\nping 127.0.0.1 -n 3 > nul\r\nexit /b 0\r\n"
+            } else if body.contains("exit 7") {
+                "@echo off\r\necho failing\r\nexit /b 7\r\n"
+            } else {
+                "@echo off\r\nexit /b 0\r\n"
+            };
+            fs::write(&path, body)?;
+            return Ok(path);
+        }
+
+        #[cfg(not(windows))]
+        {
+            let path = repo_root.join("fake_python.sh");
+            fs::write(&path, body)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&path, perms)?;
+            }
+            Ok(path)
+        }
+    }
+
+    fn fetch_job(db_path: &Path, job_id: i64) -> Result<BTreeMap<String, String>> {
+        let conn = open_job_db_read_only(db_path)?;
+        let mut stmt = conn.prepare(
+            "SELECT status, attempt, progress, heartbeat_at, output_path, error FROM jobs WHERE id=?",
+        )?;
+        let row = stmt.query_row([job_id], |row| {
+            let mut map = BTreeMap::new();
+            map.insert("status".to_string(), row.get::<_, String>(0)?);
+            map.insert("attempt".to_string(), row.get::<_, i64>(1)?.to_string());
+            map.insert("progress".to_string(), row.get::<_, i64>(2)?.to_string());
+            map.insert(
+                "heartbeat_at".to_string(),
+                row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            );
+            map.insert(
+                "output_path".to_string(),
+                row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            );
+            map.insert(
+                "error".to_string(),
+                row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            );
+            Ok(map)
+        })?;
+        Ok(row)
+    }
+
+    fn count_rows(db_path: &Path, table: &str, where_clause: &str) -> Result<i64> {
+        let conn = open_job_db_read_only(db_path)?;
+        let sql = format!("SELECT COUNT(*) FROM {table} {where_clause}");
+        Ok(conn.query_row(&sql, [], |row| row.get(0))?)
+    }
+
+    #[test]
+    fn list_jobs_orders_newest_first_and_projects_expected_columns() -> Result<()> {
+        let (_temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES
+                ('queued', 'First', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                ('running', 'Second', '{}', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00');
+            "#,
+        )?;
+        let conn = open_job_db_read_only(&db_path)?;
+
+        let jobs = list_jobs(&conn, 100, 0)?;
+
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].topic.as_deref(), Some("Second"));
+        assert_eq!(jobs[0].status, "running");
+        assert_eq!(jobs[1].topic.as_deref(), Some("First"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn list_jobs_respects_limit_and_offset() -> Result<()> {
+        let (_temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES
+                ('queued', 'First', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                ('queued', 'Second', '{}', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00'),
+                ('queued', 'Third', '{}', '2026-01-03T00:00:00+00:00', '2026-01-03T00:00:00+00:00');
+            "#,
+        )?;
+        let conn = open_job_db_read_only(&db_path)?;
+
+        let jobs = list_jobs(&conn, 1, 1)?;
+
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].topic.as_deref(), Some("Second"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn missing_database_errors_without_creating_files() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("missing").join("jobs.db");
+
+        let err = open_job_db_read_only(&db_path).expect_err("missing database should error");
+
+        assert!(err.to_string().contains("job database not found"));
+        assert!(!db_path.exists());
+        assert!(!db_path.parent().expect("db path has parent").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn atomic_claim_allows_only_one_worker() -> Result<()> {
+        let (temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at, attempt)
+            VALUES ('queued', 'Atomic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 0);
+            "#,
+        )?;
+        let fake = write_fake_python(temp_dir.path(), "#!/bin/sh\nexit 0\n")?;
+        let worker_a = worker_for(&temp_dir, db_path.clone(), fake.clone());
+        let worker_b = worker_for(&temp_dir, db_path.clone(), fake);
+
+        let a = thread::spawn(move || worker_a.claim_next_job().map(|j| j.map(|job| job.id)));
+        let b = thread::spawn(move || worker_b.claim_next_job().map(|j| j.map(|job| job.id)));
+        let a = a.join().expect("claim thread should join")?;
+        let b = b.join().expect("claim thread should join")?;
+
+        let claimed = [a, b].into_iter().flatten().collect::<Vec<_>>();
+        assert_eq!(claimed, vec![1]);
+        let job = fetch_job(&db_path, 1)?;
+        assert_eq!(job.get("attempt").map(String::as_str), Some("1"));
+        assert_eq!(job.get("status").map(String::as_str), Some("running"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn happy_path_captures_video_and_manifest() -> Result<()> {
+        let (temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES ('queued', 'Happy Topic', '{\"dry_run\":true}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            "#,
+        )?;
+        let fake = write_fake_python(
+            temp_dir.path(),
+            "#!/bin/sh\necho fake-log\nmkdir -p studio_outputs/Happy_Topic\nprintf video > studio_outputs/Happy_Topic/out.mp4\nprintf '{}' > studio_outputs/Happy_Topic/run_manifest.json\nexit 0\n",
+        )?;
+        let worker = worker_for(&temp_dir, db_path.clone(), fake);
+
+        assert_eq!(worker.run_once()?, Some(1));
+
+        let job = fetch_job(&db_path, 1)?;
+        assert_eq!(job.get("status").map(String::as_str), Some("succeeded"));
+        assert_eq!(job.get("progress").map(String::as_str), Some("100"));
+        assert!(job
+            .get("output_path")
+            .is_some_and(|p| p.ends_with("out.mp4")));
+        assert_eq!(count_rows(&db_path, "job_artifacts", "WHERE job_id=1")?, 2);
+        assert_eq!(
+            count_rows(
+                &db_path,
+                "job_events",
+                "WHERE job_id=1 AND event_type='log'"
+            )?,
+            1
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn cancel_requested_mid_run_marks_job_canceled() -> Result<()> {
+        let (temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES ('queued', 'Cancel Topic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            "#,
+        )?;
+        let fake = write_fake_python(
+            temp_dir.path(),
+            "#!/bin/sh\necho started\nsleep 60\nexit 0\n",
+        )?;
+        let worker = worker_for(&temp_dir, db_path.clone(), fake);
+        let db_for_thread = db_path.clone();
+        let handle = thread::spawn(move || worker.run_once());
+
+        for _ in 0..30 {
+            if fetch_job(&db_path, 1)?.get("status").map(String::as_str) == Some("running") {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        update_job_path(&db_path, 1, &[JobUpdate::Status(STATUS_CANCEL_REQUESTED)])?;
+
+        assert_eq!(handle.join().expect("worker thread should join")?, Some(1));
+        let job = fetch_job(&db_for_thread, 1)?;
+        assert_eq!(job.get("status").map(String::as_str), Some("canceled"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn failed_pipeline_sets_exit_code_and_heartbeat_stops() -> Result<()> {
+        let (temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES ('queued', 'Fail Topic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            "#,
+        )?;
+        let fake = write_fake_python(temp_dir.path(), "#!/bin/sh\necho failing\nexit 7\n")?;
+        let worker = worker_for(&temp_dir, db_path.clone(), fake);
+
+        assert_eq!(worker.run_once()?, Some(1));
+        let after = fetch_job(&db_path, 1)?;
+        let heartbeat = after.get("heartbeat_at").cloned().unwrap_or_default();
+        assert_eq!(after.get("status").map(String::as_str), Some("failed"));
+        assert_eq!(after.get("error").map(String::as_str), Some("exit_code:7"));
+
+        thread::sleep(Duration::from_secs(2));
+        let later = fetch_job(&db_path, 1)?;
+        assert_eq!(later.get("heartbeat_at"), Some(&heartbeat));
+
+        Ok(())
+    }
+
+    #[test]
+    fn read_only_list_jobs_succeeds_while_worker_runs() -> Result<()> {
+        let (temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
+            VALUES ('queued', 'Read Topic', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            "#,
+        )?;
+        let fake = write_fake_python(
+            temp_dir.path(),
+            "#!/bin/sh\necho started\nsleep 2\nexit 0\n",
+        )?;
+        let worker = worker_for(&temp_dir, db_path.clone(), fake);
+        let handle = thread::spawn(move || worker.run_once());
+
+        for _ in 0..30 {
+            if fetch_job(&db_path, 1)?.get("status").map(String::as_str) == Some("running") {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        let conn = open_job_db_read_only(&db_path)?;
+        let jobs = list_jobs(&conn, 100, 0)?;
+        assert_eq!(jobs.len(), 1);
+
+        assert_eq!(handle.join().expect("worker thread should join")?, Some(1));
+        Ok(())
+    }
+}
