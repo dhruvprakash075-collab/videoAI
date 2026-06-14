@@ -1,3 +1,4 @@
+mod doctor;
 mod status;
 
 use std::fs;
@@ -63,6 +64,21 @@ enum Commands {
         /// Path to job database.
         #[arg(long, default_value = DEFAULT_DB_PATH)]
         db_path: PathBuf,
+    },
+
+    /// Run environment health checks.
+    Doctor {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+
+        /// Treat warnings as failures.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Serve read-only job status endpoints.
@@ -147,6 +163,11 @@ fn main() -> Result<()> {
                 worker.run_forever()?;
             }
         }
+        Commands::Doctor {
+            db_path,
+            json,
+            strict,
+        } => doctor::run_doctor(db_path, json, strict)?,
         Commands::Serve {
             db_path,
             host,
