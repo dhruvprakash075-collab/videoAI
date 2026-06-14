@@ -52,7 +52,7 @@ For the initial scaffold, use the read-only CLI to inspect queued jobs:
 cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs
 ```
 
-The command opens `studio_projects/jobs/video_ai_jobs.db` with WAL mode, a 5000 ms busy timeout, and foreign keys enabled, then prints `id`, `status`, `topic`, and `created_at` in the same newest-first order as `JobStore.list_jobs()`.
+The command opens the existing `studio_projects/jobs/video_ai_jobs.db` file read-only, applies a 5000 ms busy timeout, and prints `id`, `status`, `topic`, and `created_at` in the same newest-first order as `JobStore.list_jobs()`. It does not create the database; start the Python app once if the DB does not exist yet.
 
 ***
 
