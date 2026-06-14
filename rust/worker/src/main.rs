@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,7 +97,6 @@ impl WorkerConfig {
 #[derive(Clone, Debug)]
 struct JobRow {
     id: i64,
-    status: String,
     topic: Option<String>,
     request_json: String,
     image_backend: Option<String>,
@@ -242,7 +241,12 @@ impl Worker {
                 Ok(Some(_)) => thread::sleep(Duration::from_secs(1)),
                 Ok(None) => thread::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)),
                 Err(err) => {
-                    let _ = append_event_path(&self.config.db_path, 0, &format!("worker_error: {err}"), "system");
+                    let _ = append_event_path(
+                        &self.config.db_path,
+                        0,
+                        &format!("worker_error: {err}"),
+                        "system",
+                    );
                     thread::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS));
                 }
             }
@@ -499,15 +503,9 @@ impl Worker {
         }
 
         let (host, port) = read_comfyui_host_port(&self.config.repo_root);
-        let addr = format!("{host}:{port}");
-        let mut addrs = addr
-            .to_socket_addrs()
-            .with_context(|| format!("failed to resolve ComfyUI server address: {addr}"))?;
-        let Some(addr) = addrs.next() else {
-            bail!("failed to resolve ComfyUI server address: {host}:{port}");
-        };
-        std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5))
-            .with_context(|| format!("ComfyUI preflight failed: could not connect to http://{host}:{port}/"))?;
+        http_get_root(&host, port).with_context(|| {
+            format!("ComfyUI preflight failed: could not GET http://{host}:{port}/")
+        })?;
         Ok(())
     }
 
@@ -723,10 +721,31 @@ fn read_comfyui_host_port(repo_root: &Path) -> (String, u16) {
     (host, port)
 }
 
+fn http_get_root(host: &str, port: u16) -> Result<()> {
+    let addr = format!("{host}:{port}");
+    let mut addrs = addr
+        .to_socket_addrs()
+        .with_context(|| format!("failed to resolve ComfyUI server address: {addr}"))?;
+    let Some(addr) = addrs.next() else {
+        bail!("failed to resolve ComfyUI server address: {host}:{port}");
+    };
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    stream.write_all(format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").as_bytes())?;
+
+    let mut response = [0_u8; 64];
+    let n = stream.read(&mut response)?;
+    let status = String::from_utf8_lossy(&response[..n]);
+    if status.starts_with("HTTP/") && !status.starts_with("HTTP/1.0 2") && !status.starts_with("HTTP/1.1 2") && !status.starts_with("HTTP/2 2") && !status.starts_with("HTTP/3 2") && !status.starts_with("HTTP/1.0 3") && !status.starts_with("HTTP/1.1 3") {
+        bail!("ComfyUI server returned error");
+    }
+    Ok(())
+}
+
 fn row_to_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobRow> {
     Ok(JobRow {
         id: row.get("id")?,
-        status: row.get("status")?,
         topic: row.get("topic")?,
         request_json: row.get("request_json")?,
         image_backend: row.get("image_backend")?,
@@ -914,6 +933,7 @@ impl<T> OptionalExtension<T> for rusqlite::Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     fn create_seeded_job_db(seed_sql: &str) -> Result<(tempfile::TempDir, PathBuf)> {
         let temp_dir = tempfile::tempdir()?;
