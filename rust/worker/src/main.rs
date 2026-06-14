@@ -439,8 +439,17 @@ impl Worker {
         drop(conn);
 
         for job_id in ids {
-            update_job_path(&self.config.db_path, job_id, &[JobUpdate::Status(STATUS_CANCELED)])?;
-            append_event_path(&self.config.db_path, job_id, "canceled_from_queued", "system")?;
+            update_job_path(
+                &self.config.db_path,
+                job_id,
+                &[JobUpdate::Status(STATUS_CANCELED)],
+            )?;
+            append_event_path(
+                &self.config.db_path,
+                job_id,
+                "canceled_from_queued",
+                "system",
+            )?;
         }
 
         Ok(())
@@ -461,7 +470,8 @@ impl Worker {
             .optional()?;
 
         let Some(job_id) = job_id else {
-            tx.commit().context("failed to commit empty claim transaction")?;
+            tx.commit()
+                .context("failed to commit empty claim transaction")?;
             return Ok(None);
         };
 
@@ -539,10 +549,18 @@ impl Worker {
         }
 
         let mut temp_content_file = None;
-        if let Some(content_text) = req.remove("content_text").and_then(|v| value_as_nonempty_string(&v)) {
-            let temp_file = self.config.repo_root.join("jobs").join(format!("_{}_content.txt", job.id));
-            fs::write(&temp_file, content_text)
-                .with_context(|| format!("failed to write temp content file {}", temp_file.display()))?;
+        if let Some(content_text) = req
+            .remove("content_text")
+            .and_then(|v| value_as_nonempty_string(&v))
+        {
+            let temp_file = self
+                .config
+                .repo_root
+                .join("jobs")
+                .join(format!("_{}_content.txt", job.id));
+            fs::write(&temp_file, content_text).with_context(|| {
+                format!("failed to write temp content file {}", temp_file.display())
+            })?;
             cmd.push("--file".to_string());
             cmd.push(temp_file.to_string_lossy().to_string());
             temp_content_file = Some(temp_file);
@@ -571,11 +589,15 @@ impl Worker {
             }
         }
 
-        Ok(BuiltCommand { cmd, temp_content_file })
+        Ok(BuiltCommand {
+            cmd,
+            temp_content_file,
+        })
     }
 
     fn capture_artifacts(&self, job_id: i64) -> Result<()> {
-        let job = get_job_path(&self.config.db_path, job_id)?.context("job disappeared before artifact capture")?;
+        let job = get_job_path(&self.config.db_path, job_id)?
+            .context("job disappeared before artifact capture")?;
         let topic_raw = job.topic.unwrap_or_else(|| "unknown".to_string());
         let topic_slug = safe_filename(&topic_raw);
         let output_root = self
