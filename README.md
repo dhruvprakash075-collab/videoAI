@@ -42,6 +42,27 @@ Use the built-in continuous integration in GitLab.
 * [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
 * [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
 
+## Rust worker sidecar
+
+The Rust worker lives in `rust/worker` as a standalone sidecar binary named `videoai-worker`. It is a process supervisor only: it reads the existing SQLite job queue and spawns `bootstrap_pipeline.py` without importing Python ML components.
+
+Use the read-only CLI to inspect queued jobs:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs
+```
+
+The command opens the existing `studio_projects/jobs/video_ai_jobs.db` file read-only, applies a 5000 ms busy timeout, and prints `id`, `status`, `topic`, and `created_at` in the same newest-first order as `JobStore.list_jobs()`. It does not create the database; start the Python app once if the DB does not exist yet.
+
+Run the Rust supervisor explicitly when opting into the sidecar:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- run
+cargo run --manifest-path rust/worker/Cargo.toml -- run --once
+```
+
+The Python worker remains the default operational path. The Rust worker resolves the interpreter from `VIDEOAI_PYTHON` when set, otherwise `venv/Scripts/python.exe` on Windows and `venv/bin/python` on Unix.
+
 ***
 
 # Editing this README
@@ -68,7 +89,7 @@ Depending on what you are making, it can be a good idea to include screenshots o
 Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include.
 
 ## Support
 Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
