@@ -5,9 +5,12 @@ _generate_thumbnail, finalize_dry_run, and finalize_production.
 """
 
 import json
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import core.post_production as pp
+import utils
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +32,13 @@ def _outline(n=2):
     return [
         {"title": f"Part {i}", "key_event": f"event {i}", "mood": "calm"} for i in range(1, n + 1)
     ]
+
+
+def _stub_youtube_uploader(upload_mock):
+    module = types.ModuleType("utils.youtube_uploader")
+    module.upload_to_youtube = upload_mock
+    sys.modules["utils.youtube_uploader"] = module
+    utils.youtube_uploader = module
 
 
 # ── write_manifest ────────────────────────────────────────────────────────────
@@ -564,6 +574,8 @@ class TestFinalizeProduction:
         fake_final.write_bytes(b"x")
 
         fake_seo = {"title": "Test Title", "tags": ["tag1"]}
+        upload_mock = MagicMock(return_value=True)
+        _stub_youtube_uploader(upload_mock)
 
         with (
             patch("core.segment_runner.log_vram_usage"),
@@ -575,7 +587,6 @@ class TestFinalizeProduction:
             patch("core.post_production.get_video_duration", return_value=30.0),
             patch("core.post_production._write_chapters", return_value=["0:00 Part 1"]),
             patch("utils.seo_generator.generate_seo_metadata", return_value=fake_seo),
-            patch("utils.youtube_uploader.upload_to_youtube", return_value=True) as upload_mock,
         ):
             result = pp.finalize_production("T", cfg, _outline(1), 1, mp4s, 5.0)
 
@@ -588,6 +599,7 @@ class TestFinalizeProduction:
         mp4s = []
         fake_final = tmp_path / "final.mp4"
         fake_final.write_bytes(b"x")
+        _stub_youtube_uploader(MagicMock(return_value=False))
 
         with (
             patch("core.segment_runner.log_vram_usage"),
@@ -601,7 +613,6 @@ class TestFinalizeProduction:
             patch(
                 "utils.seo_generator.generate_seo_metadata", return_value={"title": "T", "tags": []}
             ),
-            patch("utils.youtube_uploader.upload_to_youtube", return_value=False),
         ):
             result = pp.finalize_production("T", cfg, _outline(1), 1, mp4s, 5.0)
 
