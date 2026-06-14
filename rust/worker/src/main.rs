@@ -1114,16 +1114,37 @@ mod tests {
     }
 
     fn write_fake_python(repo_root: &Path, body: &str) -> Result<PathBuf> {
-        let path = repo_root.join("fake_python.sh");
-        fs::write(&path, body)?;
-        #[cfg(unix)]
+        #[cfg(windows)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&path)?.permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&path, perms)?;
+            let path = repo_root.join("fake_python.cmd");
+            let body = if body.contains("mkdir -p studio_outputs/Happy_Topic") {
+                "@echo off\r\necho fake-log\r\nmkdir studio_outputs\\Happy_Topic\r\necho video> studio_outputs\\Happy_Topic\\out.mp4\r\necho {}> studio_outputs\\Happy_Topic\\run_manifest.json\r\nexit /b 0\r\n"
+            } else if body.contains("sleep 60") {
+                "@echo off\r\necho started\r\nping 127.0.0.1 -n 61 > nul\r\nexit /b 0\r\n"
+            } else if body.contains("sleep 2") {
+                "@echo off\r\necho started\r\nping 127.0.0.1 -n 3 > nul\r\nexit /b 0\r\n"
+            } else if body.contains("exit 7") {
+                "@echo off\r\necho failing\r\nexit /b 7\r\n"
+            } else {
+                "@echo off\r\nexit /b 0\r\n"
+            };
+            fs::write(&path, body)?;
+            return Ok(path);
         }
-        Ok(path)
+
+        #[cfg(not(windows))]
+        {
+            let path = repo_root.join("fake_python.sh");
+            fs::write(&path, body)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&path, perms)?;
+            }
+            Ok(path)
+        }
     }
 
     fn fetch_job(db_path: &Path, job_id: i64) -> Result<BTreeMap<String, String>> {
