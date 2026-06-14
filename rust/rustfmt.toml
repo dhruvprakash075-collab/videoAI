@@ -1,3 +1,0 @@
-# Temporary CI unblock: these files were authored remotely where rustfmt is unavailable.
-# Keep compile, clippy, and tests active; remove once files are locally rustfmt'd.
-ignore = ["worker/src/main.rs", "worker/src/status.rs"]
