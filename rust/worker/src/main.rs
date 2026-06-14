@@ -72,7 +72,12 @@ fn open_job_db(db_path: &Path) -> Result<Connection> {
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .with_context(|| format!("job database not found or unreadable: {}", db_path.display()))?;
+    .with_context(|| {
+        format!(
+            "job database not found or unreadable: {}",
+            db_path.display()
+        )
+    })?;
 
     conn.busy_timeout(Duration::from_millis(5_000))
         .context("failed to set SQLite busy timeout")?;
