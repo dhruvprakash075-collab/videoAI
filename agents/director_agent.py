@@ -183,6 +183,7 @@ class DirectorAgent:
 
             if not UIState.pause_event.wait(timeout=300):
                 log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
+                UIState.add_degradation(0, "consult_user", "Web UI timeout after 300s — proceeding with default")
 
                 UIState.status = "running"
 
@@ -340,6 +341,7 @@ class DirectorAgent:
 
             if not UIState.pause_event.wait(timeout=300):
                 log.warning("[DIRECTOR] Web UI timeout after 300s — proceeding with default")
+                UIState.add_degradation(0, "consult_fields", "Web UI timeout after 300s — proceeding with default")
 
                 UIState.status = "running"
 

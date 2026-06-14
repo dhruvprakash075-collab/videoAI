@@ -51,17 +51,14 @@ def load_config(
         else:
             log.warning(f"Project configuration not found: {project_file}")
 
-    # Validate against schema
-    try:
-        validated_config = validate_config(base_config)
-        return validated_config
-    except Exception as e:
-        log.warning(f"Configuration validation failed: {e} — falling back to raw configuration")
-        return base_config
+    # Validate against schema — strict: invalid config fails fast
+    validated_config = validate_config(base_config)
+    return validated_config
 
 
 def _default_config() -> dict:
     return {
+        "language": "hi",
         "models": {
             "director": "hermes-director",
             "writer": "zephyr-writer",
@@ -102,6 +99,16 @@ def _default_config() -> dict:
 
 
 # ── CHARACTER ──────────────────────────────────────────────────────────────
+
+
+def get_language(config: dict) -> str:
+    """Return the active language, preferring top-level 'language' over 'tts.lang'.
+
+    This is a first-class config dimension so TTS, translation, subtitles,
+    and narrator all use the same value. Falls back to 'hi' (Hindi).
+    """
+    lang = config.get("language") or config.get("tts", {}).get("lang", "hi")
+    return str(lang)
 
 
 def get_character(config: dict, name: str) -> dict:

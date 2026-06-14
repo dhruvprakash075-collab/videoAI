@@ -22,6 +22,7 @@ from config.config_schemas import (
     validate_or_default,
     vision_from_dict,
 )
+from utils.errors import FatalError
 
 
 def test_character_spec():
@@ -84,8 +85,9 @@ def test_helpers():
     assert isinstance(responses_from_dict({}), UserResponses)
     assert isinstance(overlay_from_dict({}), ConfigOverlay)
 
-    # validate_config
-    assert validate_config("not a dict") == {}
+    # validate_config — now fail-fast with FatalError
+    with pytest.raises(FatalError, match="Config must be a dict"):
+        validate_config("not a dict")
     assert validate_config({"key": "val"}) == {"key": "val"}
 
 

@@ -65,7 +65,11 @@ class TestWriteManifest:
         monkeypatch.chdir(tmp_path)
         fake_uis = MagicMock()
         fake_uis.degradations = ["tts_fallback"]
-        with patch.dict("sys.modules", {"agents.director_agent": MagicMock(UIState=fake_uis)}):
+        fake_uis.warning_count = 1
+        fake_uis.vram_peaks = []
+        fake_uis.segment_manifests = {"seg1": {"id": 1}}
+        fake_uis.run_id = "test-run-id"
+        with patch.dict("sys.modules", {"agents.ui_state": MagicMock(UIState=fake_uis)}):
             pp.write_manifest("T", {}, _minimal_config(), 1, 1.0)
         manifest_path = tmp_path / "studio_outputs" / "T" / "run_manifest.json"
         data = json.loads(manifest_path.read_text(encoding="utf-8"))

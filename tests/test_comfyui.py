@@ -146,6 +146,30 @@ class TestComfyUIClient:
             with pytest.raises(ComfyUIError, match="Timeout"):
                 client.wait_for_completion("prompt_123", poll_interval=0.1, timeout=0.5)
 
+    def test_wait_for_completion_parses_execution_error_details(self):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+
+        with patch.object(client, "get_prompt_status") as mock_status:
+            mock_status.return_value = {
+                "status": {
+                    "completed": False,
+                    "status_str": "error",
+                    "messages": [
+                        [
+                            "ExecutionError",
+                            {
+                                "node_id": "12",
+                                "node_type": "KSampler",
+                                "exception_message": "CUDA out of memory",
+                            },
+                        ]
+                    ],
+                }
+            }
+
+            with pytest.raises(ComfyUIError, match="Node 12 \\(KSampler\\): CUDA out of memory"):
+                client.wait_for_completion("prompt_123", poll_interval=0.1, timeout=5.0)
+
 
 class TestWorkflowPatcher:
     def test_load_workflow(self, tmp_path):

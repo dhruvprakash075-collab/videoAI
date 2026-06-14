@@ -158,7 +158,9 @@ def run_long_pipeline(
     from utils import _safe_filename, load_config, setup_run_logging
     from utils.checkpoint import build_checkpoint_manager
     from utils.retry_manager import patch_retries
+    from agents.ui_state import UIState
 
+    UIState.reset_run(topic)
     setup_run_logging(Path("logs") / _safe_filename(topic))
     _run_start = time.time()
 

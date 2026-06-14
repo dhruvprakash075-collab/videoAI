@@ -9,7 +9,8 @@ models:
   translator: sarvam-translate
 visual:
   num_scenes: 4
-  style: Arcane-inspired semi-realistic 2D painterly animation, cinematic lighting,
+  style:
+    Arcane-inspired semi-realistic 2D painterly animation, cinematic lighting,
     volumetric shadows, detailed faces, atmospheric fog
   environment_frame_ratio: 0.4
 tts:
@@ -25,7 +26,8 @@ tts:
   f5:
     model_path: hf_cache/hub/models--SPRINGLab--F5-Hindi-24KHz/snapshots/488556290bc8e35d3883554662f77eda413a7eb4
     ref_audio: character_voices/narration_ref_9s_mono24k.wav
-    ref_text: एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
+    ref_text:
+      एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
       उनके बाकी सभी दाँत गिर गए हैं।
     nfe_step: 16
   edge:
@@ -36,7 +38,8 @@ tts:
     speed: 0.5
     num_step: 16
     guidance_scale: 2.5
-    ref_text: एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
+    ref_text:
+      एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
       उनके बाकी सभी दाँत गिर गए हैं।
   indicf5:
     enabled: false
@@ -44,7 +47,8 @@ tts:
     model_id: ai4bharat/IndicF5
     cache_dir: hf_cache/indicf5
     ref_audio: character_voices/optimized/omnivoice_story_ref_mono24k.wav
-    ref_text: रात शांत थी। एक छोटी लड़की लालटेन लेकर जंगल के रास्ते पर चल रही थी।
+    ref_text:
+      रात शांत थी। एक छोटी लड़की लालटेन लेकर जंगल के रास्ते पर चल रही थी।
       उसे डर लग रहा था, फिर भी उसने हिम्मत रखी और सुबह से पहले घर लौट आई।
     sample_rate: 24000
     device: cuda
@@ -102,40 +106,43 @@ script:
 characters:
   protagonist:
     name: The Protagonist
-    description: young adult, warm brown eyes, short black hair, determined expression,
+    description:
+      young adult, warm brown eyes, short black hair, determined expression,
       dark grey coat, athletic build, original character
     keywords:
-    - hero
-    - fight
-    - journey
-    - discover
-    - challenge
-    - courage
-    - struggle
+      - hero
+      - fight
+      - journey
+      - discover
+      - challenge
+      - courage
+      - struggle
   mentor:
     name: The Mentor
-    description: older wise figure, deep green eyes, grey beard, weathered face, long
+    description:
+      older wise figure, deep green eyes, grey beard, weathered face, long
       dark brown coat, carries a worn journal, mysterious aura
     keywords:
-    - wisdom
-    - guide
-    - secret
-    - knowledge
-    - ancient
-    - teach
-    - warn
+      - wisdom
+      - guide
+      - secret
+      - knowledge
+      - ancient
+      - teach
+      - warn
   guardian:
     name: The Guardian
-    description: tall powerful figure, white hair, ice blue eyes, light silver armor,
+    description:
+      tall powerful figure, white hair, ice blue eyes, light silver armor,
       confident heroic stance, protective aura
     keywords:
-    - protect
-    - battle
-    - sacrifice
-    - light
-    - defend
-    - strength
-    - duty
+      - protect
+      - battle
+      - sacrifice
+      - light
+      - defend
+      - strength
+      - duty
 scene_templates:
   monster: corrupted creature looming, red fog glow, slow dolly-in
   fog: thick fog rolling, bluish-black haze, horizontal tracking
@@ -158,7 +165,7 @@ image_gen:
   oom_recovery: true
   upscaler:
     model: none
-    model_path: ''
+    model_path: ""
     scale: 4
     target_width: 1920
     target_height: 1080
@@ -166,11 +173,11 @@ image_gen:
     server: 127.0.0.1
     host: 127.0.0.1
     port: 8188
-    root: C:\Video.AI\external\ComfyUI
+    root: external/ComfyUI
     python: python
     auto_start: true
     open_browser: false
-    workflow_path: C:\Video.AI\config\comfyui\workflows\text_to_image_api.json
+    workflow_path: config/comfyui/workflows/text_to_image_api.json
     checkpoint: DreamShaper_8.safetensors
     width: 1024
     height: 1024
@@ -191,16 +198,16 @@ image_gen:
     max_characters: 2
     fallback_mode: one_pass
     workflows:
-      character_sheet: ''
-      background: ''
-      character_pose: ''
-      composite_refine: ''
+      character_sheet: ""
+      background: ""
+      character_pose: ""
+      composite_refine: ""
     character_dir: studio_projects/{project}/characters
 subtitles:
   format: classic
   font: Nirmala UI
   size: 22
-  color: '&H00FFFFFF&'
+  color: "&H00FFFFFF&"
   language: en
 narrator:
   include_character_descriptions: false
@@ -243,9 +250,9 @@ critic:
 research:
   enabled: true
   sources:
-  - wikipedia
-  - wikimedia
-  - rss
+    - wikipedia
+    - wikimedia
+    - rss
   rss_urls: []
   user_agent: VideoAI/6.0 (+https://github.com/...)
   budget: 3
@@ -261,10 +268,10 @@ seo:
   description_paragraphs: 2
 source:
   allowed_extensions:
-  - .txt
-  - .md
-  - .pdf
-  - .docx
+    - .txt
+    - .md
+    - .pdf
+    - .docx
   max_words: 50000
   url_timeout_s: 30
   user_agent: VideoAI/6.0 (+https://github.com/...)

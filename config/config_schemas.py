@@ -4,10 +4,13 @@ Replaces loose Dict typing with validated models.
 Provides: type safety, schema-aware LLM generation, deterministic serialization.
 """
 
+import logging
 import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+log = logging.getLogger(__name__)
 
 
 # ── Character ──
@@ -125,15 +128,89 @@ class CharacterEntry(BaseModel):
 
 
 class VisualConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     num_scenes: int = Field(default=4, ge=1, le=30)
     style: str = "hybrid 2d anime visual novel style"
+    environment_frame_ratio: float = 0.4
+
+
+class SuperTonicSubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    voice: str = ""
+    steps: int = 16
+    speed: float = 1.0
+    silence_duration: float = 0.1
+    max_chunk_length: int = 150
+
+
+class F5SubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    model_path: str = ""
+    ref_audio: str = ""
+    ref_text: str = ""
+    nfe_step: int = 16
+
+
+class EdgeSubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    voice: str = "hi-IN-MadhurNeural"
+    rate: str = "+5%"
+    volume: str = "+0%"
+
+
+class OmniVoiceSubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    speed: float = 0.5
+    num_step: int = 16
+    guidance_scale: float = 2.5
+    ref_text: str = ""
+
+
+class IndicF5SubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+    python: str = ""
+    model_id: str = ""
+    cache_dir: str = ""
+    ref_audio: str = ""
+    ref_text: str = ""
+    sample_rate: int = 24000
+    device: str = "cuda"
+    nfe_step: int = 16
+    speed: float = 1.0
+    timeout_seconds: int = 600
+    max_chars_per_chunk: int = 220
+
+
+class DevanagariConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    max_latin_ratio: float = 0.1
+    max_retranslate_retries: int = 2
+
+
+class VoiceProfileConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    edge_voice: str = "hi-IN-MadhurNeural"
+    edge_rate: str = "+5%"
+    edge_volume: str = "+0%"
+    sentence_gap_ms: int = 200
 
 
 class TTSConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     engine: Literal["supertonic", "omnivoice", "f5", "edge", "indicf5"] = "supertonic"
     lang: str = "hi"
-    # Fish Speech specific settings
-    fish_speech_model_path: str = "C:/models/s2-pro-q5_k_m.gguf"
+    slow: bool = False
+    voice_samples_dir: str = "character_voices"
+    voice_profile: VoiceProfileConfig = Field(default_factory=VoiceProfileConfig)
+    devanagari: DevanagariConfig = Field(default_factory=DevanagariConfig)
+    supertonic: SuperTonicSubConfig = Field(default_factory=SuperTonicSubConfig)
+    f5: F5SubConfig = Field(default_factory=F5SubConfig)
+    edge: EdgeSubConfig = Field(default_factory=EdgeSubConfig)
+    omnivoice: OmniVoiceSubConfig = Field(default_factory=OmniVoiceSubConfig)
+    indicf5: IndicF5SubConfig = Field(default_factory=IndicF5SubConfig)
+    # Fish Speech specific settings — empty string means "find in PATH"
+    fish_speech_model_path: str = ""
     fish_speech_temperature: float = 0.7
     fish_speech_top_p: float = 0.9
     fish_speech_repetition_penalty: float = 1.5
@@ -141,10 +218,21 @@ class TTSConfig(BaseModel):
 
 
 class ScriptConfig(BaseModel):
-    words_per_segment: int = Field(default=130, ge=50, le=800)  # aligned with config.yaml
+    model_config = {"extra": "forbid"}
+    words_per_segment: int = Field(default=130, ge=50, le=800)
+    min_words: int = Field(default=20, ge=1)
+    max_words: int = Field(default=600, ge=1)
     dynamic_image_count: bool = True
     default_images_per_segment: int = Field(default=6, ge=1, le=30)
-    shot_distribution: dict[str, float] = {}
+    max_images_per_segment: int = Field(default=8, ge=1, le=50)
+    word_count_tolerance: float = 0.6
+    word_count_max_retries: int = 1
+    writer_max_tokens: int = 1024
+    llm_word_fix: bool = False
+    critic_enabled: bool = True
+    critic_threshold: int = 60
+    critic_max_rewrites: int = 2
+    uncapped_scaling: bool = False
 
 
 class SubtitleOverlay(BaseModel):
@@ -163,10 +251,36 @@ class PacingConfig(BaseModel):
 
 
 class VideoConfig(BaseModel):
-    # P4-23 fix: float allows fractional minutes. Decision record still
-    # stores value as `Decision(value: Any)` so int inputs keep working.
+    model_config = {"extra": "forbid"}
     total_duration_min: float = Field(default=10, ge=0.5, le=600)
     segment_duration_min: float = Field(default=2, ge=0.5, le=30)
+    fps: int = Field(default=24, ge=1, le=120)
+    resolution: str = "1920x1080"
+    output_path: str = "studio_outputs/final_video.mp4"
+    encoder: str = "h264_nvenc"
+    encoder_preset: str = "p5"
+    video_bitrate: str = "8M"
+    encoder_extra: str = ""
+    crossfade_duration: float = 0.3
+    ken_burns: str = "light"
+    audio_crossfade_ms: int = 200
+    generate_thumbnail: bool = True
+    motion_engine: str = "none"
+    motion_seconds_per_image: int = 3
+
+
+class ModelsConfig(BaseModel):
+    """Config section for LLM model selection."""
+
+    model_config = {"extra": "forbid"}
+    director: str = "hermes-director"
+    director_max_tokens: int = 2048
+    writer: str = "zephyr-writer"
+    writer_adapt: str = "zephyr-writer"
+    writer_scratch: str = "cra-guided-7b"
+    script_gen: str = "ollama/coder"
+    image_engineer: str = "image-engineer"
+    translator: str = "sarvam-translate"
 
 
 class TransitionConfig(BaseModel):
@@ -190,14 +304,163 @@ class DirectorVision(BaseModel):
 
 
 class UploadConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     enabled: bool = False
     platform: Literal["youtube"] = "youtube"
     visibility: Literal["public", "private", "unlisted"] = "private"
     profile_dir: str = "chrome_profile"
 
 
+class CheckpointConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = True
+    dir: str = "studio_checkpoints"
+    max_age_hours: float = 0
+
+
+class MemoryConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    memory_file: str = "studio_checkpoints/story_memory.json"
+    llm_world_state: bool = True
+
+
+class OllamaConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    host: str = "http://localhost:11434"
+    request_timeout: int = 240
+    keep_alive: str = "5m"
+    breaker_fails: int = 3
+    breaker_cooldown_s: int = 30
+
+
+class PerformanceConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    max_workers: int = 1
+    checkpoint_interval: int = 1
+    whisper_model: str = "tiny"
+    whisper_model_final: str = "base"
+    max_segment_retries: int = 2
+    vram_sd_threshold_gb: float = 4.5
+    vram_evict_wait_s: float = 15
+    ffmpeg_threads: int = 0
+    staged_loop: bool = False
+    lookahead_segments: int = 0
+
+
+class ComfyUIConfig(BaseModel):
+    """Sub-config for ComfyUI settings inside image_gen."""
+
+    model_config = {"extra": "forbid"}
+    server: str = "127.0.0.1"
+    host: str = "127.0.0.1"
+    port: int = 8188
+    root: str = "external/ComfyUI"
+    python: str = "python"
+    auto_start: bool = True
+    open_browser: bool = False
+    workflow_path: str = ""
+    checkpoint: str = "DreamShaper_8.safetensors"
+    width: int = 1024
+    height: int = 1024
+    steps: int = 20
+    cfg: float = 7.0
+    sampler_name: str = "euler"
+    scheduler: str = "normal"
+    timeout_seconds: int = 300
+    poll_seconds: float = 1.0
+    auto_start_timeout: int = 60
+    unload_after_batch: bool = False
+
+
+class UpscalerConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    model: str = "none"
+    model_path: str = ""
+    scale: int = 4
+    target_width: int = 1920
+    target_height: int = 1080
+
+
+class LayeredV3Config(BaseModel):
+    model_config = {"extra": "forbid"}
+    approval_mode: str = "auto"
+    character_threshold: float = 0.3
+    closeup_threshold: float = 0.8
+    max_characters: int = 2
+    fallback_mode: str = "one_pass"
+    workflows: dict[str, str] = Field(default_factory=dict)
+    character_dir: str = "studio_projects/{project}/characters"
+
+
+class ImageGenConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    backend: str = "comfyui"
+    bonsai_model: str = ""
+    sd_model_path: str = ""
+    width: int = 1024
+    height: int = 1024
+    steps: int = 12
+    guidance_scale: float = 3.5
+    cfg: float = 7.0
+    ip_adapter_scale: float = 0.8
+    lock_seed: bool = True
+    preview_steps: int = 12
+    oom_recovery: bool = True
+    sampler: str = "euler"
+    scheduler: str = "normal"
+    seed: int = -1
+    upscaler: UpscalerConfig = Field(default_factory=UpscalerConfig)
+    comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
+    fallback_backend: str = "bonsai"
+    composition_mode: str = "one_pass"
+    layered_v3: LayeredV3Config = Field(default_factory=LayeredV3Config)
+
+
+class MusicConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+    ducking: bool = False
+    duck_ratio: float = 0.3
+    fade_duration: float = 2.0
+
+
+class SubtitlesConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    format: Literal["classic", "tiktok", "none"] = "classic"
+    language: str = "en"
+    font: str = "Arial"
+    size: int = 24
+    color: str = "&H00FFFFFF&"
+    position: str = "bottom"
+
+
+class NarratorConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    include_character_descriptions: bool = False
+
+
+class CacheConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    cache_invented_story: bool = True
+
+
+class AudioFxConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = True
+    volume: float = 0.25
+    program_loudnorm: bool = True
+    loudnorm_two_pass: bool = True
+    target_lufs: int = -14
+
+
+class RvcConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+
+
 # ── Phase 0: New top-level config sections ─────────────────────────
 class AlignmentConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     enabled: bool = True
     model: str = "base"
     device: str = "cpu"
@@ -205,12 +468,14 @@ class AlignmentConfig(BaseModel):
 
 
 class CriticConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     enabled: bool = True
     threshold: int = 60
     max_rewrites: int = 2
 
 
 class ResearchConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     enabled: bool = True
     sources: list[str] = Field(default_factory=lambda: ["wikipedia", "wikimedia", "rss"])
     rss_urls: list[str] = Field(default_factory=list)
@@ -221,6 +486,7 @@ class ResearchConfig(BaseModel):
 
 
 class SEOConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     enabled: bool = True
     title_max_chars: int = 100
     description_max_chars: int = 5000
@@ -231,10 +497,27 @@ class SEOConfig(BaseModel):
 
 
 class SourceConfig(BaseModel):
+    model_config = {"extra": "forbid"}
     allowed_extensions: list[str] = Field(default_factory=lambda: [".txt", ".md", ".pdf", ".docx"])
     max_words: int = 50000
     url_timeout_s: int = 30
     user_agent: str = "VideoAI/6.0 (+https://github.com/...)"
+
+
+class LanguageConfig(BaseModel):
+    """First-class language dimension for the pipeline."""
+
+    model_config = {"extra": "forbid"}
+    code: str = Field(
+        default="hi", min_length=2, max_length=10, pattern=r"^[a-z]{2}(-[a-z]{2,4})?$"
+    )
+    tts_engine: str = "supertonic"
+    subtitle_language: str = "en"
+
+    @field_validator("code")
+    @classmethod
+    def normalize(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class VideoAIConfig(BaseModel):
@@ -309,18 +592,71 @@ def overlay_from_dict(d):
     return validate_or_default(d, ConfigOverlay)
 
 
-def validate_config(raw_config: dict) -> dict:
-    """Best-effort full-config validation. Returns sanitized dict.
+# ── SECTION_MODELS registry ─────────────────────────────────────────
+# Every known dict-valued config section maps to its Pydantic model.
+# Scalar fields (language, characters, scene_templates) are excluded
+# because they are not dict sections.
+SECTION_MODELS: dict[str, type[BaseModel]] = {
+    "critic": CriticConfig,
+    "research": ResearchConfig,
+    "seo": SEOConfig,
+    "source": SourceConfig,
+    "tts": TTSConfig,
+    "models": ModelsConfig,
+    "visual": VisualConfig,
+    "video": VideoConfig,
+    "script": ScriptConfig,
+    "checkpoint": CheckpointConfig,
+    "memory": MemoryConfig,
+    "ollama": OllamaConfig,
+    "performance": PerformanceConfig,
+    "image_gen": ImageGenConfig,
+    "music": MusicConfig,
+    "subtitles": SubtitlesConfig,
+    "upload": UploadConfig,
+    "narrator": NarratorConfig,
+    "cache": CacheConfig,
+    "audio_fx": AudioFxConfig,
+    "rvc": RvcConfig,
+}
 
-    Unlike `validate_or_default` (per-section), this validates the top-level
-    config. Currently permissive — returns raw config on any validation
-    failure. Use the per-section `validate_or_default` / `*_from_dict`
-    helpers for stricter checks. The bool/int/float keys round-trip
-    unchanged so callers can rely on `cfg.get(...)` lookups post-validate.
+
+def validate_config(raw_config: dict) -> dict:
+    """Strict full-config validation via Pydantic schemas.
+
+    Every known dict-valued config section is validated through its
+    Pydantic model with extra="forbid".  On validation failure, raises a
+    FatalError with section+field detail so the pipeline fails fast with a
+    typed error instead of a generic one.
+    Scalar fields (language, characters, scene_templates, etc.) are passed
+    through as-is.
+    Unknown sections are also passed through for forward compatibility.
     """
+    from utils.errors import FatalError
+
     if not isinstance(raw_config, dict):
-        return {}
-    return raw_config
+        raise FatalError("Config must be a dict, got %s" % type(raw_config).__name__)
+
+    validated: dict = {}
+    for key, value in raw_config.items():
+        if key in SECTION_MODELS:
+            if isinstance(value, dict):
+                try:
+                    validated[key] = SECTION_MODELS[key](**value).model_dump()
+                except Exception as exc:
+                    raise FatalError(
+                        "Config section '%s' validation failed: %s" % (key, exc)
+                    ) from exc
+            else:
+                raise FatalError(
+                    "Config section '%s' must be a dict, got %s" % (key, type(value).__name__)
+                )
+        else:
+            # Scalar fields (language, characters, scene_templates) and
+            # unknown sections pass through (forward compat).
+            validated[key] = value
+
+    return validated
 
 
 # ══════════════════════════════════════════════════════════════════════════════

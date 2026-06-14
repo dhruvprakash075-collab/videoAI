@@ -31,14 +31,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-class BreakerOpen(Exception):
-    """Raised when the per-model circuit breaker is OPEN and refuses the call."""
-
-    def __init__(self, model: str, cooldown_s: float):
-        self.model = model
-        self.cooldown_s = cooldown_s
-        super().__init__(f"Circuit breaker OPEN for {model!r} — fast-fail for {cooldown_s:.0f}s")
-
+from utils.circuit_breaker import BreakerOpen, CircuitBreakerRegistry
 
 # ── Module-level fallback breaker (used when OllamaClient singleton absent) ─
 _fallback_breakers: dict = {}
@@ -55,14 +48,8 @@ def _get_breaker(model: str, fails_threshold: int = 3, cooldown_s: float = 30.0)
         client = get_ollama_client({})  # empty config is fine for breaker access
         return client._breaker(model)
     except Exception:
-        # Fallback: a private per-model breaker (only used if OllamaClient isn't importable,
-        # e.g. very early bootstrap). Same 3-state semantics.
-        with _fallback_lock:
-            if model not in _fallback_breakers:
-                from utils.ollama_client import _BreakerState
-
-                _fallback_breakers[model] = _BreakerState(fails_threshold, cooldown_s)
-            return _fallback_breakers[model]
+        # Fallback: get directly from global CircuitBreakerRegistry
+        return CircuitBreakerRegistry.get(f"ollama:{model}", fails=fails_threshold, cooldown=cooldown_s)
 
 
 def record_breaker_success(model: str) -> None:
@@ -85,11 +72,8 @@ def is_breaker_open(model: str) -> bool:
     """Return True if the breaker is currently OPEN for this model."""
     try:
         breaker = _get_breaker(model)
-        # ask without side-effects — we use a probe that doesn't transition state
-        from utils.ollama_client import _BreakerState
-
-        state = breaker.state
-        return state == _BreakerState.OPEN
+        # ask without side-effects — we check state without transition
+        return breaker.state == "open"
     except Exception:
         return False
 
@@ -120,9 +104,8 @@ def guarded_crewai_kickoff(
         Exception:    Whatever crew.kickoff() raised.
     """
     breaker = _get_breaker(model_name)
-    from utils.ollama_client import _BreakerState
 
-    if breaker.state == _BreakerState.OPEN:
+    if breaker.state == "open":
         # Cooldown not elapsed — fail fast. Report the real remaining cooldown
         # (not a hardcoded 0) so callers can decide whether to back off, log it,
         # or fall back to a different model.

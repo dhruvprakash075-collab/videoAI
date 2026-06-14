@@ -186,6 +186,7 @@ def log_vram_usage(label: str = "") -> None:
                 from agents.director_agent import UIState
 
                 UIState.vram_text = vram_str
+                UIState.vram_peaks.append(round(used_gb, 2))
             except Exception:
                 pass
     except ImportError:
@@ -447,6 +448,7 @@ def make_process_segment(
     _requested_duration_per_seg_s: float | None = None
     try:
         from memory.blackboard import get_blackboard as _gb
+
         _rec = _gb(config, topic_slug=_safe_filename(topic)).read_decision()
         if _rec is not None:
             _dur = _rec.total_duration_min
@@ -557,6 +559,12 @@ def make_process_segment(
                 log.debug(f"  Seg {i}: using CrewAI writer fallback")
                 from crewai import Crew, Task
                 from crewai.process import Process
+                from utils.crewai_breaker import (
+                    BreakerOpen,
+                    guarded_crewai_kickoff,
+                    record_breaker_failure,
+                    record_breaker_success,
+                )
 
                 crew = Crew(
                     agents=[writer],
@@ -571,8 +579,19 @@ def make_process_segment(
                     cache=True,
                     verbose=False,
                 )
+                _writer_model = config.get("models", {}).get("writer", "zephyr-writer")
                 with _crewai_lock:
-                    result = crew.kickoff()
+                    try:
+                        result = guarded_crewai_kickoff(crew, model_name=_writer_model)
+                        record_breaker_success(_writer_model)
+                    except BreakerOpen:
+                        log.warning(
+                            f"  Seg {i}: circuit breaker OPEN for {_writer_model} — using raw kickoff"
+                        )
+                        result = crew.kickoff()
+                    except Exception:
+                        record_breaker_failure(_writer_model)
+                        raise
                 script = str(result.raw if hasattr(result, "raw") else result).strip()
 
         return {"script": script}
@@ -632,8 +651,10 @@ def make_process_segment(
         if fast_dry_run:
             cp_mgr.save(key, "script", {"data": script})
             _drs = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
-            with contextlib.suppress(Exception):
+            try:
                 world_state.update(_drs, plan, config=config)
+            except Exception as _ws_e:
+                log.warning(f"  Seg {i}: world_state.update (translate, dry-run) failed: {_ws_e}")
             return {"devanagari_script": None, "script_for_tts": script}
 
         # Word count enforcement
@@ -663,15 +684,23 @@ def make_process_segment(
 
         # Reject unsafe leftovers after sanitization
         if _reject_unsafe_narration(script) is None:
-            log.warning(f"  Seg {i}: narration unsafe after sanitization — falling back to sanitized text")
+            log.warning(
+                f"  Seg {i}: narration unsafe after sanitization — falling back to sanitized text"
+            )
             if not script or len(script) < 10:
                 log.error(f"  Seg {i}: narration rejected entirely after sanitization")
-                return {"devanagari_script": None, "script_for_tts": script, "narration_rejected": True}
+                return {
+                    "devanagari_script": None,
+                    "script_for_tts": script,
+                    "narration_rejected": True,
+                }
 
         cp_mgr.save(key, "script", {"data": script})
 
         devanagari_script = None
-        _audio_lang = tts_cfg.get("lang", "hi")
+        from config.config import get_language
+
+        _audio_lang = get_language(tts_cfg)
         if _audio_lang == "hi":
             try:
                 with global_scheduler.task("heavy", f"Seg{i}:translate"):
@@ -682,10 +711,19 @@ def make_process_segment(
                 log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e})")
+                from agents.ui_state import UIState
+
+                UIState.add_degradation(
+                    i,
+                    "translate_node",
+                    f"Director translation failed ({e}) — falling back to original script",
+                )
 
         _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
-        with contextlib.suppress(Exception):
+        try:
             world_state.update(_ws_script, plan, config=config)
+        except Exception as _ws_e:
+            log.warning(f"  Seg {i}: world_state.update (translate) failed: {_ws_e}")
 
         return {"devanagari_script": devanagari_script, "script_for_tts": script}
 
@@ -706,7 +744,9 @@ def make_process_segment(
         if dry_run:
             return {"audio_path": None, "word_timestamps_json": None}
 
-        audio_lang = tts_cfg.get("lang", "hi")
+        from config.config import get_language
+
+        audio_lang = get_language(tts_cfg)
         mood = plan.get("mood", "mysterious")
 
         if audio_lang == "hi" and dev_script:
@@ -717,6 +757,7 @@ def make_process_segment(
         # Normalize Hindi characters for Supertonic compatibility
         if audio_lang == "hi":
             from core.pre_production import _normalize_hindi_for_tts as _norm_hin
+
             _normalized = _norm_hin(script_for_tts)
             if _normalized != script_for_tts:
                 log.info(f"  Seg {i}: normalized Hindi characters for TTS")
@@ -749,7 +790,9 @@ def make_process_segment(
                     script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
                 )
                 audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
-                word_timestamps = tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
+                word_timestamps = (
+                    tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
+                )
 
                 if not skip_rvc and config.get("rvc", {}).get("enabled", False):
                     audio_path = rvc_convert(audio_path, out_base / "audio")
@@ -765,7 +808,7 @@ def make_process_segment(
                     )
                     # Truncate to ~80% of segment target words
                     _words = script_for_tts.split()
-                    _trunc_words = _words[:max(10, int(len(_words) * 0.6))]
+                    _trunc_words = _words[: max(10, int(len(_words) * 0.6))]
                     script_for_tts = " ".join(_trunc_words)
                     continue
                 if _wav_dur > _dur_limit:
@@ -829,7 +872,10 @@ def make_process_segment(
             pass
 
         enrich_result = enrich_prompts(
-            build_prompts(script, plan, config), script, config, plan,
+            build_prompts(script, plan, config),
+            script,
+            config,
+            plan,
             memory_items=_memory_items_for_image,
         )
 
@@ -897,16 +943,43 @@ def make_process_segment(
 
     # ── Identity-critical image trigger detection ──────────────────────────
     _OUTFIT_KEYWORDS = {
-        "outfit", "gown", "robe", "armor", "cloak", "uniform", "dress",
-        "suit", "costume", "garment",
+        "outfit",
+        "gown",
+        "robe",
+        "armor",
+        "cloak",
+        "uniform",
+        "dress",
+        "suit",
+        "costume",
+        "garment",
     }
     _JEWELRY_KEYWORDS = {
-        "necklace", "ring", "earring", "bracelet", "crown", "tiara",
-        "amulet", "pendant", "brooch", "gem", "jewel",
+        "necklace",
+        "ring",
+        "earring",
+        "bracelet",
+        "crown",
+        "tiara",
+        "amulet",
+        "pendant",
+        "brooch",
+        "gem",
+        "jewel",
     }
     _WEAPON_KEYWORDS = {
-        "sword", "dagger", "bow", "arrow", "spear", "axe", "shield",
-        "staff", "wand", "blade", "mace", "scythe",
+        "sword",
+        "dagger",
+        "bow",
+        "arrow",
+        "spear",
+        "axe",
+        "shield",
+        "staff",
+        "wand",
+        "blade",
+        "mace",
+        "scythe",
     }
     _CLOSEUP_TOKENS = {"close-up", "closeup", "portrait", "medium close-up"}
     _INTRO_TOKENS = {"wearing", "introducing", "reveals", "new", "emerges", "appears"}
@@ -920,6 +993,7 @@ def make_process_segment(
         """
         try:
             from PIL import Image
+
             with Image.open(str(image_path)) as img:
                 grey = img.convert("L")
                 resized = grey.resize((hash_size + 1, hash_size), Image.LANCZOS)
@@ -966,7 +1040,9 @@ def make_process_segment(
             return True, "face_reference"
 
         # Full-body reference (medium shot with identity description)
-        full_body_hint = any(tok in prompt_lower for tok in _CLOSEUP_TOKENS) and "full body" in prompt_lower
+        full_body_hint = (
+            any(tok in prompt_lower for tok in _CLOSEUP_TOKENS) and "full body" in prompt_lower
+        )
         if full_body_hint and max_w >= 0.5:
             return True, "full_body_reference"
 
@@ -1035,9 +1111,12 @@ def make_process_segment(
                 pass
 
             raw_prompts = build_prompts(script, plan, self.config)
-            enrich_result = enrich_prompts(raw_prompts, script, self.config, plan,
-                                           memory_items=_mem_items)
-            enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+            enrich_result = enrich_prompts(
+                raw_prompts, script, self.config, plan, memory_items=_mem_items
+            )
+            enriched_prompts = (
+                enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+            )
 
             results = []
             for idx, img_path in enumerate(images):
@@ -1049,12 +1128,19 @@ def make_process_segment(
                 frame_cp = cp[idx] if (isinstance(cp, list) and idx < len(cp)) else {}
 
                 is_important, _ = _detect_important_trigger(
-                    idx, frame_cp, prompt, script,
+                    idx,
+                    frame_cp,
+                    prompt,
+                    script,
                 )
 
                 # Identity-hash change detection: if the dominant char's stored
                 # identity hash differs from the current frame, force a review.
-                if not is_important and frame_cp and getattr(self.mem, '_project', None) is not None:
+                if (
+                    not is_important
+                    and frame_cp
+                    and getattr(self.mem, "_project", None) is not None
+                ):
                     try:
                         dom_char = max(frame_cp, key=frame_cp.get)
                         if frame_cp[dom_char] >= 0.3:
@@ -1073,22 +1159,32 @@ def make_process_segment(
                             image_path=img_path,
                             prompt=prompt,
                             char_presence=frame_cp,
-                            project_id=self.topic
+                            project_id=self.topic,
                         )
                     except Exception as e:
                         err_str = str(e)
                         if "vision" in err_str.lower() or "model" in err_str.lower():
-                            log.warning(f"[DIRECTOR] Vision model unavailable for {img_path}: {e} — auto-approving")
+                            log.warning(
+                                f"[DIRECTOR] Vision model unavailable for {img_path}: {e} — auto-approving"
+                            )
                         else:
-                            log.warning(f"[DIRECTOR] Important image review failed for {img_path}: {e}")
-                        decision_res = {"decision": "approve", "reason": "review_failed", "locked": False}
+                            log.warning(
+                                f"[DIRECTOR] Important image review failed for {img_path}: {e}"
+                            )
+                        decision_res = {
+                            "decision": "approve",
+                            "reason": "review_failed",
+                            "locked": False,
+                        }
 
                     if frame_cp:
                         dom_char = max(frame_cp, key=frame_cp.get)
                         if frame_cp[dom_char] >= 0.3:
                             try:
-                                if getattr(self.mem, '_project', None) is None:
-                                    log.info("[DIRECTOR] One-time mode — skipping asset review (no project store)")
+                                if getattr(self.mem, "_project", None) is None:
+                                    log.info(
+                                        "[DIRECTOR] One-time mode — skipping asset review (no project store)"
+                                    )
                                 else:
                                     decision = decision_res.get("decision", "approve")
                                     lora_meta = None
@@ -1126,6 +1222,7 @@ def make_process_segment(
 
             from utils import build_prompts
             from utils.scene_director import enrich_prompts
+
             _mem_items = []
             try:
                 _d = self.mem.read()
@@ -1136,9 +1233,12 @@ def make_process_segment(
             except Exception:
                 pass
             raw_prompts = build_prompts(script, plan, self.config)
-            enrich_result = enrich_prompts(raw_prompts, script, self.config, plan,
-                                           memory_items=_mem_items)
-            enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+            enrich_result = enrich_prompts(
+                raw_prompts, script, self.config, plan, memory_items=_mem_items
+            )
+            enriched_prompts = (
+                enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+            )
 
             current_mem = self.mem.read()
             ws_block = self.world_state.to_prompt_block()
@@ -1150,7 +1250,7 @@ def make_process_segment(
                     generated_prompts=enriched_prompts,
                     current_memory=current_mem,
                     world_state=ws_block,
-                    generated_images=images
+                    generated_images=images,
                 )
             except Exception as e:
                 log.warning(f"[DIRECTOR] Segment memory review failed for seg {state['i']}: {e}")
@@ -1160,14 +1260,16 @@ def make_process_segment(
             if memory_items:
                 try:
                     from memory.permanent_memory import PermanentMemoryLog
+
                     _perm = PermanentMemoryLog(topic=topic)
                     for item in memory_items:
                         _perm.save_memory_item(item)
                 except Exception as e:
-                    log.warning(f"[DIRECTOR] Failed to persist memory item via PermanentMemoryLog: {e}")
+                    log.warning(
+                        f"[DIRECTOR] Failed to persist memory item via PermanentMemoryLog: {e}"
+                    )
 
             return {"memory_items": memory_items}
-
 
     builder = SegmentGraphBuilder(LocalGraphContext())
     graph = builder.build()
@@ -1214,7 +1316,7 @@ def make_process_segment(
                 if all_items:
                     plan_cp = plan.get("char_presence", [])
                     chars_in_segment = set()
-                    for frame_cp in (plan_cp if isinstance(plan_cp, list) else [plan_cp]):
+                    for frame_cp in plan_cp if isinstance(plan_cp, list) else [plan_cp]:
                         if isinstance(frame_cp, dict):
                             for cname in frame_cp:
                                 chars_in_segment.add(cname.lower().replace(" ", "_"))
@@ -1256,8 +1358,37 @@ def make_process_segment(
 
             graph.invoke(initial_state)
 
+            from agents.director_agent import UIState as _UIState
+
+            path_str = None
+            duration_s = 0.0
+            if i - 1 < len(mp4s) and mp4s[i - 1] is not None:
+                path_str = str(mp4s[i - 1])
+                try:
+                    from core.pre_production import get_video_duration
+
+                    duration_s = round(get_video_duration(mp4s[i - 1]), 1)
+                except Exception:
+                    pass
+
+            _UIState.segment_manifests[i] = {
+                "segment": i,
+                "status": "success",
+                "title": plan.get("title", f"Part {i}"),
+                "video_path": path_str,
+                "duration_seconds": duration_s,
+            }
+
         except Exception as e:
             log.error(f"Segment {i} failed: {e}", exc_info=True)
+            from agents.director_agent import UIState as _UIState
+
+            _UIState.segment_manifests[i] = {
+                "segment": i,
+                "status": "error",
+                "reason": str(e),
+                "title": plan.get("title", f"Part {i}") if "plan" in locals() else f"Part {i}",
+            }
             if not resume:
                 raise
             log.info(f"  Skipping segment {i}, will resume from next")

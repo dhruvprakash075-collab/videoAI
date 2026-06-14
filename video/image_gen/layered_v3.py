@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _resolve_dominant_char(char_presence: dict | None, threshold: float = 0.3) -> tuple[str | None, float]:
+def _resolve_dominant_char(
+    char_presence: dict | None, threshold: float = 0.3
+) -> tuple[str | None, float]:
     """Return (char_key, weight) of the dominant character, or (None, 0.0)."""
     if not char_presence or not isinstance(char_presence, dict) or not char_presence:
         return None, 0.0
@@ -79,10 +81,15 @@ def preflight_layered_v3(config: dict) -> list[str]:
         if path and not Path(path).exists():
             errors.append(f"workflow file not found [{name}]: {path}")
         elif not path:
-            errors.append(f"workflow path not set [{name}] — set in config.yaml: image_gen.layered_v3.workflows.{name}")
+            errors.append(
+                f"workflow path not set [{name}] — set in config.yaml: image_gen.layered_v3.workflows.{name}"
+            )
 
     # Check custom nodes
-    comfy_root = Path(comfy_cfg.get("root", "C:\\Video.AI\\external\\ComfyUI"))
+    comfy_root = Path(comfy_cfg.get("root", ""))
+    if not comfy_root.exists():
+        # Fall back to relative path for portability
+        comfy_root = Path("external") / "ComfyUI"
     required_nodes = {
         "IPAdapter Plus": comfy_root / "custom_nodes" / "ComfyUI_IPAdapter_plus",
         "Impact Pack": comfy_root / "custom_nodes" / "ComfyUI-Impact-Pack",
@@ -237,7 +244,9 @@ def generate_layered_images(
             from video.image_gen.comfyui_runtime import get_comfyui_runtime
 
             runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
-            client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+            client = ComfyUIClient(
+                base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300)
+            )
             return _one_pass_fallback(prompt_list, output_dir, config, client)
         else:
             error_msgs = "\n".join(f"  - {e}" for e in errors)
@@ -250,7 +259,9 @@ def generate_layered_images(
     if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
         if fallback_mode == "one_pass":
             log.warning("[layered_v3] ComfyUI not running; falling back to one_pass")
-            client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+            client = ComfyUIClient(
+                base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300)
+            )
             return _one_pass_fallback(prompt_list, output_dir, config, client)
         raise RuntimeError(
             f"[layered_v3] ComfyUI not running at {runtime.base_url} and auto_start is disabled. "
@@ -278,7 +289,9 @@ def generate_layered_images(
             if dom_char is None:
                 # Background-only frame
                 if not background_wf:
-                    log.warning(f"[layered_v3] No background workflow configured; skipping frame {idx}")
+                    log.warning(
+                        f"[layered_v3] No background workflow configured; skipping frame {idx}"
+                    )
                     pbar.update(1)
                     continue
 
@@ -325,7 +338,9 @@ def generate_layered_images(
                             pbar.update(1)
                             continue
                     else:
-                        log.warning(f"[layered_v3] No background workflow configured; skipping frame {idx}")
+                        log.warning(
+                            f"[layered_v3] No background workflow configured; skipping frame {idx}"
+                        )
                         pbar.update(1)
                         continue
 
@@ -359,7 +374,9 @@ def generate_layered_images(
                             pbar.update(1)
                             continue
                     else:
-                        log.warning("[layered_v3] No character_pose workflow configured; using background only")
+                        log.warning(
+                            "[layered_v3] No character_pose workflow configured; using background only"
+                        )
                         final = output_dir / f"scene_{idx:02d}.png"
                         shutil.copy2(bg_image, final)
                         images.append(final)
@@ -367,7 +384,9 @@ def generate_layered_images(
                         continue
 
                     if not char_output:
-                        log.warning(f"[layered_v3] No character output for frame {idx}; using background")
+                        log.warning(
+                            f"[layered_v3] No character output for frame {idx}; using background"
+                        )
                         final = output_dir / f"scene_{idx:02d}.png"
                         shutil.copy2(bg_image, final)
                         images.append(final)
@@ -392,11 +411,15 @@ def generate_layered_images(
                                 },
                             )
                         except Exception as e:
-                            log.warning(f"[layered_v3] Composite pass failed for frame {idx}; using background+character without composite: {e}")
+                            log.warning(
+                                f"[layered_v3] Composite pass failed for frame {idx}; using background+character without composite: {e}"
+                            )
                             # Fall through: use char as final if composite fails
                             final_output = []
                     else:
-                        log.warning("[layered_v3] No composite_refine workflow; using background+character blend")
+                        log.warning(
+                            "[layered_v3] No composite_refine workflow; using background+character blend"
+                        )
 
                     if final_output:
                         final = output_dir / f"scene_{idx:02d}.png"

@@ -7,12 +7,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from utils.errors import ComfyUIError
+from utils.circuit_breaker import CircuitBreakerRegistry, BreakerOpen
+
 log = logging.getLogger(__name__)
-
-
-class ComfyUIError(Exception):
-    """Exception raised for ComfyUI API errors."""
-    pass
 
 
 class ComfyUIClient:
@@ -23,6 +21,11 @@ class ComfyUIClient:
 
     def _request(self, endpoint: str, method: str = "GET", data: dict | None = None) -> dict:
         """Make a request to the ComfyUI API."""
+        cb = CircuitBreakerRegistry.get("comfyui", fails=3, cooldown=30.0)
+        if not cb.allow_request():
+            log.warning("[ComfyUIClient] Circuit breaker OPEN for ComfyUI — failing fast")
+            raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
+
         url = f"{self.base_url}{endpoint}"
         headers = {"Content-Type": "application/json"}
 
@@ -43,17 +46,22 @@ class ComfyUIClient:
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                if endpoint == "/prompt":
-                    return json.loads(response.read().decode("utf-8"))
-                return json.loads(response.read().decode("utf-8"))
+                res = json.loads(response.read().decode("utf-8"))
+                cb.record_success()
+                return res
         except urllib.error.HTTPError as e:
+            cb.record_failure()
             try:
                 error_body = json.loads(e.read().decode("utf-8"))
                 raise ComfyUIError(f"HTTP {e.code}: {error_body.get('error', e.reason)}") from e
             except Exception:
                 raise ComfyUIError(f"HTTP {e.code}: {e.reason}") from e
         except urllib.error.URLError as e:
+            cb.record_failure()
             raise ComfyUIError(f"Connection failed: {e.reason}") from e
+        except Exception as e:
+            cb.record_failure()
+            raise ComfyUIError(f"Request failed: {e}") from e
 
     def get_system_stats(self) -> dict:
         """Get ComfyUI system stats (memory, device info)."""
@@ -73,18 +81,40 @@ class ComfyUIClient:
             name = image_path.name
 
         import multipart  # noqa: F401
+
         raise NotImplementedError("upload_image requires multipart form encoding")
 
     def get_view(self, filename: str, subfolder: str = "", image_type: str = "output") -> bytes:
         """Get an image from ComfyUI."""
+        cb = CircuitBreakerRegistry.get("comfyui", fails=3, cooldown=30.0)
+        if not cb.allow_request():
+            log.warning("[ComfyUIClient] Circuit breaker OPEN for ComfyUI — failing fast")
+            raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
+
         url = f"{self.base_url}/view"
         params = f"?filename={filename}&type={image_type}"
         if subfolder:
             params += f"&subfolder={subfolder}"
 
         req = urllib.request.Request(url + params)
-        with urllib.request.urlopen(req, timeout=self.timeout) as response:
-            return response.read()
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                content = response.read()
+                cb.record_success()
+                return content
+        except urllib.error.HTTPError as e:
+            cb.record_failure()
+            try:
+                error_body = json.loads(e.read().decode("utf-8"))
+                raise ComfyUIError(f"HTTP {e.code}: {error_body.get('error', e.reason)}") from e
+            except Exception:
+                raise ComfyUIError(f"HTTP {e.code}: {e.reason}") from e
+        except urllib.error.URLError as e:
+            cb.record_failure()
+            raise ComfyUIError(f"Connection failed: {e.reason}") from e
+        except Exception as e:
+            cb.record_failure()
+            raise ComfyUIError(f"Failed to fetch image view: {e}") from e
 
     def free_memory(self) -> dict:
         """Trigger garbage collection to free GPU memory."""
@@ -128,18 +158,38 @@ class ComfyUIClient:
                 continue
 
             status_obj = status.get("status", {})
+            completed = False
+            error_details = []
+
             if isinstance(status_obj, dict):
-                if status_obj.get("completed"):
-                    return status
-                elif status_obj.get("failed"):
-                    error_msg = status_obj.get("status_str", "Unknown error")
-                    raise ComfyUIError(f"Prompt failed: {error_msg}")
+                if status_obj.get("completed") is True:
+                    completed = True
+                else:
+                    # Inspect execution messages for error details
+                    messages = status_obj.get("messages", [])
+                    for msg in messages:
+                        if isinstance(msg, list) and len(msg) >= 2:
+                            msg_type, msg_val = msg[0], msg[1]
+                            if msg_type == "ExecutionError" and isinstance(msg_val, dict):
+                                node_id = msg_val.get("node_id", "unknown")
+                                node_type = msg_val.get("node_type", "unknown")
+                                exc_msg = msg_val.get("exception_message", "Unknown error")
+                                error_details.append(f"Node {node_id} ({node_type}): {exc_msg}")
+                    if not error_details:
+                        error_details.append(status_obj.get("status_str", "Unknown error"))
             elif isinstance(status_obj, str):
                 if status_obj == "completed":
-                    return status
-                elif status_obj == "failed":
-                    error_msg = status.get("status_str", "Unknown error")
-                    raise ComfyUIError(f"Prompt failed: {error_msg}")
+                    completed = True
+                else:
+                    error_details.append(status.get("status_str", "Unknown error"))
+            else:
+                error_details.append("Unknown status format")
+
+            if completed:
+                return status
+            else:
+                err_msg = "; ".join(error_details)
+                raise ComfyUIError(f"Prompt failed: {err_msg}")
 
             time.sleep(poll_interval)
 

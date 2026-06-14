@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(r"C:\Video.AI\studio_projects\jobs\video_ai_jobs.db")
+DB_PATH = Path("studio_projects") / "jobs" / "video_ai_jobs.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 STATUS_QUEUED = "queued"
@@ -82,14 +82,32 @@ class JobStore:
         conn.commit()
         conn.close()
 
-    def create_job(self, request_json: dict[str, Any], topic: str | None = None, *, image_backend: str | None = None, comfyui_checkpoint: str | None = None, fallback_backend: str | None = None) -> int:
+    def create_job(
+        self,
+        request_json: dict[str, Any],
+        topic: str | None = None,
+        *,
+        image_backend: str | None = None,
+        comfyui_checkpoint: str | None = None,
+        fallback_backend: str | None = None,
+    ) -> int:
         conn = self._connect()
         cur = conn.cursor()
         now = _now_iso()
         payload = json.dumps(request_json or {})
         cur.execute(
             "INSERT INTO jobs (status, topic, request_json, created_at, updated_at, attempt, image_backend, comfyui_checkpoint, fallback_backend) VALUES (?,?,?,?,?,?,?,?,?)",
-            (STATUS_QUEUED, topic, payload, now, now, 0, image_backend, comfyui_checkpoint, fallback_backend),
+            (
+                STATUS_QUEUED,
+                topic,
+                payload,
+                now,
+                now,
+                0,
+                image_backend,
+                comfyui_checkpoint,
+                fallback_backend,
+            ),
         )
         job_id = cur.lastrowid
         conn.commit()
@@ -102,13 +120,18 @@ class JobStore:
         cur = conn.cursor()
         try:
             cur.execute("BEGIN IMMEDIATE;")
-            row = cur.execute("SELECT id FROM jobs WHERE status=? ORDER BY created_at LIMIT 1", (STATUS_QUEUED,)).fetchone()
+            row = cur.execute(
+                "SELECT id FROM jobs WHERE status=? ORDER BY created_at LIMIT 1", (STATUS_QUEUED,)
+            ).fetchone()
             if not row:
                 conn.commit()
                 return None
             job_id = row[0]
             now = _now_iso()
-            cur.execute("UPDATE jobs SET status=?, heartbeat_at=?, updated_at=?, attempt = attempt + 1 WHERE id=?", (STATUS_RUNNING, now, now, job_id))
+            cur.execute(
+                "UPDATE jobs SET status=?, heartbeat_at=?, updated_at=?, attempt = attempt + 1 WHERE id=?",
+                (STATUS_RUNNING, now, now, job_id),
+            )
             cur.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
             job_row = cur.fetchone()
             conn.commit()
@@ -117,7 +140,16 @@ class JobStore:
             conn.close()
 
     def update_job(self, job_id: int, **fields) -> None:
-        allowed = {"status", "progress", "heartbeat_at", "output_path", "error", "image_backend", "comfyui_checkpoint", "fallback_backend"}
+        allowed = {
+            "status",
+            "progress",
+            "heartbeat_at",
+            "output_path",
+            "error",
+            "image_backend",
+            "comfyui_checkpoint",
+            "fallback_backend",
+        }
         set_clauses = []
         params: list[Any] = []
         for k, v in fields.items():
@@ -138,14 +170,19 @@ class JobStore:
         conn = self._connect()
         cur = conn.cursor()
         now = _now_iso()
-        cur.execute("INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)", (job_id, now, event_type, message))
+        cur.execute(
+            "INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)",
+            (job_id, now, event_type, message),
+        )
         conn.commit()
         conn.close()
 
     def list_jobs(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         conn = self._connect()
         cur = conn.cursor()
-        rows = cur.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+        rows = cur.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
         conn.close()
         return [dict(r) for r in rows]
 
@@ -177,8 +214,14 @@ class JobStore:
             return False
         status = row[0]
         if status in (STATUS_QUEUED, STATUS_RUNNING, STATUS_PAUSED):
-            cur.execute("UPDATE jobs SET status=? , updated_at=? WHERE id=?", (STATUS_CANCEL_REQUESTED, _now_iso(), job_id))
-            cur.execute("INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)", (job_id, _now_iso(), "system", "cancel_requested"))
+            cur.execute(
+                "UPDATE jobs SET status=? , updated_at=? WHERE id=?",
+                (STATUS_CANCEL_REQUESTED, _now_iso(), job_id),
+            )
+            cur.execute(
+                "INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)",
+                (job_id, _now_iso(), "system", "cancel_requested"),
+            )
             conn.commit()
             conn.close()
             return True
@@ -190,7 +233,9 @@ class JobStore:
         cutoff = datetime.now(timezone.utc).timestamp() - stale_seconds
         conn = self._connect()
         cur = conn.cursor()
-        rows = cur.execute("SELECT id, heartbeat_at FROM jobs WHERE status=?", (STATUS_RUNNING,)).fetchall()
+        rows = cur.execute(
+            "SELECT id, heartbeat_at FROM jobs WHERE status=?", (STATUS_RUNNING,)
+        ).fetchall()
         to_fail: list[int] = []
         for r in rows:
             hb = r[1]
@@ -204,8 +249,14 @@ class JobStore:
             except Exception:
                 to_fail.append(r[0])
         for jid in to_fail:
-            cur.execute("UPDATE jobs SET status=?, updated_at=? WHERE id=?", (STATUS_FAILED, _now_iso(), jid))
-            cur.execute("INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)", (jid, _now_iso(), "system", "marked_stale_failed"))
+            cur.execute(
+                "UPDATE jobs SET status=?, updated_at=? WHERE id=?",
+                (STATUS_FAILED, _now_iso(), jid),
+            )
+            cur.execute(
+                "INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)",
+                (jid, _now_iso(), "system", "marked_stale_failed"),
+            )
         conn.commit()
         conn.close()
         return len(to_fail)
@@ -218,7 +269,13 @@ class JobStore:
         if orig["status"] not in (STATUS_FAILED, STATUS_CANCELED):
             return None
         request = json.loads(orig["request_json"])
-        new_id = self.create_job(request, topic=orig.get("topic"), image_backend=orig.get("image_backend"), comfyui_checkpoint=orig.get("comfyui_checkpoint"), fallback_backend=orig.get("fallback_backend"))
+        new_id = self.create_job(
+            request,
+            topic=orig.get("topic"),
+            image_backend=orig.get("image_backend"),
+            comfyui_checkpoint=orig.get("comfyui_checkpoint"),
+            fallback_backend=orig.get("fallback_backend"),
+        )
         self.append_event(job_id, f"retry_created:{new_id}", event_type="system")
         return new_id
 
@@ -226,7 +283,10 @@ class JobStore:
         """Record a job artifact (output file, manifest, etc.)."""
         conn = self._connect()
         cur = conn.cursor()
-        cur.execute("INSERT INTO job_artifacts (job_id, key, path, meta) VALUES (?,?,?,?)", (job_id, key, path, meta))
+        cur.execute(
+            "INSERT INTO job_artifacts (job_id, key, path, meta) VALUES (?,?,?,?)",
+            (job_id, key, path, meta),
+        )
         conn.commit()
         conn.close()
 
@@ -241,6 +301,5 @@ class JobStore:
         rows = cur.fetchall()
         conn.close()
         return [
-            {"id": r["id"], "key": r["key"], "path": r["path"], "meta": r["meta"]}
-            for r in rows
+            {"id": r["id"], "key": r["key"], "path": r["path"], "meta": r["meta"]} for r in rows
         ]

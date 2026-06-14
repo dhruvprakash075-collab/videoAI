@@ -90,6 +90,12 @@ class UIState:
     # ── B2: Degradation ledger (additive — safe default) ─────────────────────
     degradations: list = []  # [{seg, stage, reason}] — silent fallbacks recorded here
 
+    # ── Phase 0 manifest tracking ──
+    run_id: str = ""
+    vram_peaks: list = []
+    warning_count: int = 0
+    segment_manifests: dict = {}
+
     @classmethod
     def _uistate_log(cls, message: str) -> None:
         with cls._log_lock:
@@ -110,6 +116,7 @@ class UIState:
         """Record a silent quality fallback (B2). Thread-safe append."""
         with cls._log_lock:
             cls.degradations.append({"seg": seg, "stage": stage, "reason": reason})
+            cls.warning_count += 1
         log.warning(f"[DEGRADATION] Seg {seg} | {stage}: {reason}")
 
     @classmethod
@@ -119,12 +126,17 @@ class UIState:
         Zeroes segment counters so a 2nd run in the same session shows
         'planning' instead of stale values from the previous run.
         """
+        import uuid
         cls.topic = topic
         cls.segment_current = 0
         cls.segment_total = 0
         cls.run_start_ts = time.time()
         cls.vram_text = ""
         cls.degradations = []  # B2: reset degradation ledger for new run
+        cls.run_id = str(uuid.uuid4())
+        cls.vram_peaks = []
+        cls.warning_count = 0
+        cls.segment_manifests = {}
 
     @classmethod
     def set_progress(cls, current: int | None = None, total: int | None = None) -> None:

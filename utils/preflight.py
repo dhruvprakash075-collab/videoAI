@@ -219,14 +219,21 @@ def _check_indicf5(config: dict) -> tuple[Status, str]:
 
     ref_text = indicf5.get("ref_text", "")
     if not ref_text:
-        return "warn", "IndicF5 ref_text not configured (will use reference audio without transcript)"
+        return (
+            "warn",
+            "IndicF5 ref_text not configured (will use reference audio without transcript)",
+        )
 
     device = indicf5.get("device", "cuda")
     if device == "cuda":
         try:
             import torch
+
             if not torch.cuda.is_available():
-                return "warn", "IndicF5 configured for CUDA but no GPU available; will use CPU (slow)"
+                return (
+                    "warn",
+                    "IndicF5 configured for CUDA but no GPU available; will use CPU (slow)",
+                )
             free_gb = torch.cuda.mem_get_info(0)[0] / (1024**3)
             if free_gb < 5.0:
                 return "warn", f"IndicF5: only {free_gb:.1f} GB VRAM free; may OOM with ComfyUI"
@@ -277,7 +284,7 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
             errors.append(f"workflow file not found [{name}]: {path}")
 
     # 3. Required ComfyUI custom nodes must be installed
-    comfy_root = Path(comfy_cfg.get("root", "C:\\Video.AI\\external\\ComfyUI"))
+    comfy_root = Path(comfy_cfg.get("root", "external/ComfyUI"))
     custom_nodes_dir = comfy_root / "custom_nodes"
     required_nodes = {
         "IPAdapter Plus": custom_nodes_dir / "ComfyUI_IPAdapter_plus",
@@ -300,8 +307,7 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
     missing_models = [n for n, p in required_models.items() if not p.exists()]
     if missing_models:
         errors.append(
-            f"missing IPAdapter models: {', '.join(missing_models)}. "
-            f"Place in: {ipadapter_dir}"
+            f"missing IPAdapter models: {', '.join(missing_models)}. Place in: {ipadapter_dir}"
         )
 
     if errors:
@@ -326,6 +332,7 @@ def _check_playwright(config: dict) -> tuple[Status, str]:
         return "skip", "Non-YouTube upload — skipping Playwright check"
 
     import sys
+
     _fix_cmd = f"{sys.executable} -m playwright install chromium"
 
     def _try_playwright(args: list[str]) -> int | None:
@@ -348,7 +355,10 @@ def _check_playwright(config: dict) -> tuple[Status, str]:
         if rc_chromium == 0:
             return "ok", "Playwright Chromium found"
         if rc is None and rc_chromium is None:
-            return "fail", f"Playwright not found via `python -m playwright` or bare `playwright`. Fix: {_fix_cmd}"
+            return (
+                "fail",
+                f"Playwright not found via `python -m playwright` or bare `playwright`. Fix: {_fix_cmd}",
+            )
         return "fail", f"Playwright browser not installed. Fix: {_fix_cmd}"
     except Exception as e:
         return "warn", f"Playwright check failed: {e}"

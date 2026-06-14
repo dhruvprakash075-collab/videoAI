@@ -188,6 +188,16 @@ def _call_edge_direct(
 # ── Supertonic 3 persistent worker ────────────────────────────────────────────
 
 
+def _enqueue_stdout(proc, q):
+    try:
+        for line in iter(proc.stdout.readline, ""):
+            q.put(line)
+    except Exception:
+        pass
+    finally:
+        q.put("")  # EOF sentinel
+
+
 class _SupertonicWorker:
     """Persistent Supertonic 3 TTS worker subprocess (CPU ONNX, zero VRAM).
 
@@ -200,6 +210,8 @@ class _SupertonicWorker:
         self._proc = None
         self._lock = threading.Lock()
         self._failed = False
+        self._stdout_q = None
+        self._reader_t = None
 
     def _start(self) -> bool:
         if self._failed:
@@ -231,15 +243,27 @@ class _SupertonicWorker:
                 bufsize=1,
                 env=_super_env,
             )
+            import queue
+
+            self._stdout_q = queue.Queue()
+            self._reader_t = threading.Thread(
+                target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+            )
+            self._reader_t.start()
+
             import time as _t
 
             deadline = _t.time() + 120
             while _t.time() < deadline:
-                line = self._proc.stdout.readline()
+                try:
+                    rem = max(0.1, deadline - _t.time())
+                    line = self._stdout_q.get(timeout=rem)
+                except queue.Empty:
+                    raise RuntimeError("Supertonic worker readiness timeout")
+
                 if not line:
-                    if self._proc.poll() is not None:
-                        raise RuntimeError("Supertonic worker exited during startup")
-                    continue
+                    raise RuntimeError("Supertonic worker exited during startup")
+
                 line = line.strip()
                 if not (line.startswith("{") and line.endswith("}")):
                     continue
@@ -266,23 +290,38 @@ class _SupertonicWorker:
             with contextlib.suppress(Exception):
                 self._proc.kill()
             self._proc = None
+        self._stdout_q = None
+        self._reader_t = None
 
     def generate(self, req: dict[str, Any], timeout: float = 300) -> dict[str, Any] | None:
         with self._lock:
             if not self._start():
                 return None
+            if self._stdout_q is None and self._proc is not None:
+                import queue
+
+                self._stdout_q = queue.Queue()
+                self._reader_t = threading.Thread(
+                    target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+                )
+                self._reader_t.start()
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+                import queue
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
-                    line = self._proc.stdout.readline()
+                    try:
+                        rem = max(0.1, deadline - _t.time())
+                        line = self._stdout_q.get(timeout=rem)
+                    except queue.Empty:
+                        raise RuntimeError("Supertonic worker response timeout")
+
                     if not line:
-                        if self._proc.poll() is not None:
-                            raise RuntimeError("Supertonic worker died mid-request")
-                        continue
+                        raise RuntimeError("Supertonic worker died mid-request")
+
                     line = line.strip()
                     if not (line.startswith("{") and line.endswith("}")):
                         continue
@@ -340,7 +379,9 @@ def _call_supertonic_worker(
 
     voice = super_cfg.get("voice", "M1")
     steps = int(super_cfg.get("steps", 16))
-    speed = float(speed_override) if speed_override is not None else float(super_cfg.get("speed", 1.0))
+    speed = (
+        float(speed_override) if speed_override is not None else float(super_cfg.get("speed", 1.0))
+    )
     silence_duration = float(super_cfg.get("silence_duration", 0.1))
     # Default max_chunk_length=100 chars to stay under ONNX 1000-token
     # attention limit. Without chunking, texts >1000 chars trigger a Mul_13
@@ -368,7 +409,9 @@ def _call_supertonic_worker(
     resp = _supertonic_worker.generate(req)
     if resp is not None:
         if resp.get("status") != "success":
-            log.warning(f"[Supertonic] Persistent worker returned error: {resp.get('message', 'unknown')}")
+            log.warning(
+                f"[Supertonic] Persistent worker returned error: {resp.get('message', 'unknown')}"
+            )
         return resp
 
     log.info("[Supertonic] Using one-shot subprocess fallback")
@@ -463,6 +506,8 @@ class _OmniVoiceWorker:
         self._proc = None
         self._lock = threading.Lock()
         self._failed = False  # once True, never retry the persistent path this run
+        self._stdout_q = None
+        self._reader_t = None
 
     def _start(self) -> bool:
         if self._proc is not None and self._proc.poll() is None:
@@ -491,16 +536,28 @@ class _OmniVoiceWorker:
                 bufsize=1,
                 env=_omnivoice_env,
             )
+            import queue
+
+            self._stdout_q = queue.Queue()
+            self._reader_t = threading.Thread(
+                target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+            )
+            self._reader_t.start()
+
             # Wait for the readiness line (model load can take a while)
             import time as _t
 
             deadline = _t.time() + 300
             while _t.time() < deadline:
-                line = self._proc.stdout.readline()
+                try:
+                    rem = max(0.1, deadline - _t.time())
+                    line = self._stdout_q.get(timeout=rem)
+                except queue.Empty:
+                    raise RuntimeError("worker readiness timeout")
+
                 if not line:
-                    if self._proc.poll() is not None:
-                        raise RuntimeError("worker exited during startup")
-                    continue
+                    raise RuntimeError("worker exited during startup")
+
                 line = line.strip()
                 if not line:
                     continue
@@ -527,6 +584,8 @@ class _OmniVoiceWorker:
             with contextlib.suppress(Exception):
                 self._proc.kill()
             self._proc = None
+        self._stdout_q = None
+        self._reader_t = None
 
     def generate(self, req: dict[str, Any], timeout: float = 600) -> dict[str, Any] | None:
         """Send one request to the persistent worker. Returns response dict or None on failure.
@@ -538,20 +597,35 @@ class _OmniVoiceWorker:
         with self._lock:
             if not self._start():
                 return None
+            if self._stdout_q is None and self._proc is not None:
+                import queue
+
+                self._stdout_q = queue.Queue()
+                self._reader_t = threading.Thread(
+                    target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+                )
+                self._reader_t.start()
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+                import queue
 
                 # timeout is an IDLE timeout: it resets each time the worker emits a
                 # line (including progress), so total time scales with the work done.
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
-                    line = self._proc.stdout.readline()
+                    try:
+                        rem = max(0.1, deadline - _t.time())
+                        line = self._stdout_q.get(timeout=rem)
+                    except queue.Empty:
+                        raise RuntimeError(
+                            "worker response timeout (no progress within idle window)"
+                        )
+
                     if not line:
-                        if self._proc.poll() is not None:
-                            raise RuntimeError("worker died mid-request")
-                        continue
+                        raise RuntimeError("worker died mid-request")
+
                     line = line.strip()
                     if not (line.startswith("{") and line.endswith("}")):
                         continue
@@ -611,6 +685,8 @@ class _F5Worker:
         self._proc = None
         self._lock = threading.Lock()
         self._failed = False
+        self._stdout_q = None
+        self._reader_t = None
 
     def _start(self) -> bool:
         if self._failed:
@@ -671,15 +747,27 @@ class _F5Worker:
                 bufsize=1,
                 env=_f5_env,
             )
+            import queue
+
+            self._stdout_q = queue.Queue()
+            self._reader_t = threading.Thread(
+                target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+            )
+            self._reader_t.start()
+
             import time as _t
 
             deadline = _t.time() + 300
             while _t.time() < deadline:
-                line = self._proc.stdout.readline()
+                try:
+                    rem = max(0.1, deadline - _t.time())
+                    line = self._stdout_q.get(timeout=rem)
+                except queue.Empty:
+                    raise RuntimeError("F5 worker readiness timeout")
+
                 if not line:
-                    if self._proc.poll() is not None:
-                        raise RuntimeError("F5 worker exited during startup")
-                    continue
+                    raise RuntimeError("F5 worker exited during startup")
+
                 line = line.strip()
                 if not line:
                     continue
@@ -706,24 +794,39 @@ class _F5Worker:
             with contextlib.suppress(Exception):
                 self._proc.kill()
             self._proc = None
+        self._stdout_q = None
+        self._reader_t = None
 
     def generate(self, req: dict[str, Any], timeout: float = 600) -> dict[str, Any] | None:
         """Send one request to the persistent F5 worker. Returns response dict or None on failure."""
         with self._lock:
             if not self._start():
                 return None
+            if self._stdout_q is None and self._proc is not None:
+                import queue
+
+                self._stdout_q = queue.Queue()
+                self._reader_t = threading.Thread(
+                    target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+                )
+                self._reader_t.start()
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+                import queue
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
-                    line = self._proc.stdout.readline()
+                    try:
+                        rem = max(0.1, deadline - _t.time())
+                        line = self._stdout_q.get(timeout=rem)
+                    except queue.Empty:
+                        raise RuntimeError("F5 worker response timeout")
+
                     if not line:
-                        if self._proc.poll() is not None:
-                            raise RuntimeError("F5 worker died mid-request")
-                        continue
+                        raise RuntimeError("F5 worker died mid-request")
+
                     line = line.strip()
                     if not (line.startswith("{") and line.endswith("}")):
                         continue
@@ -766,11 +869,14 @@ def shutdown_f5_worker():
 
 # ── IndicF5 persistent worker ─────────────────────────────────────────────────
 
+
 class _IndicF5Worker:
     def __init__(self):
         self._proc = None
         self._lock = threading.Lock()
         self._failed = False
+        self._stdout_q = None
+        self._reader_t = None
 
     def _start(self) -> bool:
         if self._failed:
@@ -807,7 +913,14 @@ class _IndicF5Worker:
             )
 
             self._proc = subprocess.Popen(
-                [python_exe, str(worker_script), "--serve", f"--model-id={model_id}", f"--cache-dir={cache_dir}", f"--device={device}"],
+                [
+                    python_exe,
+                    str(worker_script),
+                    "--serve",
+                    f"--model-id={model_id}",
+                    f"--cache-dir={cache_dir}",
+                    f"--device={device}",
+                ],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -816,15 +929,27 @@ class _IndicF5Worker:
                 bufsize=1,
                 env=_indicf5_env,
             )
+            import queue
+
+            self._stdout_q = queue.Queue()
+            self._reader_t = threading.Thread(
+                target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+            )
+            self._reader_t.start()
+
             import time as _t
 
             deadline = _t.time() + 300
             while _t.time() < deadline:
-                line = self._proc.stdout.readline()
+                try:
+                    rem = max(0.1, deadline - _t.time())
+                    line = self._stdout_q.get(timeout=rem)
+                except queue.Empty:
+                    raise RuntimeError("IndicF5 worker readiness timeout")
+
                 if not line:
-                    if self._proc.poll() is not None:
-                        raise RuntimeError("IndicF5 worker exited during startup")
-                    continue
+                    raise RuntimeError("IndicF5 worker exited during startup")
+
                 line = line.strip()
                 if not line:
                     continue
@@ -839,7 +964,9 @@ class _IndicF5Worker:
                     raise RuntimeError(msg.get("message", "IndicF5 worker init error"))
             raise RuntimeError("IndicF5 worker readiness timeout")
         except Exception as e:
-            log.warning(f"[IndicF5] Persistent worker unavailable ({e}) — will fall back to supertonic")
+            log.warning(
+                f"[IndicF5] Persistent worker unavailable ({e}) — will fall back to supertonic"
+            )
             self._failed = True
             self._cleanup_proc()
             return False
@@ -849,23 +976,38 @@ class _IndicF5Worker:
             with contextlib.suppress(Exception):
                 self._proc.kill()
             self._proc = None
+        self._stdout_q = None
+        self._reader_t = None
 
     def generate(self, req: dict[str, Any], timeout: float = 600) -> dict[str, Any] | None:
         with self._lock:
             if not self._start():
                 return None
+            if self._stdout_q is None and self._proc is not None:
+                import queue
+
+                self._stdout_q = queue.Queue()
+                self._reader_t = threading.Thread(
+                    target=_enqueue_stdout, args=(self._proc, self._stdout_q), daemon=True
+                )
+                self._reader_t.start()
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
                 import time as _t
+                import queue
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
-                    line = self._proc.stdout.readline()
+                    try:
+                        rem = max(0.1, deadline - _t.time())
+                        line = self._stdout_q.get(timeout=rem)
+                    except queue.Empty:
+                        raise RuntimeError("IndicF5 worker response timeout")
+
                     if not line:
-                        if self._proc.poll() is not None:
-                            raise RuntimeError("IndicF5 worker died mid-request")
-                        continue
+                        raise RuntimeError("IndicF5 worker died mid-request")
+
                     line = line.strip()
                     if not (line.startswith("{") and line.endswith("}")):
                         continue
@@ -922,7 +1064,11 @@ def _call_indicf5_worker(
     ref_audio = indicf5_cfg.get("ref_audio", "") or ""
     sample_rate = int(indicf5_cfg.get("sample_rate", 24000))
     nfe_step = int(indicf5_cfg.get("nfe_step", 16))
-    speed = float(speed_override) if speed_override is not None else float(indicf5_cfg.get("speed", 1.0))
+    speed = (
+        float(speed_override)
+        if speed_override is not None
+        else float(indicf5_cfg.get("speed", 1.0))
+    )
     timeout = int(indicf5_cfg.get("timeout_seconds", 600))
     max_chars = int(indicf5_cfg.get("max_chars_per_chunk", 220))
 
@@ -982,7 +1128,9 @@ def _call_indicf5_worker(
         if max_chars:
             cmd.append(f"--max-chars={max_chars}")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout + 60)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout + 60
+        )
         with contextlib.suppress(Exception):
             temp_file.unlink()
 
@@ -1218,7 +1366,9 @@ def _call_omnivoice_oneshot(
         log.info("Calling omnivoice_worker (one-shot)...")
         _oneshot_env = dict(os.environ)
         _oneshot_env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600, env=_oneshot_env)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", timeout=600, env=_oneshot_env
+        )
 
         if result.returncode == 0 and result.stdout.strip():
             for line in reversed(result.stdout.strip().split("\n")):
@@ -1272,7 +1422,9 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
     f"{host.rstrip('/')}/api/generate"
 
     engine = cfg.get("tts", {}).get("engine", "edge")
-    tts_lang = cfg.get("tts", {}).get("lang", "hi")
+    from config.config import get_language
+
+    tts_lang = get_language(cfg)
 
     # P3-9 fix: when tts.lang == "hi" (Devanagari is the preferred output),
     # always use the Devanagari prompt regardless of the TTS engine.  The
@@ -1330,8 +1482,8 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
         UIState.add_degradation(
             seg, "translation_fallback", "Ollama translation failed, using English"
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Could not add translation degradation to UIState: {e}")
     return text
 
 
@@ -1402,7 +1554,7 @@ def tts_generate(
                     voice_sample = wav_files[0]
                     log.info(f"Voice cloning: auto-detected narration sample '{voice_sample}'")
 
-# P1-7 fix: normalize the engine string from config (which may have been set
+    # P1-7 fix: normalize the engine string from config (which may have been set
     # from the vision doc overlay) to a known engine id before dispatching.
     # Keep the documented tts_generate() behavior for truly unknown strings:
     # route them directly to edge instead of silently attempting F5.
@@ -1427,7 +1579,9 @@ def tts_generate(
             speed_override=speed,
         )
         if result.get("status") != "success":
-            log.warning(f"[TTS] Supertonic failed ({result.get('message', 'unknown')}) — degrading to omnivoice")
+            log.warning(
+                f"[TTS] Supertonic failed ({result.get('message', 'unknown')}) — degrading to omnivoice"
+            )
             result = _call_omnivoice_worker(
                 text,
                 lang=lang,
@@ -1458,8 +1612,8 @@ def tts_generate(
                 _UIState_tts.add_degradation(
                     0, "tts_engine_fallback", "F5-TTS failed, using omnivoice"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Could not add tts degradation: {e}")
             result = _call_omnivoice_worker(
                 text,
                 lang=lang,
@@ -1477,8 +1631,8 @@ def tts_generate(
                 _UIState_tts2.add_degradation(
                     0, "tts_engine_fallback", "omnivoice failed, using edge"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Could not add tts degradation: {e}")
             result = _call_edge_direct(
                 text, lang=lang, output_dir=output_dir, voice_profile=voice_profile, speed=speed
             )
@@ -1511,11 +1665,12 @@ def tts_generate(
             log.warning("[TTS] IndicF5 failed — degrading to supertonic")
             try:
                 from agents.director_agent import UIState as _UIState_tts_if5
+
                 _UIState_tts_if5.add_degradation(
                     0, "tts_engine_fallback", "IndicF5 failed, using supertonic"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Could not add tts degradation: {e}")
             result = _call_supertonic_worker(
                 text,
                 lang=lang,
@@ -1526,11 +1681,12 @@ def tts_generate(
             log.warning("[TTS] supertonic fallback also failed — degrading to omnivoice")
             try:
                 from agents.director_agent import UIState as _UIState_tts_if52
+
                 _UIState_tts_if52.add_degradation(
                     0, "tts_engine_fallback", "supertonic failed, using omnivoice"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Could not add tts degradation: {e}")
             result = _call_omnivoice_worker(
                 text,
                 lang=lang,
@@ -1693,7 +1849,11 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
             "languages": ["hi", "en", "multi", "31 langs"],
             "vram_hint_gb": 0.0,
             "notes": "Default. CPU ONNX, 4.5x faster than OmniVoice. Zero VRAM. Custom voice JSON.",
-            "recommended": {"voice": "character_voices/dhruv_voice_polished.json", "steps": 16, "speed": 1.0},
+            "recommended": {
+                "voice": "character_voices/dhruv_voice_polished.json",
+                "steps": 16,
+                "speed": 1.0,
+            },
         },
         "omnivoice": {
             "voice_cloning": True,

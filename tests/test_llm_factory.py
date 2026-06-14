@@ -190,17 +190,18 @@ def test_ollama_model_available_model_not_found(monkeypatch):
     assert result is False
 
 
-def test_ollama_model_available_network_error_returns_true():
-    """_ollama_model_available returns True on network error (safe fallback)."""
+def test_ollama_model_available_network_error_raises_recoverable_error():
+    """_ollama_model_available raises RecoverableError on network error."""
+    import pytest
     from unittest.mock import patch
+    from utils.errors import RecoverableError
 
     import core.main as cm
 
     with patch("urllib.request.urlopen", side_effect=OSError("Connection refused")):
-        result = cm._ollama_model_available("any-model", "http://localhost:11434")
-
-    # Should assume model is present when Ollama is unreachable
-    assert result is True
+        with pytest.raises(RecoverableError) as exc_info:
+            cm._ollama_model_available("any-model", "http://localhost:11434")
+    assert "Ollama server is unreachable" in str(exc_info.value)
 
 
 def test_create_writer_fallback_when_model_unavailable(monkeypatch):

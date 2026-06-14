@@ -79,7 +79,9 @@ def run_tts_eval(out_dir: Path, config: dict) -> str:
     tts_out = out_dir / "tts"
     tts_out.mkdir(parents=True, exist_ok=True)
 
-    lang = config.get("tts", {}).get("lang", "hi")
+    from config.config import get_language
+
+    lang = get_language(config)
     text = _SAMPLE_TTS_TEXT if lang == "hi" else _SAMPLE_TTS_TEXT_EN
 
     log.info(f"[eval] Generating TTS sample (lang={lang})...")

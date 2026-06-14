@@ -34,7 +34,10 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = manifest_dir / "run_manifest.json"
 
+    from agents.ui_state import UIState as _UIS
+
     manifest = {
+        "run_id": _UIS.run_id,
         "topic": topic,
         "run_date": _dt.now().isoformat(),
         "wall_time_seconds": round(wall_time_s, 1),
@@ -58,21 +61,19 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
         "duration_s": result.get("duration_s", 0),
         "quality_check": result.get("quality", {}),
         "youtube_upload": result.get("youtube_upload", "not_attempted"),
+        "warning_count": _UIS.warning_count,
+        "vram_peaks": list(_UIS.vram_peaks),
+        "degradations": list(_UIS.degradations),
+        "segments": list(_UIS.segment_manifests.values()),
+        "config_snapshot": config,
     }
-
-    try:
-        from agents.director_agent import UIState as _UIS
-
-        manifest["degradations"] = list(_UIS.degradations)
-    except Exception:
-        manifest["degradations"] = []
 
     try:
         _thumb = manifest_dir / "thumbnail.png"
         if _thumb.exists():
             manifest["thumbnail"] = str(_thumb)
-    except Exception:
-        pass
+    except Exception as _e:
+        log.debug(f"[MANIFEST] Could not include thumbnail: {_e}")
 
     try:
         from memory.blackboard import get_blackboard
@@ -258,6 +259,7 @@ def finalize_production(
     _requested_duration_s = None
     try:
         from memory.blackboard import get_blackboard
+
         _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
         _rec = _bb.read_decision()
         if _rec is not None:

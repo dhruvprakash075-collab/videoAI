@@ -105,17 +105,21 @@ def create_director(config: dict) -> Agent:
 
 def _ollama_model_available(model_name: str, host: str) -> bool:
     """Return True if `model_name` is pulled in Ollama (prefix match on tags)."""
-    try:
-        import json as _json
-        import urllib.request
+    import urllib.error
+    import urllib.request
+    import json as _json
+    from utils.errors import RecoverableError
 
+    try:
         with urllib.request.urlopen(f"{host.rstrip('/')}/api/tags", timeout=4) as r:
             tags = [t.get("name", "") for t in _json.loads(r.read()).get("models", [])]
         return any(model_name == t or t.startswith(model_name) or model_name in t for t in tags)
+    except (urllib.error.URLError, OSError) as e:
+        # Unreachable Ollama: raise RecoverableError loudly
+        raise RecoverableError(f"Ollama server is unreachable at {host}: {e}") from e
     except Exception:
-        # If we can't check (Ollama momentarily busy), assume present and let the
-        # call path handle any error rather than falsely falling back.
-        return True
+        # Reachable but other error (e.g. invalid response format), return False to trigger fallback
+        return False
 
 
 def create_writer(config: dict) -> Agent:
@@ -132,6 +136,12 @@ def create_writer(config: dict) -> Agent:
         log.warning(
             f"Writer model '{model_name}' not pulled — falling back to '{fallback}'. "
             f"Run: ollama pull {model_name}"
+        )
+        from agents.ui_state import UIState
+        UIState.add_degradation(
+            0,
+            "create_writer",
+            f"Writer model '{model_name}' not pulled — falling back to '{fallback}'"
         )
         model_name = fallback
 

@@ -16,7 +16,7 @@ class ComfyUIRuntime:
         self.server = self.config.get("server", "127.0.0.1")
         self.host = self.config.get("host", "127.0.0.1")
         self.port = self.config.get("port", 8188)
-        self.root = self.config.get("root", "C:\\ComfyUI")
+        self.root = self.config.get("root", "external/ComfyUI")
         self.python = self.config.get("python", "python")
         self.auto_start = self.config.get("auto_start", False)
         self.open_browser = self.config.get("open_browser", False)
@@ -58,8 +58,10 @@ class ComfyUIRuntime:
                 cmd = [
                     self.python,
                     "main.py",
-                    "--listen", self.host,
-                    "--port", str(self.port),
+                    "--listen",
+                    self.host,
+                    "--port",
+                    str(self.port),
                 ]
 
                 if not self.open_browser:
@@ -72,7 +74,9 @@ class ComfyUIRuntime:
                     cwd=self.root,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                    if hasattr(subprocess, "CREATE_NO_WINDOW")
+                    else 0,
                 )
 
                 log.info(f"[ComfyUI] Started process PID {self._process.pid}")

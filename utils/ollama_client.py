@@ -22,66 +22,13 @@ import urllib.error
 import urllib.request
 
 log = logging.getLogger(__name__)
-class _BreakerState:
-    """Per-model circuit breaker state (thread-safe)."""
-    CLOSED = "closed"
-    OPEN = "open"
-    HALF_OPEN = "half_open"
+from utils.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry
+
+class _BreakerState(CircuitBreaker):
+    """Subclass of CircuitBreaker for backward compatibility in legacy tests."""
     def __init__(self, fails_threshold: int, cooldown_s: float):
-        self._lock = threading.Lock()
-        self._state = self.CLOSED
-        self._fail_count = 0
-        self._open_until = 0.0
-        self._fails_thresh = fails_threshold
-        self._cooldown_s = cooldown_s
-    def allow_request(self) -> bool:
-        """Return True if the request should be attempted."""
-        with self._lock:
-            if self._state == self.CLOSED:
-                return True
-            if self._state == self.OPEN:
-                if time.time() >= self._open_until:
-                    self._state = self.HALF_OPEN
-                    log.info("[Breaker] → Half-Open (probe allowed)")
-                    return True
-                return False
-            # HALF_OPEN: allow exactly one probe (caller must call record_success/failure)
-            return True
-    def record_success(self) -> None:
-        with self._lock:
-            self._fail_count = 0
-            if self._state != self.CLOSED:
-                log.info("[Breaker] → Closed (probe succeeded)")
-            self._state = self.CLOSED
-    def record_failure(self) -> None:
-        with self._lock:
-            self._fail_count += 1
-            if self._state == self.HALF_OPEN:
-                # Probe failed — reopen
-                self._state = self.OPEN
-                self._open_until = time.time() + self._cooldown_s
-                log.warning(f"[Breaker] → Open (probe failed, cooldown {self._cooldown_s:.0f}s)")
-            elif self._fail_count >= self._fails_thresh:
-                self._state = self.OPEN
-                self._open_until = time.time() + self._cooldown_s
-                log.warning(
-                    f"[Breaker] → Open after {self._fail_count} failures "
-                    f"(cooldown {self._cooldown_s:.0f}s)"
-                )
-    @property
-    def state(self) -> str:
-        with self._lock:
-            return self._state
-    def cooldown_remaining_s(self) -> float:
-        """Return seconds until the breaker auto-transitions OPEN → HALF_OPEN.
-        Returns 0.0 if the breaker is not OPEN (closed or already half-open).
-        Used by callers (e.g. `utils.crewai_breaker`) to report a useful
-        `BreakerOpen.cooldown_s` to the user instead of a hardcoded 0.
-        """
-        with self._lock:
-            if self._state != self.OPEN:
-                return 0.0
-            return max(0.0, self._open_until - time.time())
+        super().__init__("legacy", fails_threshold, cooldown_s)
+
 class OllamaClient:
     """Centralized Ollama HTTP client.
     Thread-safe. One instance per pipeline run is sufficient.
@@ -106,14 +53,12 @@ class OllamaClient:
         self._keep_alive = _ollama.get("keep_alive", "3m")
         _fails = int(_ollama.get("breaker_fails", 3))
         _cooldown = float(_ollama.get("breaker_cooldown_s", 30))
-        self._breakers: dict[str, _BreakerState] = {}
+        self._breakers: dict[str, CircuitBreaker] = {}
         self._breaker_defaults = (_fails, _cooldown)
         self._lock = threading.Lock()
-    def _breaker(self, model: str) -> _BreakerState:
-        with self._lock:
-            if model not in self._breakers:
-                self._breakers[model] = _BreakerState(*self._breaker_defaults)
-            return self._breakers[model]
+    def _breaker(self, model: str) -> CircuitBreaker:
+        fails, cooldown = self._breaker_defaults
+        return CircuitBreakerRegistry.get(f"ollama:{model}", fails=fails, cooldown=cooldown)
     def _is_local_host(self, host: str) -> bool:
         """Check if the host is a local address (localhost/127.0.0.1/::1).
         Valid formats:
@@ -359,3 +304,4 @@ def reset_ollama_client() -> None:
     global _client_instance
     with _client_lock:
         _client_instance = None
+    CircuitBreakerRegistry.reset_all()

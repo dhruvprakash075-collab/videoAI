@@ -283,6 +283,7 @@ exclude_lines = [
     "def __repr__",
     "def __str__",
 ]
+fail_under = 80
 show_missing = true
 skip_covered = false
 precision = 1

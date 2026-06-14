@@ -68,15 +68,10 @@ def test_load_config_project_missing():
 
 
 def test_load_config_validation_failure():
-    with (
-        patch("config.config.validate_config", side_effect=ValueError("validation error")),
-        patch("logging.Logger.warning") as mock_warn,
-    ):
-        cfg = load_config(Path("non_existent.yaml"))
-        assert "models" in cfg
-        mock_warn.assert_any_call(
-            "Configuration validation failed: validation error — falling back to raw configuration"
-        )
+    """Invalid config now raises; fail-fast replaces fail-soft."""
+    with patch("config.config.validate_config", side_effect=ValueError("validation error")):
+        with pytest.raises(ValueError, match="validation error"):
+            load_config(Path("non_existent.yaml"))
 
 
 def test_get_character_success():

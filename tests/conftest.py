@@ -164,6 +164,11 @@ def reset_uistate():
     UIState.auto_accept = False
     # B2 additive field — degradation ledger (reset so it never bleeds between tests)
     UIState.degradations = []
+    # Phase 0 manifest tracking
+    UIState.run_id = ""
+    UIState.vram_peaks = []
+    UIState.warning_count = 0
+    UIState.segment_manifests = {}
     yield
 
 

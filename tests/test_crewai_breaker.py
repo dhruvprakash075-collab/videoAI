@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import utils.crewai_breaker as breaker
-from utils.ollama_client import _BreakerState
+from utils.circuit_breaker import CircuitBreaker
 
 
 @pytest.fixture(autouse=True)
@@ -80,11 +80,11 @@ def test_guarded_crewai_kickoff_success():
     crew_mock.kickoff.return_value = "Success output"
 
     # Mock get_breaker to return a clean local breaker
-    local_breaker = _BreakerState(3, 30.0)
+    local_breaker = CircuitBreaker("success-model", 3, 30.0)
     with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
         res = breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name)
         assert res == "Success output"
-        assert local_breaker.state == _BreakerState.CLOSED
+        assert local_breaker.state == CircuitBreaker.CLOSED
         assert local_breaker._fail_count == 0
 
 
@@ -94,8 +94,8 @@ def test_guarded_crewai_kickoff_fast_fail_open_breaker():
     crew_mock = MagicMock()
 
     # Set up an open breaker
-    local_breaker = _BreakerState(3, 30.0)
-    local_breaker._state = _BreakerState.OPEN
+    local_breaker = CircuitBreaker("open-model", 3, 30.0)
+    local_breaker._state = CircuitBreaker.OPEN
     local_breaker._open_until = time.time() + 30.0
 
     with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
@@ -114,18 +114,18 @@ def test_guarded_crewai_kickoff_failure_tripping():
     crew_mock = MagicMock()
     crew_mock.kickoff.side_effect = ValueError("LiteLLM connection error")
 
-    local_breaker = _BreakerState(2, 10.0)  # threshold = 2
+    local_breaker = CircuitBreaker("failing-model", 2, 10.0)  # threshold = 2
     with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
         # First failure
         with pytest.raises(ValueError):
             breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name)
-        assert local_breaker.state == _BreakerState.CLOSED
+        assert local_breaker.state == CircuitBreaker.CLOSED
         assert local_breaker._fail_count == 1
 
         # Second failure -> should trip breaker
         with pytest.raises(ValueError):
             breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name)
-        assert local_breaker.state == _BreakerState.OPEN
+        assert local_breaker.state == CircuitBreaker.OPEN
 
 
 def test_guarded_crewai_kickoff_timeout():
@@ -140,7 +140,7 @@ def test_guarded_crewai_kickoff_timeout():
 
     crew_mock.kickoff.side_effect = slow_kickoff
 
-    local_breaker = _BreakerState(3, 30.0)
+    local_breaker = CircuitBreaker("slow-model", 3, 30.0)
     with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
         with pytest.raises(TimeoutError) as exc_info:
             breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name, timeout_s=0.2)
