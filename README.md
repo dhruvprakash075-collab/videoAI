@@ -61,6 +61,21 @@ cargo run --manifest-path rust/worker/Cargo.toml -- run
 cargo run --manifest-path rust/worker/Cargo.toml -- run --once
 ```
 
+Serve read-only job status endpoints locally:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- serve
+cargo run --manifest-path rust/worker/Cargo.toml -- serve --host 127.0.0.1 --port 8787
+```
+
+The status endpoint never mutates the queue database. It opens the existing SQLite file read-only and exposes:
+
+* `GET /healthz` — process liveness
+* `GET /readyz` — read-only DB/schema readiness
+* `GET /stats` — job counts by status
+* `GET /jobs?limit=100&offset=0` — newest-first job list
+* `GET /jobs/:id` — one job with events and artifacts
+
 The Python worker remains the default operational path. The Rust worker resolves the interpreter from `VIDEOAI_PYTHON` when set, otherwise `venv/Scripts/python.exe` on Windows and `venv/bin/python` on Unix.
 
 ***
