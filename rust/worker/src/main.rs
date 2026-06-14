@@ -350,6 +350,7 @@ impl Worker {
                     if child.try_wait().context("failed to poll worker subprocess")?.is_none() {
                         let _ = child.kill();
                     }
+                    let _ = child.wait();
                     update_job_path(&self.config.db_path, job_id, &[JobUpdate::Status(STATUS_CANCELED)])?;
                     break;
                 }
@@ -504,7 +505,7 @@ impl Worker {
 
         let (host, port) = read_comfyui_host_port(&self.config.repo_root);
         http_get_root(&host, port).with_context(|| {
-            format!("ComfyUI preflight failed: could not GET http://{host}:{port}/")
+            format!("ComfyUI preflight failed: could not GET {{http://{host}}}:{port}/")
         })?;
         Ok(())
     }
