@@ -187,7 +187,12 @@ fn open_job_db_read_write(db_path: &Path) -> Result<Connection> {
         db_path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .with_context(|| format!("job database not found or unreadable: {}", db_path.display()))?;
+    .with_context(|| {
+        format!(
+            "job database not found or unreadable: {}",
+            db_path.display()
+        )
+    })?;
 
     conn.busy_timeout(Duration::from_millis(5_000))
         .context("failed to set SQLite busy timeout")?;
@@ -276,7 +281,10 @@ impl Worker {
             update_job_path(
                 &self.config.db_path,
                 job_id,
-                &[JobUpdate::Status(STATUS_FAILED), JobUpdate::Error(&err.to_string())],
+                &[
+                    JobUpdate::Status(STATUS_FAILED),
+                    JobUpdate::Error(&err.to_string()),
+                ],
             )?;
             return Ok(Some(job_id));
         }
@@ -293,7 +301,10 @@ impl Worker {
                 update_job_path(
                     &self.config.db_path,
                     job_id,
-                    &[JobUpdate::Status(STATUS_FAILED), JobUpdate::Error(&err.to_string())],
+                    &[
+                        JobUpdate::Status(STATUS_FAILED),
+                        JobUpdate::Error(&err.to_string()),
+                    ],
                 )?;
                 return Ok(Some(job_id));
             }
@@ -325,18 +336,32 @@ impl Worker {
             command.creation_flags(0x0000_0200);
         }
 
-        let mut child = command.spawn().context("failed to spawn worker subprocess")?;
+        let mut child = command
+            .spawn()
+            .context("failed to spawn worker subprocess")?;
         let child_id = child.id();
 
         let stop = Arc::new(AtomicBool::new(false));
-        let heartbeat = spawn_heartbeat_thread(self.config.db_path.clone(), job_id, Arc::clone(&stop));
+        let heartbeat = spawn_heartbeat_thread(
+            self.config.db_path.clone(),
+            job_id,
+            Arc::clone(&stop),
+        );
 
         let mut stream_threads = Vec::new();
         if let Some(stdout) = child.stdout.take() {
-            stream_threads.push(spawn_stream_thread(stdout, self.config.db_path.clone(), job_id));
+            stream_threads.push(spawn_stream_thread(
+                stdout,
+                self.config.db_path.clone(),
+                job_id,
+            ));
         }
         if let Some(stderr) = child.stderr.take() {
-            stream_threads.push(spawn_stream_thread(stderr, self.config.db_path.clone(), job_id));
+            stream_threads.push(spawn_stream_thread(
+                stderr,
+                self.config.db_path.clone(),
+                job_id,
+            ));
         }
 
         let mut canceled = false;
