@@ -71,6 +71,21 @@ cargo run --manifest-path rust/worker/Cargo.toml -- doctor --strict
 
 `doctor` is read-only and reports Python, `bootstrap_pipeline.py`, the job database schema and counts, `config.yaml`, ComfyUI reachability/checkpoints when configured, `ffmpeg`, `ffprobe`, disk space, GPU/VRAM via `nvidia-smi` when available, and expected writable directories. Critical failures exit nonzero; `--strict` also treats warnings as failures.
 
+Serve read-only job status endpoints locally:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- serve
+cargo run --manifest-path rust/worker/Cargo.toml -- serve --host 127.0.0.1 --port 8787
+```
+
+The status endpoint never mutates the queue database. It opens the existing SQLite file read-only and exposes:
+
+* `GET /healthz` — process liveness
+* `GET /readyz` — read-only DB/schema readiness
+* `GET /stats` — job counts by status
+* `GET /jobs?limit=100&offset=0` — newest-first job list
+* `GET /jobs/:id` — one job with events and artifacts
+
 The Python worker remains the default operational path. The Rust worker resolves the interpreter from `VIDEOAI_PYTHON` when set, otherwise `venv/Scripts/python.exe` on Windows and `venv/bin/python` on Unix.
 
 ***
