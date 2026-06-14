@@ -675,7 +675,7 @@ def _call_omnivoice_oneshot(
 def translate_hinglish(text: str, seg: int = 0) -> str:
     """Translate English to natural Romanized Hinglish using local Ollama model.
 
-    Falls back to edge/google translator if Ollama is not accessible.
+    Falls back to the original text if Ollama is not accessible.
 
     Args:
         text: English text to translate
