@@ -258,8 +258,8 @@ class _SupertonicWorker:
                 try:
                     rem = max(0.1, deadline - _t.time())
                     line = self._stdout_q.get(timeout=rem)
-                except queue.Empty:
-                    raise RuntimeError("Supertonic worker readiness timeout")
+                except queue.Empty as exc:
+                    raise RuntimeError("Supertonic worker readiness timeout") from exc
 
                 if not line:
                     raise RuntimeError("Supertonic worker exited during startup")
@@ -287,7 +287,7 @@ class _SupertonicWorker:
 
     def _cleanup_proc(self):
         if self._proc is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 self._proc.kill()
             self._proc = None
         self._stdout_q = None
@@ -308,16 +308,16 @@ class _SupertonicWorker:
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
-                import time as _t
                 import queue
+                import time as _t
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
                     try:
                         rem = max(0.1, deadline - _t.time())
                         line = self._stdout_q.get(timeout=rem)
-                    except queue.Empty:
-                        raise RuntimeError("Supertonic worker response timeout")
+                    except queue.Empty as exc:
+                        raise RuntimeError("Supertonic worker response timeout") from exc
 
                     if not line:
                         raise RuntimeError("Supertonic worker died mid-request")
@@ -374,7 +374,7 @@ def _call_supertonic_worker(
     Tries the persistent worker first, falls back to one-shot subprocess.
     """
     super_cfg = {}
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(FileNotFoundError):
         super_cfg = load_config().get("tts", {}).get("supertonic", {})
 
     voice = super_cfg.get("voice", "M1")
@@ -552,8 +552,8 @@ class _OmniVoiceWorker:
                 try:
                     rem = max(0.1, deadline - _t.time())
                     line = self._stdout_q.get(timeout=rem)
-                except queue.Empty:
-                    raise RuntimeError("worker readiness timeout")
+                except queue.Empty as exc:
+                    raise RuntimeError("worker readiness timeout") from exc
 
                 if not line:
                     raise RuntimeError("worker exited during startup")
@@ -581,7 +581,7 @@ class _OmniVoiceWorker:
 
     def _cleanup_proc(self):
         if self._proc is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 self._proc.kill()
             self._proc = None
         self._stdout_q = None
@@ -608,8 +608,8 @@ class _OmniVoiceWorker:
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
-                import time as _t
                 import queue
+                import time as _t
 
                 # timeout is an IDLE timeout: it resets each time the worker emits a
                 # line (including progress), so total time scales with the work done.
@@ -618,10 +618,10 @@ class _OmniVoiceWorker:
                     try:
                         rem = max(0.1, deadline - _t.time())
                         line = self._stdout_q.get(timeout=rem)
-                    except queue.Empty:
+                    except queue.Empty as exc:
                         raise RuntimeError(
                             "worker response timeout (no progress within idle window)"
-                        )
+                        ) from exc
 
                     if not line:
                         raise RuntimeError("worker died mid-request")
@@ -762,8 +762,8 @@ class _F5Worker:
                 try:
                     rem = max(0.1, deadline - _t.time())
                     line = self._stdout_q.get(timeout=rem)
-                except queue.Empty:
-                    raise RuntimeError("F5 worker readiness timeout")
+                except queue.Empty as exc:
+                    raise RuntimeError("F5 worker readiness timeout") from exc
 
                 if not line:
                     raise RuntimeError("F5 worker exited during startup")
@@ -791,7 +791,7 @@ class _F5Worker:
 
     def _cleanup_proc(self):
         if self._proc is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 self._proc.kill()
             self._proc = None
         self._stdout_q = None
@@ -813,16 +813,16 @@ class _F5Worker:
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
-                import time as _t
                 import queue
+                import time as _t
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
                     try:
                         rem = max(0.1, deadline - _t.time())
                         line = self._stdout_q.get(timeout=rem)
-                    except queue.Empty:
-                        raise RuntimeError("F5 worker response timeout")
+                    except queue.Empty as exc:
+                        raise RuntimeError("F5 worker response timeout") from exc
 
                     if not line:
                         raise RuntimeError("F5 worker died mid-request")
@@ -944,8 +944,8 @@ class _IndicF5Worker:
                 try:
                     rem = max(0.1, deadline - _t.time())
                     line = self._stdout_q.get(timeout=rem)
-                except queue.Empty:
-                    raise RuntimeError("IndicF5 worker readiness timeout")
+                except queue.Empty as exc:
+                    raise RuntimeError("IndicF5 worker readiness timeout") from exc
 
                 if not line:
                     raise RuntimeError("IndicF5 worker exited during startup")
@@ -973,7 +973,7 @@ class _IndicF5Worker:
 
     def _cleanup_proc(self):
         if self._proc is not None:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 self._proc.kill()
             self._proc = None
         self._stdout_q = None
@@ -994,16 +994,16 @@ class _IndicF5Worker:
             try:
                 self._proc.stdin.write(json.dumps(req) + "\n")
                 self._proc.stdin.flush()
-                import time as _t
                 import queue
+                import time as _t
 
                 deadline = _t.time() + timeout
                 while _t.time() < deadline:
                     try:
                         rem = max(0.1, deadline - _t.time())
                         line = self._stdout_q.get(timeout=rem)
-                    except queue.Empty:
-                        raise RuntimeError("IndicF5 worker response timeout")
+                    except queue.Empty as exc:
+                        raise RuntimeError("IndicF5 worker response timeout") from exc
 
                     if not line:
                         raise RuntimeError("IndicF5 worker died mid-request")
@@ -1131,7 +1131,7 @@ def _call_indicf5_worker(
         result = subprocess.run(
             cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout + 60
         )
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             temp_file.unlink()
 
         if result.returncode == 0 and result.stdout.strip():
@@ -1239,7 +1239,7 @@ def _call_f5_worker(
             cmd.append(f"--ref-text={ref_text}")
 
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             temp_file.unlink()
 
         if result.returncode == 0 and result.stdout.strip():
@@ -1274,7 +1274,7 @@ def _call_omnivoice_worker(
     sentence_gap_ms: when set, overrides the inter-chunk gap (P4-9 fix).
     """
     omnivoice_cfg = {}
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(FileNotFoundError):
         omnivoice_cfg = load_config().get("tts", {}).get("omnivoice", {})
 
     speed = omnivoice_cfg.get("speed", 0.85)
@@ -1762,7 +1762,7 @@ def rvc_convert(
     """
     # Load RVC config
     rvc_cfg = {}
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(FileNotFoundError):
         rvc_cfg = load_config().get("rvc", {})
 
     if not rvc_cfg.get("enabled", False):

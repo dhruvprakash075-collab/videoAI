@@ -88,7 +88,8 @@ def test_helpers():
     # validate_config — now fail-fast with FatalError
     with pytest.raises(FatalError, match="Config must be a dict"):
         validate_config("not a dict")
-    assert validate_config({"key": "val"}) == {"key": "val"}
+    with pytest.raises(FatalError, match="Unknown top-level config section"):
+        validate_config({"key": "val"})
 
 
 def test_decision_record_authority_and_locks():

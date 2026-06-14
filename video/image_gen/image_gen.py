@@ -470,7 +470,7 @@ def _bonsai(
             elif ip_image_kwarg is not None:
                 call_kwargs["ip_adapter_image"] = ip_image_kwarg
 
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(AttributeError):
                 pipe.set_ip_adapter_scale(ip_scale) if dom_char else None
 
             try:

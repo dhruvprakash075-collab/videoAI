@@ -154,11 +154,11 @@ def run_long_pipeline(
     pre-production phase still runs to derive a top-level story arc, but
     individual segment scripts come verbatim from the source.
     """
+    from agents.ui_state import UIState
     from core.main import create_director, create_writer
     from utils import _safe_filename, load_config, setup_run_logging
     from utils.checkpoint import build_checkpoint_manager
     from utils.retry_manager import patch_retries
-    from agents.ui_state import UIState
 
     UIState.reset_run(topic)
     setup_run_logging(Path("logs") / _safe_filename(topic))

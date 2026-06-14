@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +121,7 @@ class UserResponses(BaseModel):
 
 # ── Config Overlay (Phase 5 output) ──
 class CharacterEntry(BaseModel):
+    model_config = {"extra": "forbid"}
     name: str
     description: str = ""
     keywords: list[str] = []
@@ -621,17 +622,44 @@ SECTION_MODELS: dict[str, type[BaseModel]] = {
 }
 
 
+class CharactersConfig(RootModel[dict[str, CharacterEntry]]):
+    pass
+
+
+class SceneTemplatesConfig(RootModel[dict[str, str]]):
+    pass
+
+
+ALLOWED_KEYS = {
+    # Dict-valued sections validated by SECTION_MODELS
+    *SECTION_MODELS.keys(),
+    # Other valid sections
+    "language",
+    "project_name",
+    "theme",
+    "narrator_persona",
+    "world_lore",
+    "active_plot_threads",
+    "characters",
+    "sub_characters",
+    "scene_templates",
+    "visualization",
+    "production_notes",
+    "_director_vision",
+    "provenance",
+    "_decision_record",
+}
+
+
 def validate_config(raw_config: dict) -> dict:
     """Strict full-config validation via Pydantic schemas.
 
-    Every known dict-valued config section is validated through its
-    Pydantic model with extra="forbid".  On validation failure, raises a
-    FatalError with section+field detail so the pipeline fails fast with a
-    typed error instead of a generic one.
-    Scalar fields (language, characters, scene_templates, etc.) are passed
-    through as-is.
-    Unknown sections are also passed through for forward compatibility.
+    Every known config section is validated through its Pydantic model.
+    Unknown top-level sections are rejected.
+    On validation failure, raises a FatalError with section+field detail.
     """
+    from pydantic import ValidationError
+
     from utils.errors import FatalError
 
     if not isinstance(raw_config, dict):
@@ -639,24 +667,84 @@ def validate_config(raw_config: dict) -> dict:
 
     validated: dict = {}
     for key, value in raw_config.items():
+        if key not in ALLOWED_KEYS:
+            raise FatalError("Unknown top-level config section '%s'" % key)
+
         if key in SECTION_MODELS:
             if isinstance(value, dict):
                 try:
                     validated[key] = SECTION_MODELS[key](**value).model_dump()
-                except Exception as exc:
+                except ValidationError as exc:
+                    errors = []
+                    for error in exc.errors():
+                        loc = ".".join(str(x) for x in error.get("loc", []))
+                        msg = error.get("msg", "")
+                        errors.append(f"field '{loc}' is invalid ({msg})")
                     raise FatalError(
-                        "Config section '%s' validation failed: %s" % (key, exc)
+                        "Config section '%s' validation failed: %s" % (key, "; ".join(errors))
                     ) from exc
             else:
                 raise FatalError(
                     "Config section '%s' must be a dict, got %s" % (key, type(value).__name__)
                 )
+        elif key in ("characters", "sub_characters"):
+            if isinstance(value, dict):
+                try:
+                    validated[key] = CharactersConfig(value).root
+                    # Dump back to plain dict of dicts
+                    validated[key] = {k: v.model_dump() for k, v in validated[key].items()}
+                except ValidationError as exc:
+                    errors = []
+                    for error in exc.errors():
+                        loc = ".".join(str(x) for x in error.get("loc", []))
+                        msg = error.get("msg", "")
+                        errors.append(f"field '{loc}' is invalid ({msg})")
+                    raise FatalError(
+                        "Config section '%s' validation failed: %s" % (key, "; ".join(errors))
+                    ) from exc
+            else:
+                raise FatalError(
+                    "Config section '%s' must be a dict, got %s" % (key, type(value).__name__)
+                )
+        elif key == "scene_templates":
+            if isinstance(value, dict):
+                try:
+                    validated[key] = SceneTemplatesConfig(value).root
+                except ValidationError as exc:
+                    errors = []
+                    for error in exc.errors():
+                        loc = ".".join(str(x) for x in error.get("loc", []))
+                        msg = error.get("msg", "")
+                        errors.append(f"field '{loc}' is invalid ({msg})")
+                    raise FatalError(
+                        "Config section '%s' validation failed: %s" % (key, "; ".join(errors))
+                    ) from exc
+            else:
+                raise FatalError(
+                    "Config section '%s' must be a dict, got %s" % (key, type(value).__name__)
+                )
+        elif key == "language":
+            if isinstance(value, dict):
+                try:
+                    validated[key] = LanguageConfig(**value).model_dump()
+                except ValidationError as exc:
+                    errors = []
+                    for error in exc.errors():
+                        loc = ".".join(str(x) for x in error.get("loc", []))
+                        msg = error.get("msg", "")
+                        errors.append(f"field '{loc}' is invalid ({msg})")
+                    raise FatalError(
+                        "Config section 'language' validation failed: %s" % ("; ".join(errors))
+                    ) from exc
+            else:
+                # pass through scalar language code
+                validated[key] = value
         else:
-            # Scalar fields (language, characters, scene_templates) and
-            # unknown sections pass through (forward compat).
+            # project_name, theme, narrator_persona, world_lore, active_plot_threads, etc.
             validated[key] = value
 
     return validated
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════

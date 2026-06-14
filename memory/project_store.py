@@ -94,7 +94,7 @@ def _atomic_write(path: Path, data: dict) -> None:
         os.replace(tmp, path)
     except Exception as e:
         log.exception(f"Atomic write failed for {path}: {e}")
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
         raise
 

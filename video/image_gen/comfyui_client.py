@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from utils.circuit_breaker import BreakerOpen, CircuitBreakerRegistry
 from utils.errors import ComfyUIError
-from utils.circuit_breaker import CircuitBreakerRegistry, BreakerOpen
 
 log = logging.getLogger(__name__)
 

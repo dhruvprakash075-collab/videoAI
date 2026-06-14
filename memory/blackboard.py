@@ -86,7 +86,7 @@ class Blackboard:
             log.debug(f"[BLACKBOARD] Written: {self._path}")
         except Exception as e:
             log.exception(f"[BLACKBOARD] Atomic write failed: {e}")
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
             raise
 

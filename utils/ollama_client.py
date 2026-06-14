@@ -24,6 +24,7 @@ import urllib.request
 log = logging.getLogger(__name__)
 from utils.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry
 
+
 class _BreakerState(CircuitBreaker):
     """Subclass of CircuitBreaker for backward compatibility in legacy tests."""
     def __init__(self, fails_threshold: int, cooldown_s: float):
@@ -272,7 +273,7 @@ class OllamaClient:
             return "".join(full).strip()
     def evict(self, model: str) -> None:
         """Send keep_alive=0 to evict a model from VRAM (best-effort, non-fatal)."""
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(urllib.error.URLError, TimeoutError, OSError):
             self._post(
                 f"{self._host}/api/generate",
                 {"model": model, "keep_alive": 0},

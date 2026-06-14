@@ -107,7 +107,11 @@ def get_language(config: dict) -> str:
     This is a first-class config dimension so TTS, translation, subtitles,
     and narrator all use the same value. Falls back to 'hi' (Hindi).
     """
-    lang = config.get("language") or config.get("tts", {}).get("lang", "hi")
+    lang = config.get("language")
+    if isinstance(lang, dict):
+        return str(lang.get("code") or "hi")
+    if not lang:
+        lang = config.get("tts", {}).get("lang", "hi")
     return str(lang)
 
 

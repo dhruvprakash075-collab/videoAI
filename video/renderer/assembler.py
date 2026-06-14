@@ -631,7 +631,7 @@ def concatenate_segments(
                     timeout=900,
                 )
         finally:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 concat.unlink(missing_ok=True)
     else:
         log.info("No music provided, concatenating directly with homogenized audio...")
@@ -659,7 +659,7 @@ def concatenate_segments(
                 timeout=600,
             )
         finally:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 concat.unlink(missing_ok=True)
 
     # ── A3: 2-pass EBU R128 loudnorm ──────────────────────────────────────
@@ -751,7 +751,7 @@ def concatenate_segments(
 
             _shutil.copy2(str(_temp_concat), str(output))
         finally:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 _temp_concat.unlink(missing_ok=True)
 
     log.info(f"Final video: {output}")

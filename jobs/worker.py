@@ -1,6 +1,7 @@
 import json
 import os
 import signal
+import sqlite3
 import subprocess
 import threading
 import time
@@ -129,7 +130,7 @@ class Worker:
         # reviving the old thread which heartbeated the finished job forever.
         # Event.wait() also exits promptly instead of sleeping out the interval.
         while not stop_event.is_set():
-            with suppress(Exception):
+            with suppress(sqlite3.Error):
                 self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
             stop_event.wait(HEARTBEAT_INTERVAL)
 
@@ -141,7 +142,7 @@ class Worker:
                 text = line.rstrip("\n")
                 self.store.append_event(job_id, text, event_type="log")
                 # also refresh heartbeat on output
-                with suppress(Exception):
+                with suppress(sqlite3.Error):
                     self.store.update_job(job_id, heartbeat_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         except Exception as exc:
             self.store.append_event(job_id, f"stream_error: {exc}", event_type="system")
@@ -272,7 +273,7 @@ class Worker:
                 break
             except Exception as exc:
                 # record unexpected errors and continue
-                with suppress(Exception):
+                with suppress(sqlite3.Error):
                     self.store.append_event(0, f"worker_error: {exc}", event_type="system")
                 time.sleep(poll_interval)
 

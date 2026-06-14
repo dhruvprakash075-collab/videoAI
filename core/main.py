@@ -105,9 +105,10 @@ def create_director(config: dict) -> Agent:
 
 def _ollama_model_available(model_name: str, host: str) -> bool:
     """Return True if `model_name` is pulled in Ollama (prefix match on tags)."""
+    import json as _json
     import urllib.error
     import urllib.request
-    import json as _json
+
     from utils.errors import RecoverableError
 
     try:

@@ -86,7 +86,8 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
             _mdl = models_cfg.get(_key, "")
             if _mdl and _mdl not in seen:
                 seen.add(_mdl)
-                with contextlib.suppress(Exception):
+                import urllib.error as _ue
+                with contextlib.suppress(_ue.URLError, TimeoutError, OSError):
                     _ur.urlopen(
                         _ur.Request(
                             f"{host}/api/generate",
@@ -146,7 +147,8 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                 for _m in ps_data.get("models", []):
                     _name = _m.get("name", "")
                     if _name:
-                        with contextlib.suppress(Exception):
+                        import urllib.error as _ue2
+                        with contextlib.suppress(_ue2.URLError, TimeoutError, OSError):
                             _ur2.urlopen(
                                 _ur2.Request(
                                     f"{host2}/api/generate",
@@ -559,6 +561,7 @@ def make_process_segment(
                 log.debug(f"  Seg {i}: using CrewAI writer fallback")
                 from crewai import Crew, Task
                 from crewai.process import Process
+
                 from utils.crewai_breaker import (
                     BreakerOpen,
                     guarded_crewai_kickoff,
@@ -700,7 +703,7 @@ def make_process_segment(
         devanagari_script = None
         from config.config import get_language
 
-        _audio_lang = get_language(tts_cfg)
+        _audio_lang = get_language(config)
         if _audio_lang == "hi":
             try:
                 with global_scheduler.task("heavy", f"Seg{i}:translate"):
@@ -746,7 +749,7 @@ def make_process_segment(
 
         from config.config import get_language
 
-        audio_lang = get_language(tts_cfg)
+        audio_lang = get_language(config)
         mood = plan.get("mood", "mysterious")
 
         if audio_lang == "hi" and dev_script:

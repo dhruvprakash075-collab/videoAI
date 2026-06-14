@@ -50,7 +50,7 @@ class StoryMemory:
                 )
                 os.replace(tmp_path, self.memory_file)
             except Exception:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):
                     tmp_path.unlink(missing_ok=True)
                 raise
 

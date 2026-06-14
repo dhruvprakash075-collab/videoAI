@@ -288,3 +288,48 @@ show_missing = true
 skip_covered = false
 precision = 1
 sort = "Cover"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.manual_integration_test_b",
+    "tests.manual_integration_test",
+    "tests.conftest",
+    "tests.test_layered_v3",
+    "manual_integration_test_b",
+    "manual_integration_test",
+    "conftest",
+    "test_layered_v3",
+    "utils.retry_manager",
+    "utils.emotion_control",
+
+    "utils.media_analyzer",
+    "utils.map_codebase",
+    "utils.concurrency",
+    "utils.source_splitter",
+    "utils.context_manager",
+    "utils.source_loader",
+    "utils.story_planner",
+    "utils.web_search",
+    "utils.utils",
+    "utils.local_ui",
+    "audio.indicf5_worker",
+    "audio.f5_worker",
+    "video.image_gen.image_gen",
+    "video.image_gen.layered_v3",
+    "video.renderer.assembler",
+    "core.pre_production",
+    "core.segment_runner",
+    "core.post_production",
+    "core.pipeline_long",
+    "jobs.job_store",
+    "memory.project_store",
+    "agents.ui_state",
+    "agents.director_agent",
+]
+ignore_errors = true
+
+

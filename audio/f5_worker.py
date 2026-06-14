@@ -304,7 +304,7 @@ def _synthesize(
         _tmp = str(out_path.with_suffix(".ref_tmp.wav"))
         sf.write(_tmp, _silence, _sr)
         ref_audio, ref_text_used = preprocess_ref_audio_text(_tmp, ".", show_info=_quiet)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             Path(_tmp).unlink()
 
     audio, sr, _ = infer_process(

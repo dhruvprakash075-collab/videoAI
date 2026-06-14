@@ -171,7 +171,7 @@ def _compute_identity_hash(char_key: str, project_id: str, approved_assets: dict
     hasher = hashlib.md5()
     for fpath in files_to_hash:
         if fpath and Path(fpath).exists():
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 hasher.update(Path(fpath).read_bytes())
     return hasher.hexdigest()[:16]
 

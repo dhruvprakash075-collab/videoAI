@@ -55,9 +55,7 @@ jobs:
           pip install mypy pydantic
       - name: Type check with mypy
         run: |
-          python -m mypy config/config_schemas.py config/config.py \
-                     utils/errors.py utils/checkpoint.py utils/circuit_breaker.py \
-                     --ignore-missing-imports --strict-optional
+          python -m mypy core config utils audio video agents tests
 
   test:
     runs-on: ubuntu-latest
@@ -83,7 +81,7 @@ jobs:
                      tests/test_circuit_breaker.py \
                      tests/unit/ tests/integration/ \
                      -v --tb=short -x \
-                     --cov=config --cov=utils --cov=core --cov=audio \
+                     --cov \
                      --cov-report=term-missing \
                      --cov-fail-under=80
       - name: Upload coverage report
