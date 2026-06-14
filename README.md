@@ -42,6 +42,18 @@ Use the built-in continuous integration in GitLab.
 * [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
 * [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
 
+## Rust worker sidecar
+
+The Rust worker lives in `rust/worker` as a standalone sidecar binary named `videoai-worker`. It is a process supervisor only: it reads the existing SQLite job queue and, in later phases, will spawn `bootstrap_pipeline.py` without importing Python ML components.
+
+For the initial scaffold, use the read-only CLI to inspect queued jobs:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs
+```
+
+The command opens the existing `studio_projects/jobs/video_ai_jobs.db` file read-only, applies a 5000 ms busy timeout, and prints `id`, `status`, `topic`, and `created_at` in the same newest-first order as `JobStore.list_jobs()`. It does not create the database; start the Python app once if the DB does not exist yet.
+
 ***
 
 # Editing this README

@@ -1,0 +1,24 @@
+name: rust-worker-ci
+on:
+  push:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-worker-ci.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-worker-ci.yml'
+defaults:
+  run:
+    working-directory: rust
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.81.0
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all
