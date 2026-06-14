@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from video.image_gen.image_gen import (
+    _pexels,
     _prompt_cache_key,
     _record_oom_event,
     _resolve_dominant_char,
@@ -180,6 +181,37 @@ def test_generate_images_empty_list(tmp_path: Path):
     with patch("video.image_gen.image_gen._bonsai", return_value=[]) as bns:
         generate_images([], tmp_path, cfg)
     assert bns.call_args.args[0] == []
+
+
+def test_pexels_search_url_has_no_literal_braces(tmp_path: Path, monkeypatch):
+    """Regression guard for malformed f-string URLs in the dormant Pexels path."""
+    import json
+    import urllib.request
+
+    captured_urls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"photos": []}).encode("utf-8")
+
+    def fake_urlopen(req, *args, **kwargs):
+        captured_urls.append(req.full_url if isinstance(req, urllib.request.Request) else req)
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    assert _pexels(["hero portrait"], tmp_path, {"pexels_api_key": "test-key"}) == []
+    assert captured_urls == [
+        "https://api.pexels.com/v1/search?query=hero+portrait&per_page=1&orientation=landscape"
+    ]
+    assert "{" not in captured_urls[0]
+    assert "}" not in captured_urls[0]
 
 
 def test_generate_images_passes_project_id(tmp_path: Path):
