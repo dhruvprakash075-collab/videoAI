@@ -17,6 +17,7 @@ use clap::{Parser, Subcommand};
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use serde::Serialize;
 use serde_json::{Map, Value};
+use videoai_worker::assets::{self, AssetsCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
 const HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
@@ -94,6 +95,12 @@ enum Commands {
         /// Port to bind.
         #[arg(long, default_value_t = 8787)]
         port: u16,
+    },
+
+    /// Inspect and validate run output assets.
+    Assets {
+        #[command(subcommand)]
+        command: AssetsCommand,
     },
 }
 
@@ -177,6 +184,7 @@ fn main() -> Result<()> {
                 .context("failed to create tokio runtime")?
                 .block_on(status::run_server(db_path, host, port))?;
         }
+        Commands::Assets { command } => assets::run_command(command)?,
     }
 
     Ok(())
