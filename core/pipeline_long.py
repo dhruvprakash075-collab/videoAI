@@ -270,6 +270,7 @@ def run_long_pipeline(
             _rec.words_per_segment.value or config.get("script", {}).get("words_per_segment", 130)
         )
         _seg_count_locked = bool(_rec.segment_count.locked)
+        _images_per_segment_locked = bool(_rec.images_per_segment.locked)
         log.info(
             f"[PIPELINE] Using DecisionRecord — "
             f"segments={n_segs} ({_rec.segment_count.provenance}, locked={_seg_count_locked}), "
@@ -281,6 +282,7 @@ def run_long_pipeline(
         n_segs = max(1, _math.ceil(total / seg_min))
         words_per_seg = config.get("script", {}).get("words_per_segment", 130)
         _seg_count_locked = False
+        _images_per_segment_locked = False
         log.info(
             f"[PIPELINE] No DecisionRecord found — "
             f"falling back to arithmetic: segments={n_segs}, words/seg={words_per_seg}"
@@ -375,8 +377,27 @@ def run_long_pipeline(
 
     # Cap images per segment
     _max_imgs = config.get("script", {}).get("max_images_per_segment", 10)
+    _default_imgs = config["script"].get("default_images_per_segment", 6)
     for seg_plan in outline:
-        _ni = seg_plan.get("num_images", config["script"].get("default_images_per_segment", 6))
+        if _images_per_segment_locked:
+            _old_ni = seg_plan.get("num_images", _default_imgs)
+            if _old_ni != _default_imgs:
+                log.info(
+                    f"  Seg {seg_plan.get('seg', '?')}: images locked "
+                    f"{_old_ni} → {_default_imgs}"
+                )
+            seg_plan["num_images"] = _default_imgs
+            cp_list = seg_plan.get("char_presence")
+            if isinstance(cp_list, list):
+                if len(cp_list) >= _default_imgs:
+                    seg_plan["char_presence"] = cp_list[:_default_imgs]
+                elif cp_list:
+                    seg_plan["char_presence"] = cp_list + [cp_list[-1]] * (
+                        _default_imgs - len(cp_list)
+                    )
+            continue
+
+        _ni = seg_plan.get("num_images", _default_imgs)
         if _ni > _max_imgs:
             log.info(f"  Seg {seg_plan.get('seg', '?')}: capping images {_ni} → {_max_imgs}")
             seg_plan["num_images"] = _max_imgs

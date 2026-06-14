@@ -909,6 +909,35 @@ class DecisionRecord(BaseModel):
 
         both_locked = sc.locked and td.locked
         if both_locked:
+            if not sdm.locked:
+                new_seg_duration = round(float(td.value) / max(1, int(sc.value)), 3)
+                self.adjustments.append(
+                    {
+                        "field": "segment_duration_min",
+                        "type": "conflict_resolved",
+                        "rule": "segment_count and total_duration locked → segment duration recomputed",
+                        "from": sdm.value,
+                        "to": new_seg_duration,
+                    }
+                )
+                object.__setattr__(
+                    self,
+                    "segment_duration_min",
+                    Decision(
+                        value=new_seg_duration,
+                        provenance="cli_flag"
+                        if "cli_flag" in (sc.provenance, td.provenance)
+                        else td.provenance,
+                        locked=False,
+                        rationale="recomputed from locked total_duration_min / segment_count",
+                    ),
+                )
+                _dr_log.info(
+                    f"[DECISION] Conflict resolved: segment_count ({sc.value}) and "
+                    f"total_duration_min ({td.value}min) locked → "
+                    f"segment_duration_min={new_seg_duration}min"
+                )
+                return
             raise DecisionConflict(
                 f"Conflict: segment_count={sc.value} × segment_duration={sdm.value}min "
                 f"= {derived_total}min, but total_duration_min is locked to {td.value}min. "

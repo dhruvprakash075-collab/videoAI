@@ -132,13 +132,22 @@ def test_decision_record_authority_and_locks():
 
 
 def test_decision_record_conflicts():
-    # Both locked and inconsistent -> raise DecisionConflict
+    # Segment count + total duration locked -> segment duration is recomputed
+    # unless segment duration itself is also locked.
     rec = DecisionRecord()
     rec.set("segment_count", 5, "user", lock=True)
     rec.set("segment_duration_min", 2.0, "user")
     rec.set("total_duration_min", 20.0, "user", lock=True)
+    rec.resolve_conflicts()
+    assert rec.segment_duration_min.value == 4.0
+
+    # All three structural duration fields locked and inconsistent -> raise
+    rec_all_locked = DecisionRecord()
+    rec_all_locked.set("segment_count", 5, "user", lock=True)
+    rec_all_locked.set("segment_duration_min", 2.0, "user", lock=True)
+    rec_all_locked.set("total_duration_min", 20.0, "user", lock=True)
     with pytest.raises(DecisionConflict):
-        rec.resolve_conflicts()
+        rec_all_locked.resolve_conflicts()
 
     # One locked (segment_count) -> segment_count wins
     rec2 = DecisionRecord()

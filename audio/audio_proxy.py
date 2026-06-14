@@ -871,6 +871,22 @@ def tts_generate(
                 word_timestamps = None
 
         if wav_path.exists():
+            if word_timestamps is None:
+                align_cfg = _cfg.get("tts", {}).get("alignment", {}) or {}
+                if align_cfg.get("enabled", True):
+                    try:
+                        from audio.tts_alignment import align_audio
+
+                        aligned = align_audio(
+                            wav_path,
+                            model_name=align_cfg.get("model", "base"),
+                            device=align_cfg.get("device", "cpu"),
+                            compute_type=align_cfg.get("compute_type", "int8"),
+                        )
+                        if aligned and Path(aligned).exists():
+                            word_timestamps = Path(aligned)
+                    except Exception as align_err:
+                        log.warning(f"TTS alignment failed for {wav_path.name}: {align_err}")
             log.info(f"TTS generated: {wav_path}")
             return {"wav_path": wav_path, "word_timestamps": word_timestamps}
         log.error(f"TTS returned path that doesn't exist: {wav_path}")
