@@ -1,3 +1,6 @@
+mod doctor;
+mod status;
+
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::ToSocketAddrs;
@@ -61,6 +64,36 @@ enum Commands {
         /// Path to job database.
         #[arg(long, default_value = DEFAULT_DB_PATH)]
         db_path: PathBuf,
+    },
+
+    /// Run environment health checks.
+    Doctor {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+
+        /// Treat warnings as failures.
+        #[arg(long)]
+        strict: bool,
+    },
+
+    /// Serve read-only job status endpoints.
+    Serve {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Host address to bind.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind.
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
     },
 }
 
@@ -129,6 +162,20 @@ fn main() -> Result<()> {
             } else {
                 worker.run_forever()?;
             }
+        }
+        Commands::Doctor {
+            db_path,
+            json,
+            strict,
+        } => doctor::run_doctor(db_path, json, strict)?,
+        Commands::Serve {
+            db_path,
+            host,
+            port,
+        } => {
+            tokio::runtime::Runtime::new()
+                .context("failed to create tokio runtime")?
+                .block_on(status::run_server(db_path, host, port))?;
         }
     }
 
