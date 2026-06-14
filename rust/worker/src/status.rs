@@ -126,7 +126,7 @@ fn build_router(db_path: PathBuf) -> Router {
         .route("/readyz", get(readyz))
         .route("/stats", get(stats))
         .route("/jobs", get(jobs))
-        .route("/jobs/:id", get(job_detail))
+        .route("/jobs/{id}", get(job_detail))
         .with_state(AppState {
             db_path: Arc::new(db_path),
         })
