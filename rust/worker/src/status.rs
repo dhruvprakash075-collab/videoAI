@@ -170,7 +170,15 @@ async fn jobs(State(state): State<AppState>, Query(params): Query<PageParams>) -
     let limit = params.limit.unwrap_or(100).min(500);
     let offset = params.offset.unwrap_or(0);
     match read_jobs(&state.db_path, limit, offset) {
-        Ok(jobs) => (StatusCode::OK, Json(JobsResponse { jobs, limit, offset })).into_response(),
+        Ok(jobs) => (
+            StatusCode::OK,
+            Json(JobsResponse {
+                jobs,
+                limit,
+                offset,
+            }),
+        )
+            .into_response(),
         Err(err) => error_response(StatusCode::SERVICE_UNAVAILABLE, err),
     }
 }
@@ -178,13 +186,22 @@ async fn jobs(State(state): State<AppState>, Query(params): Query<PageParams>) -
 async fn job_detail(State(state): State<AppState>, AxumPath(id): AxumPath<i64>) -> Response {
     match read_job_detail(&state.db_path, id) {
         Ok(Some(response)) => (StatusCode::OK, Json(response)).into_response(),
-        Ok(None) => error_response(StatusCode::NOT_FOUND, anyhow::anyhow!("job not found: {id}")),
+        Ok(None) => error_response(
+            StatusCode::NOT_FOUND,
+            anyhow::anyhow!("job not found: {id}"),
+        ),
         Err(err) => error_response(StatusCode::SERVICE_UNAVAILABLE, err),
     }
 }
 
 fn error_response(status: StatusCode, err: anyhow::Error) -> Response {
-    (status, Json(ErrorResponse { error: err.to_string() })).into_response()
+    (
+        status,
+        Json(ErrorResponse {
+            error: err.to_string(),
+        }),
+    )
+        .into_response()
 }
 
 fn open_read_only(db_path: &Path) -> Result<Connection> {
@@ -198,7 +215,12 @@ fn open_read_only(db_path: &Path) -> Result<Connection> {
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .with_context(|| format!("job database not found or unreadable: {}", db_path.display()))?;
+    .with_context(|| {
+        format!(
+            "job database not found or unreadable: {}",
+            db_path.display()
+        )
+    })?;
     conn.busy_timeout(std::time::Duration::from_millis(5_000))
         .context("failed to set SQLite busy timeout")?;
     Ok(conn)
@@ -223,8 +245,11 @@ fn read_stats(db_path: &Path) -> Result<StatsResponse> {
     validate_schema(&conn)?;
     let total = conn.query_row("SELECT COUNT(*) FROM jobs", [], |row| row.get(0))?;
     let mut by_status = BTreeMap::new();
-    let mut stmt = conn.prepare("SELECT status, COUNT(*) FROM jobs GROUP BY status ORDER BY status")?;
-    let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;
+    let mut stmt =
+        conn.prepare("SELECT status, COUNT(*) FROM jobs GROUP BY status ORDER BY status")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
     for row in rows {
         let (status, count) = row?;
         by_status.insert(status, count);
@@ -279,9 +304,8 @@ fn read_job_detail(db_path: &Path, id: i64) -> Result<Option<JobDetailResponse>>
             message: row.get("message")?,
         })
     })?)?;
-    let mut artifacts_stmt = conn.prepare(
-        "SELECT id, key, path, meta FROM job_artifacts WHERE job_id=?1 ORDER BY id ASC",
-    )?;
+    let mut artifacts_stmt = conn
+        .prepare("SELECT id, key, path, meta FROM job_artifacts WHERE job_id=?1 ORDER BY id ASC")?;
     let artifacts = collect_rows(artifacts_stmt.query_map([id], |row| {
         Ok(JobArtifactRecord {
             id: row.get("id")?,
@@ -290,7 +314,11 @@ fn read_job_detail(db_path: &Path, id: i64) -> Result<Option<JobDetailResponse>>
             meta: row.get("meta")?,
         })
     })?)?;
-    Ok(Some(JobDetailResponse { job, events, artifacts }))
+    Ok(Some(JobDetailResponse {
+        job,
+        events,
+        artifacts,
+    }))
 }
 
 fn row_to_job_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobRecord> {
@@ -445,7 +473,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["job"]["topic"], "Second");
         assert_eq!(body["events"].as_array().expect("events array").len(), 1);
-        assert_eq!(body["artifacts"].as_array().expect("artifacts array").len(), 1);
+        assert_eq!(
+            body["artifacts"].as_array().expect("artifacts array").len(),
+            1
+        );
         Ok(())
     }
 
