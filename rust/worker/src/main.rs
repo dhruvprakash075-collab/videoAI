@@ -1,3 +1,5 @@
+mod doctor;
+
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::ToSocketAddrs;
@@ -61,6 +63,21 @@ enum Commands {
         /// Path to job database.
         #[arg(long, default_value = DEFAULT_DB_PATH)]
         db_path: PathBuf,
+    },
+
+    /// Run environment health checks.
+    Doctor {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+
+        /// Treat warnings as failures.
+        #[arg(long)]
+        strict: bool,
     },
 }
 
@@ -130,6 +147,11 @@ fn main() -> Result<()> {
                 worker.run_forever()?;
             }
         }
+        Commands::Doctor {
+            db_path,
+            json,
+            strict,
+        } => doctor::run_doctor(db_path, json, strict)?,
     }
 
     Ok(())
