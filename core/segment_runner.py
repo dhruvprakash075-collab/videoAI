@@ -711,6 +711,15 @@ def make_process_segment(
                         devanagari_script = director_agent_instance.translate_to_devanagari(
                             script, plan, state["context"]
                         )
+                if devanagari_script:
+                    max_translation_chars = max(len(script) * 4, len(script) + 500)
+                    if len(devanagari_script) > max_translation_chars:
+                        log.warning(
+                            f"  Seg {i}: Director translation expanded from "
+                            f"{len(script)} to {len(devanagari_script)} chars; "
+                            "using original script for TTS"
+                        )
+                        devanagari_script = None
                 log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e})")

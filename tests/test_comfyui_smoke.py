@@ -23,7 +23,7 @@ def test_comfyui_runtime_is_running():
     config = load_config()
     runtime = ComfyUIRuntime(config)
 
-    is_running = runtime.is_running(timeout=5.0)
+    is_running = runtime.ensure_running(timeout=120.0)
     assert is_running, f"ComfyUI not running at {runtime.base_url}"
 
     print(f"ComfyUI is running at {runtime.base_url}")

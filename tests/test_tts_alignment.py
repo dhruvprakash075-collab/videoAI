@@ -213,6 +213,41 @@ def test_assembler_does_not_warn_when_word_json_present(tmp_path, monkeypatch, c
     assert not any("REGRESSION: Whisper fallback fired" in rec.message for rec in caplog.records)
 
 
+def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
+    tmp_path, monkeypatch, caplog
+):
+    dummy_audio = tmp_path / "seg.wav"
+    dummy_audio.write_bytes(b"")
+
+    words_json = tmp_path / "seg.words.json"
+    words_json.write_text(
+        json.dumps([{"word": "नमस्ते", "start": 0.0, "end": 0.5}]),
+        encoding="utf-8",
+    )
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("stop after confirming Whisper fallback was selected")
+
+    monkeypatch.setattr(assembler, "_get_whisper_model", _boom)
+
+    caplog.set_level("INFO")
+    srt_path = tmp_path / "seg.srt"
+
+    assembler._write_srt(
+        script="नमस्ते दुनिया।",
+        path=srt_path,
+        duration=1.0,
+        audio=dummy_audio,
+        format_style="classic",
+        word_timestamps_json=words_json,
+        is_final=True,
+        subtitle_language="en",
+    )
+
+    assert any("Skipping provided word timestamps" in rec.message for rec in caplog.records)
+    assert any("REGRESSION: Whisper fallback fired" in rec.message for rec in caplog.records)
+
+
 def test_proxy_to_renderer_chain_no_regression_warning_when_word_json_exists(
     tmp_path, monkeypatch, caplog
 ):
