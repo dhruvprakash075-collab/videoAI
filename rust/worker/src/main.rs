@@ -342,11 +342,8 @@ impl Worker {
         let child_id = child.id();
 
         let stop = Arc::new(AtomicBool::new(false));
-        let heartbeat = spawn_heartbeat_thread(
-            self.config.db_path.clone(),
-            job_id,
-            Arc::clone(&stop),
-        );
+        let heartbeat =
+            spawn_heartbeat_thread(self.config.db_path.clone(), job_id, Arc::clone(&stop));
 
         let mut stream_threads = Vec::new();
         if let Some(stdout) = child.stdout.take() {
