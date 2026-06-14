@@ -11,7 +11,7 @@ from typing import Any
 
 if os.name == "nt":
     CREATE_NEW_PROCESS_GROUP = 0x00000200
-    CTRL_BREAK_EVENT = signal.CTRL_BREAK_EVENT
+    CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT)
 else:
     CREATE_NEW_PROCESS_GROUP = 0
     CTRL_BREAK_EVENT = signal.SIGINT
