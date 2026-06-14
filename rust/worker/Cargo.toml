@@ -6,13 +6,15 @@ publish = false
 
 [dependencies]
 anyhow = "=1.0.89"
+axum = "=0.7.7"
 chrono = { version = "=0.4.38", default-features = false, features = ["clock", "std"] }
 clap = { version = "=4.5.20", features = ["derive"] }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }
 serde = { version = "=1.0.210", features = ["derive"] }
 serde_json = "=1.0.128"
-tokio = { version = "=1.40.0", features = ["macros", "process", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "=1.40.0", features = ["macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 tracing = "=0.1.40"
 
 [dev-dependencies]
 tempfile = "=3.13.0"
+tower = { version = "=0.5.1", features = ["util"] }
