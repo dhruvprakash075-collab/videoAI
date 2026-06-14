@@ -61,6 +61,16 @@ cargo run --manifest-path rust/worker/Cargo.toml -- run
 cargo run --manifest-path rust/worker/Cargo.toml -- run --once
 ```
 
+Run environment checks before a pipeline run:
+
+```bash
+cargo run --manifest-path rust/worker/Cargo.toml -- doctor
+cargo run --manifest-path rust/worker/Cargo.toml -- doctor --json
+cargo run --manifest-path rust/worker/Cargo.toml -- doctor --strict
+```
+
+`doctor` is read-only and reports Python, `bootstrap_pipeline.py`, the job database schema and counts, `config.yaml`, ComfyUI reachability/checkpoints when configured, `ffmpeg`, `ffprobe`, disk space, GPU/VRAM via `nvidia-smi` when available, and expected writable directories. Critical failures exit nonzero; `--strict` also treats warnings as failures.
+
 The Python worker remains the default operational path. The Rust worker resolves the interpreter from `VIDEOAI_PYTHON` when set, otherwise `venv/Scripts/python.exe` on Windows and `venv/bin/python` on Unix.
 
 ***
