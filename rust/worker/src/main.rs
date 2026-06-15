@@ -18,6 +18,7 @@ use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use videoai_worker::assets::{self, AssetsCommand};
+use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
 const HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
@@ -102,6 +103,12 @@ enum Commands {
         #[command(subcommand)]
         command: AssetsCommand,
     },
+
+    /// Plan and execute FFmpeg final assembly (concat, loudnorm, ducking).
+    Ffmpeg {
+        #[command(subcommand)]
+        command: FfmpegCommand,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -185,6 +192,7 @@ fn main() -> Result<()> {
                 .block_on(status::run_server(db_path, host, port))?;
         }
         Commands::Assets { command } => assets::run_command(command)?,
+        Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
 
     Ok(())
@@ -1323,7 +1331,7 @@ mod tests {
         let (temp_dir, db_path) = create_seeded_job_db(
             r#"
             INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
-            VALUES ('queued', 'Happy Topic', '{"dry_run":true}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            VALUES ('queued', 'Happy Topic', '{\"dry_run\":true}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
             "#,
         )?;
         let fake = write_fake_python(
