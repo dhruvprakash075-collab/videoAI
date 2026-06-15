@@ -19,6 +19,18 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 _DEFAULT_WORKFLOW = "config/comfyui/workflows/qwen_image_edit_api.json"
+_REQUIRED_WORKFLOW_PLACEHOLDERS = {
+    "__BASE_IMAGE__",
+    "__CHARACTER_IMAGE__",
+    "__EDIT_PROMPT__",
+    "__FILENAME_PREFIX__",
+    "__MODEL_PATH__",
+    "__SEED__",
+    "__STEPS__",
+    "__CFG__",
+    "__DENOISE__",
+}
+_OPTIONAL_WORKFLOW_PLACEHOLDERS = {"__LIGHTNING_LORA__"}
 
 
 def _image_gen_cfg(config: dict) -> dict:
@@ -68,6 +80,49 @@ def _copy_file(src: Path, dst: Path) -> None:
     tmp.replace(dst)
 
 
+def _workflow_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def validate_qwen_workflow_template(
+    workflow_path: str | Path,
+    *,
+    require_lightning_lora: bool = False,
+) -> list[str]:
+    """Validate that the Qwen workflow template can be patched safely.
+
+    This does not contact ComfyUI. It only checks that the workflow is JSON,
+    object-shaped, and still exposes the placeholders patched by Python.
+    """
+    path = Path(workflow_path)
+    issues: list[str] = []
+    try:
+        with path.open(encoding="utf-8") as f:
+            workflow = json.load(f)
+    except json.JSONDecodeError as e:
+        return [f"qwen_edit workflow JSON is invalid: {path} ({e})"]
+    except OSError as e:
+        return [f"qwen_edit workflow file could not be read: {path} ({e})"]
+
+    if not isinstance(workflow, dict):
+        return [f"qwen_edit workflow must be a JSON object: {path}"]
+
+    workflow_blob = _workflow_text(workflow)
+    missing_required = sorted(
+        placeholder for placeholder in _REQUIRED_WORKFLOW_PLACEHOLDERS if placeholder not in workflow_blob
+    )
+    if missing_required:
+        issues.append(
+            "qwen_edit workflow missing required placeholder(s): "
+            + ", ".join(missing_required)
+        )
+
+    if require_lightning_lora and "__LIGHTNING_LORA__" not in workflow_blob:
+        issues.append("qwen_edit workflow missing optional LoRA placeholder: __LIGHTNING_LORA__")
+
+    return issues
+
+
 def preflight_qwen_edit(config: dict) -> list[str]:
     """Return missing Qwen-Image-Edit prerequisites without contacting ComfyUI."""
     img = _image_gen_cfg(config)
@@ -78,6 +133,13 @@ def preflight_qwen_edit(config: dict) -> list[str]:
     workflow_path = qwen.get("workflow_path") or _DEFAULT_WORKFLOW
     if not Path(workflow_path).exists():
         missing.append(f"qwen_edit workflow file not found: {workflow_path}")
+    else:
+        missing.extend(
+            validate_qwen_workflow_template(
+                workflow_path,
+                require_lightning_lora=bool(qwen.get("lightning_lora", "")),
+            )
+        )
 
     model_path = qwen.get("model_path", "")
     if not model_path:
@@ -252,8 +314,19 @@ def _patch_qwen_workflow(
             inputs["seed"] = seed
         if "steps" in inputs:
             inputs["steps"] = int(qwen.get("steps", inputs["steps"]))
+        if "cfg" in inputs:
+            inputs["cfg"] = float(qwen.get("cfg", inputs["cfg"]))
         if "denoise" in inputs:
             inputs["denoise"] = float(qwen.get("denoise", inputs["denoise"]))
+        if "backend" in inputs:
+            inputs["backend"] = qwen.get("backend", inputs["backend"])
+        if "vram_offload" in inputs:
+            inputs["vram_offload"] = bool(qwen.get("vram_offload", inputs["vram_offload"]))
+        if "model_path" in inputs:
+            inputs["model_path"] = qwen.get("model_path", inputs["model_path"])
+        for lora_key in ("lightning_lora", "lora_name", "lora_path"):
+            if lora_key in inputs and qwen.get("lightning_lora", ""):
+                inputs[lora_key] = qwen.get("lightning_lora", "")
         if "filename_prefix" in inputs:
             inputs["filename_prefix"] = output_path.stem
         if "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")):
