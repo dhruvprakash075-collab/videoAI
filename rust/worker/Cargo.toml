@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [features]
 ffmpeg-integration = []
 python-extension = ["dep:pyo3", "pyo3/extension-module"]
