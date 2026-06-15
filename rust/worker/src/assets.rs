@@ -593,6 +593,8 @@ impl Sha256 {
     }
 
     fn finalize_hex(mut self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+
         self.buffer[self.buffer_len] = 0x80;
         self.buffer_len += 1;
 
@@ -610,7 +612,10 @@ impl Sha256 {
 
         let mut out = String::with_capacity(64);
         for word in self.state {
-            out.push_str(&format!("{word:08x}"));
+            for byte in word.to_be_bytes() {
+                out.push(HEX[usize::from(byte >> 4)] as char);
+                out.push(HEX[usize::from(byte & 0x0f)] as char);
+            }
         }
         out
     }
@@ -716,7 +721,8 @@ mod tests {
     #[test]
     fn sha256_handles_multi_block_inputs() {
         let mut hasher = Sha256::new();
-        hasher.update(&vec![b'a'; 1_000]);
+        let input = [b'a'; 1_000];
+        hasher.update(&input);
 
         assert_eq!(
             hasher.finalize_hex(),
