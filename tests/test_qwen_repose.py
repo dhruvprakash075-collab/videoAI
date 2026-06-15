@@ -3,12 +3,32 @@ from pathlib import Path
 from unittest.mock import patch
 
 from video.image_gen.qwen_repose import (
+    _cache_path,
     _patch_qwen_workflow,
     build_qwen_edit_prompt,
     preflight_qwen_edit,
     repose_character,
     validate_qwen_workflow_template,
 )
+
+
+def _workflow_with_required_placeholders() -> dict:
+    return {
+        "1": {
+            "inputs": {
+                "image": "__BASE_IMAGE__",
+                "reference": "__CHARACTER_IMAGE__",
+                "text": "__EDIT_PROMPT__",
+                "filename_prefix": "__FILENAME_PREFIX__",
+                "model_path": "__MODEL_PATH__",
+                "seed": "__SEED__",
+                "steps": "__STEPS__",
+                "cfg": "__CFG__",
+                "denoise": "__DENOISE__",
+            },
+            "class_type": "QwenImageEditSampler",
+        }
+    }
 
 
 def test_build_qwen_edit_prompt_includes_depth_and_props():
@@ -126,6 +146,71 @@ def test_patch_qwen_workflow_coerces_runtime_values(tmp_path: Path):
     assert sampler_inputs["denoise"] == 0.55
     assert sampler_inputs["filename_prefix"] == "scene_01"
     assert prompt_inputs["text"] == "place hero in scene"
+
+
+def test_qwen_cache_key_changes_with_seed_model_and_lora(tmp_path: Path):
+    base = tmp_path / "scene_01.png"
+    base.write_bytes(b"base-png")
+    config = {
+        "image_gen": {
+            "qwen_edit": {
+                "backend": "nunchaku",
+                "model_path": "models/qwen-a.safetensors",
+                "lightning_lora": "",
+                "steps": 8,
+                "denoise": 0.6,
+            }
+        }
+    }
+
+    original = _cache_path(base, "identity-a", "place hero", 1, config)
+    different_seed = _cache_path(base, "identity-a", "place hero", 2, config)
+    config["image_gen"]["qwen_edit"]["model_path"] = "models/qwen-b.safetensors"
+    different_model = _cache_path(base, "identity-a", "place hero", 1, config)
+    config["image_gen"]["qwen_edit"]["lightning_lora"] = "models/lightning.safetensors"
+    different_lora = _cache_path(base, "identity-a", "place hero", 1, config)
+
+    assert different_seed != original
+    assert different_model != original
+    assert different_lora != different_model
+
+
+def test_repose_character_uses_cache_without_comfyui(tmp_path: Path):
+    base = tmp_path / "scene_01.png"
+    base.write_bytes(b"base-png")
+    output = tmp_path / "out.png"
+    cached = tmp_path / ".qwen_edit_cache" / "cached.png"
+    cached.parent.mkdir()
+    cached.write_bytes(b"cached-png")
+    workflow = tmp_path / "workflow.json"
+    workflow.write_text(json.dumps(_workflow_with_required_placeholders()), encoding="utf-8")
+    model = tmp_path / "qwen.safetensors"
+    model.write_bytes(b"fake-model")
+    reference = tmp_path / "character.png"
+    reference.write_bytes(b"reference-png")
+    config = {
+        "image_gen": {
+            "qwen_edit": {
+                "enabled": True,
+                "workflow_path": str(workflow),
+                "model_path": str(model),
+            }
+        }
+    }
+
+    with (
+        patch(
+            "video.image_gen.qwen_repose._ensure_reference_image",
+            return_value=(reference, "identity-a", {"description": "hero"}),
+        ),
+        patch("video.image_gen.qwen_repose._cache_path", return_value=cached),
+        patch("video.image_gen.comfyui_client.ComfyUIClient") as comfy_client,
+    ):
+        result = repose_character(str(base), "hero", "place hero", str(output), config, "project")
+
+    assert result == str(output)
+    assert output.read_bytes() == b"cached-png"
+    comfy_client.assert_not_called()
 
 
 def test_repose_character_falls_back_to_base_when_preflight_fails(tmp_path: Path):
