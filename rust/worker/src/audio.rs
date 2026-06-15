@@ -274,11 +274,7 @@ fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
     } else {
         -99.0
     };
-    let rms_db = if rms > 0.0 {
-        20.0 * rms.log10()
-    } else {
-        -99.0
-    };
+    let rms_db = if rms > 0.0 { 20.0 * rms.log10() } else { -99.0 };
     let clipping_pct = (clipping_samples as f64 / sample_count as f64) * 100.0;
     (peak_db, rms_db, clipping_pct)
 }
