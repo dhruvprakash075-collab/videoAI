@@ -271,7 +271,7 @@ pub fn thumbnail_filter(width: u32, height: u32) -> String {
 
 pub fn parse_thumbnail_size(size: &str) -> Result<(u32, u32)> {
     let (width, height) = size
-        .split_once(|c| c == 'x' || c == 'X')
+        .split_once(['x', 'X'])
         .with_context(|| format!("invalid --size '{size}', expected WIDTHxHEIGHT"))?;
     let width: u32 = width
         .trim()
