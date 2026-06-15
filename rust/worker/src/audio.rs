@@ -504,7 +504,9 @@ fn trim_long_silences_i16(wav: &mut Pcm16Wav) {
         }
 
         let silence_start = frame;
-        while frame < frame_count && is_silent_frame(&wav.samples, frame, channels, silence_threshold) {
+        while frame < frame_count
+            && is_silent_frame(&wav.samples, frame, channels, silence_threshold)
+        {
             frame += 1;
         }
         let silence_len = frame - silence_start;
@@ -540,7 +542,13 @@ fn is_silent_frame(samples: &[i16], frame: usize, channels: usize, threshold: f6
         .all(|sample| f64::from(*sample).abs() / 32_768.0 <= threshold)
 }
 
-fn append_frames(samples: &[i16], channels: usize, start: usize, end: usize, output: &mut Vec<i16>) {
+fn append_frames(
+    samples: &[i16],
+    channels: usize,
+    start: usize,
+    end: usize,
+    output: &mut Vec<i16>,
+) {
     if start >= end {
         return;
     }
