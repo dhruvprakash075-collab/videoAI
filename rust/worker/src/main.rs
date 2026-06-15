@@ -19,6 +19,7 @@ use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use videoai_worker::assets::{self, AssetsCommand};
+use videoai_worker::audio::{self, AudioCommand};
 use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
 use videoai_worker::media::{self, MediaCommand};
 
@@ -110,6 +111,12 @@ enum Commands {
     Assets {
         #[command(subcommand)]
         command: AssetsCommand,
+    },
+
+    /// Analyze and validate audio files.
+    Audio {
+        #[command(subcommand)]
+        command: AudioCommand,
     },
 
     /// Inspect media files for file-level QC.
@@ -246,6 +253,7 @@ fn main() -> Result<()> {
             QueueCommand::Gc(args) => run_queue_gc(args)?,
         },
         Commands::Assets { command } => assets::run_command(command)?,
+        Commands::Audio { command } => audio::run_command(command)?,
         Commands::Media { command } => media::run_command(command)?,
         Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
