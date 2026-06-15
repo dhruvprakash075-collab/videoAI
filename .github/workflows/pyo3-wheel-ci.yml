@@ -1,0 +1,82 @@
+name: pyo3-wheel-ci
+
+on:
+  pull_request:
+    paths:
+      - "rust/worker/**"
+      - "rust/Cargo.lock"
+      - ".github/workflows/pyo3-wheel-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "rust/worker/**"
+      - "rust/Cargo.lock"
+      - ".github/workflows/pyo3-wheel-ci.yml"
+
+jobs:
+  build-wheel:
+    name: Build PyO3 wheel
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: rust/worker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.81.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install maturin
+        run: python -m pip install --upgrade pip maturin
+
+      - name: Build wheel
+        run: maturin build --release --features python-extension --out dist
+
+      - name: Install wheel
+        run: python -m pip install dist/*.whl
+
+      - name: Smoke test native module
+        run: |
+          python - <<'PY'
+          import json
+          import struct
+          import tempfile
+          import wave
+          from pathlib import Path
+
+          import videoai_worker_native
+
+          temp = Path(tempfile.mkdtemp())
+          wav_path = temp / "input.wav"
+          out_path = temp / "mastered.wav"
+
+          with wave.open(str(wav_path), "wb") as wav:
+              wav.setnchannels(1)
+              wav.setsampwidth(2)
+              wav.setframerate(24000)
+              frames = b"".join(struct.pack("<h", 2048) for _ in range(2400))
+              wav.writeframes(frames)
+
+          report = json.loads(videoai_worker_native.analyze_audio_wave(str(wav_path)))
+          assert report["sample_rate"] == 24000
+          assert report["sample_width_bits"] == 16
+          assert report["duration_s"] > 0
+
+          assert hasattr(videoai_worker_native, "master_audio")
+          master_report = json.loads(
+              videoai_worker_native.master_audio(str(wav_path), str(out_path))
+          )
+          assert master_report["passed"] is True
+          assert out_path.exists()
+
+          print("PyO3 smoke test passed")
+          PY
