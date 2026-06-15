@@ -99,6 +99,12 @@ enum Commands {
         port: u16,
     },
 
+    /// Maintain the SQLite job queue.
+    Queue {
+        #[command(subcommand)]
+        command: QueueCommand,
+    },
+
     /// Inspect and validate run output assets.
     Assets {
         #[command(subcommand)]
@@ -112,12 +118,49 @@ enum Commands {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum QueueCommand {
+    /// Delete old terminal jobs and their events/artifacts.
+    Gc(QueueGcArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+struct QueueGcArgs {
+    /// Path to job database.
+    #[arg(long, default_value = DEFAULT_DB_PATH)]
+    db_path: PathBuf,
+
+    /// Retain terminal jobs newer than this many days.
+    #[arg(long, default_value_t = 30)]
+    older_than_days: u32,
+
+    /// Actually delete matching rows. Without this, GC only prints a dry-run plan.
+    #[arg(long)]
+    apply: bool,
+
+    /// Maximum jobs to delete in one invocation.
+    #[arg(long, default_value_t = 100)]
+    limit: u32,
+}
+
 #[derive(Debug, Serialize)]
 struct JobSummary {
     id: i64,
     status: String,
     topic: Option<String>,
     created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct QueueGcPlan {
+    dry_run: bool,
+    older_than_days: u32,
+    cutoff: String,
+    matched_jobs: usize,
+    deleted_jobs: usize,
+    matched_events: i64,
+    matched_artifacts: i64,
+    jobs: Vec<JobSummary>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +235,9 @@ fn main() -> Result<()> {
                 .context("failed to create tokio runtime")?
                 .block_on(status::run_server(db_path, host, port))?;
         }
+        Commands::Queue { command } => match command {
+            QueueCommand::Gc(args) => run_queue_gc(args)?,
+        },
         Commands::Assets { command } => assets::run_command(command)?,
         Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
@@ -235,6 +281,8 @@ fn open_job_db_read_only(db_path: &Path) -> Result<Connection> {
 
     conn.busy_timeout(Duration::from_millis(5_000))
         .context("failed to set SQLite busy timeout")?;
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .context("failed to enable SQLite foreign keys")?;
 
     Ok(conn)
 }
@@ -298,6 +346,119 @@ fn list_jobs(conn: &Connection, limit: u32, offset: u32) -> Result<Vec<JobSummar
 fn print_jobs(jobs: &[JobSummary]) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(jobs)?);
     Ok(())
+}
+
+fn terminal_statuses() -> [&'static str; 3] {
+    [STATUS_SUCCEEDED, STATUS_FAILED, STATUS_CANCELED]
+}
+
+fn queue_gc_cutoff(days: u32) -> String {
+    let days = chrono::Duration::days(i64::from(days));
+    (Utc::now() - days)
+        .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
+        .to_string()
+}
+
+fn run_queue_gc(args: QueueGcArgs) -> Result<()> {
+    let cutoff = queue_gc_cutoff(args.older_than_days);
+    let mut conn = open_job_db_read_write(&args.db_path)?;
+    let plan = queue_gc(
+        &mut conn,
+        &cutoff,
+        args.older_than_days,
+        args.limit,
+        args.apply,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&plan)?);
+    Ok(())
+}
+
+fn queue_gc(
+    conn: &mut Connection,
+    cutoff: &str,
+    older_than_days: u32,
+    limit: u32,
+    apply: bool,
+) -> Result<QueueGcPlan> {
+    let statuses = terminal_statuses();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, status, topic, created_at \
+             FROM jobs \
+             WHERE status IN (?1, ?2, ?3) AND updated_at < ?4 \
+             ORDER BY updated_at ASC, id ASC \
+             LIMIT ?5",
+        )
+        .context("failed to prepare queue gc candidate query")?;
+
+    let rows = stmt
+        .query_map(
+            params![
+                statuses[0],
+                statuses[1],
+                statuses[2],
+                cutoff,
+                i64::from(limit)
+            ],
+            |row| {
+                Ok(JobSummary {
+                    id: row.get("id")?,
+                    status: row.get("status")?,
+                    topic: row.get("topic")?,
+                    created_at: row.get("created_at")?,
+                })
+            },
+        )
+        .context("failed to query queue gc candidates")?;
+
+    let mut jobs = Vec::new();
+    for row in rows {
+        jobs.push(row.context("failed to read queue gc candidate")?);
+    }
+    drop(stmt);
+
+    let ids = jobs.iter().map(|job| job.id).collect::<Vec<_>>();
+    let matched_events = count_child_rows(conn, "job_events", &ids)?;
+    let matched_artifacts = count_child_rows(conn, "job_artifacts", &ids)?;
+    let mut deleted_jobs = 0;
+
+    if apply && !ids.is_empty() {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .context("failed to start queue gc transaction")?;
+        for id in &ids {
+            let changed = tx
+                .execute(
+                    "DELETE FROM jobs \
+                     WHERE id=?1 AND status IN (?2, ?3, ?4) AND updated_at < ?5",
+                    params![id, statuses[0], statuses[1], statuses[2], cutoff],
+                )
+                .with_context(|| format!("failed to delete terminal job {id}"))?;
+            deleted_jobs += changed;
+        }
+        tx.commit()
+            .context("failed to commit queue gc transaction")?;
+    }
+
+    Ok(QueueGcPlan {
+        dry_run: !apply,
+        older_than_days,
+        cutoff: cutoff.to_string(),
+        matched_jobs: jobs.len(),
+        deleted_jobs,
+        matched_events,
+        matched_artifacts,
+        jobs,
+    })
+}
+
+fn count_child_rows(conn: &Connection, table: &str, job_ids: &[i64]) -> Result<i64> {
+    let mut total = 0;
+    for job_id in job_ids {
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE job_id=?1");
+        total += conn.query_row(&sql, [job_id], |row| row.get::<_, i64>(0))?;
+    }
+    Ok(total)
 }
 
 struct Worker {
@@ -1291,6 +1452,102 @@ mod tests {
 
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].topic.as_deref(), Some("Second"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn queue_gc_dry_run_reports_old_terminal_jobs_without_deleting() -> Result<()> {
+        let (_temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (id, status, topic, request_json, created_at, updated_at)
+            VALUES
+                (1, 'succeeded', 'Old Success', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (2, 'failed', 'Recent Failure', '{}', '2026-01-10T00:00:00+00:00', '2026-01-10T00:00:00+00:00'),
+                (3, 'running', 'Old Running', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            INSERT INTO job_events (job_id, ts, event_type, message)
+            VALUES (1, '2026-01-01T00:00:00+00:00', 'system', 'done');
+            INSERT INTO job_artifacts (job_id, key, path, meta)
+            VALUES (1, 'video', 'out.mp4', '{}');
+            "#,
+        )?;
+        let mut conn = open_job_db_read_write(&db_path)?;
+
+        let plan = queue_gc(&mut conn, "2026-01-05T00:00:00+00:00", 30, 100, false)?;
+
+        assert!(plan.dry_run);
+        assert_eq!(plan.matched_jobs, 1);
+        assert_eq!(plan.deleted_jobs, 0);
+        assert_eq!(plan.matched_events, 1);
+        assert_eq!(plan.matched_artifacts, 1);
+        assert_eq!(count_rows(&db_path, "jobs", "")?, 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn queue_gc_apply_deletes_only_old_terminal_jobs_and_cascades_children() -> Result<()> {
+        let (_temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (id, status, topic, request_json, created_at, updated_at)
+            VALUES
+                (1, 'succeeded', 'Old Success', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (2, 'canceled', 'Old Canceled', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (3, 'failed', 'Recent Failure', '{}', '2026-01-10T00:00:00+00:00', '2026-01-10T00:00:00+00:00'),
+                (4, 'queued', 'Old Queued', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (5, 'running', 'Old Running', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (6, 'cancel_requested', 'Old Cancel Request', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            INSERT INTO job_events (job_id, ts, event_type, message)
+            VALUES
+                (1, '2026-01-01T00:00:00+00:00', 'system', 'done'),
+                (2, '2026-01-01T00:00:00+00:00', 'system', 'canceled');
+            INSERT INTO job_artifacts (job_id, key, path, meta)
+            VALUES
+                (1, 'video', 'out.mp4', '{}'),
+                (2, 'manifest', 'run_manifest.json', '{}');
+            "#,
+        )?;
+        let mut conn = open_job_db_read_write(&db_path)?;
+
+        let plan = queue_gc(&mut conn, "2026-01-05T00:00:00+00:00", 30, 100, true)?;
+
+        assert!(!plan.dry_run);
+        assert_eq!(plan.matched_jobs, 2);
+        assert_eq!(plan.deleted_jobs, 2);
+        assert_eq!(count_rows(&db_path, "jobs", "")?, 4);
+        assert_eq!(count_rows(&db_path, "jobs", "WHERE id IN (1, 2)")?, 0);
+        assert_eq!(count_rows(&db_path, "jobs", "WHERE id IN (3, 4, 5, 6)")?, 4);
+        assert_eq!(
+            count_rows(&db_path, "job_events", "WHERE job_id IN (1, 2)")?,
+            0
+        );
+        assert_eq!(
+            count_rows(&db_path, "job_artifacts", "WHERE job_id IN (1, 2)")?,
+            0
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn queue_gc_limit_caps_deletions() -> Result<()> {
+        let (_temp_dir, db_path) = create_seeded_job_db(
+            r#"
+            INSERT INTO jobs (id, status, topic, request_json, created_at, updated_at)
+            VALUES
+                (1, 'succeeded', 'First', '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'),
+                (2, 'failed', 'Second', '{}', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00');
+            "#,
+        )?;
+        let mut conn = open_job_db_read_write(&db_path)?;
+
+        let plan = queue_gc(&mut conn, "2026-01-05T00:00:00+00:00", 30, 1, true)?;
+
+        assert_eq!(plan.matched_jobs, 1);
+        assert_eq!(plan.deleted_jobs, 1);
+        assert_eq!(count_rows(&db_path, "jobs", "")?, 1);
+        assert_eq!(count_rows(&db_path, "jobs", "WHERE id=1")?, 0);
+        assert_eq!(count_rows(&db_path, "jobs", "WHERE id=2")?, 1);
 
         Ok(())
     }
