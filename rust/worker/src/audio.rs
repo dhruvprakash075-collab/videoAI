@@ -475,6 +475,7 @@ fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
     let bytes = fs::read(input).with_context(|| format!("failed to read {}", input.display()))?;
     let mut wav = decode_pcm_wav(&bytes)?;
     trim_long_silences_i16(&mut wav);
+    resample_to_sample_rate_i16(&mut wav, TARGET_PREMIUM_SAMPLE_RATE);
     compress_dynamic_range_i16(&mut wav.samples);
     apply_deesser_i16(&mut wav);
     normalize_and_limit_i16(&mut wav.samples);
@@ -559,6 +560,51 @@ fn append_frames(
         return;
     }
     output.extend_from_slice(&samples[start * channels..end * channels]);
+}
+
+fn resample_to_sample_rate_i16(wav: &mut Pcm16Wav, target_sample_rate: u32) {
+    let channels = usize::from(wav.channels);
+    if channels == 0
+        || wav.sample_rate == 0
+        || target_sample_rate == 0
+        || wav.sample_rate == target_sample_rate
+        || wav.samples.is_empty()
+    {
+        return;
+    }
+
+    let frame_count = wav.samples.len() / channels;
+    if frame_count == 0 {
+        return;
+    }
+
+    let target_frames = ((frame_count as f64 * f64::from(target_sample_rate)
+        / f64::from(wav.sample_rate))
+    .round() as usize)
+        .max(1);
+    let mut output = Vec::with_capacity(target_frames * channels);
+
+    for frame in 0..target_frames {
+        let source_position =
+            frame as f64 * f64::from(wav.sample_rate) / f64::from(target_sample_rate);
+        let base_frame = source_position.floor() as usize;
+        let next_frame = (base_frame + 1).min(frame_count - 1);
+        let fraction = source_position - base_frame as f64;
+
+        for channel in 0..channels {
+            let base_sample = f64::from(wav.samples[base_frame * channels + channel]);
+            let next_sample = f64::from(wav.samples[next_frame * channels + channel]);
+            let interpolated = base_sample + ((next_sample - base_sample) * fraction);
+            output.push(
+                interpolated
+                    .round()
+                    .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16,
+            );
+        }
+    }
+
+    wav.sample_rate = target_sample_rate;
+    wav.samples = output;
 }
 
 fn compress_dynamic_range_i16(samples: &mut [i16]) {
@@ -869,6 +915,7 @@ mod tests {
         assert!(report.native_pcm_mastered);
         assert!(!report.copied_original);
         let after = report.after.expect("native master should analyze output");
+        assert_eq!(after.sample_rate, TARGET_PREMIUM_SAMPLE_RATE);
         assert!(after.peak_db <= PEAK_CLIPPING_DBFS);
         assert!((after.rms_db - TARGET_RMS_DBFS).abs() <= RMS_TOLERANCE_DB);
         Ok(())
@@ -895,8 +942,32 @@ mod tests {
         assert!(report.passed);
         assert!(report.native_pcm_mastered);
         let after = report.after.expect("native master should analyze output");
-        assert_eq!(after.frames, 700);
+        assert_eq!(after.sample_rate, TARGET_PREMIUM_SAMPLE_RATE);
+        assert_eq!(after.frames, 30_870);
         assert_eq!(after.duration_s, 0.7);
+        Ok(())
+    }
+
+    #[test]
+    fn native_mastering_upsamples_to_premium_rate() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let input = temp.path().join("voice.wav");
+        let output = temp.path().join("mastered.wav");
+        fs::write(&input, wav_i16(24_000, 1, &[2048; 240]))?;
+
+        let report = master_path(&AudioMasterArgs {
+            input,
+            output,
+            json: true,
+            ffmpeg_bin: PathBuf::from("does-not-run"),
+        })?;
+
+        assert!(report.passed);
+        assert!(report.native_pcm_mastered);
+        let after = report.after.expect("native master should analyze output");
+        assert_eq!(after.sample_rate, TARGET_PREMIUM_SAMPLE_RATE);
+        assert_eq!(after.frames, 441);
+        assert_eq!(after.duration_s, 0.01);
         Ok(())
     }
 
