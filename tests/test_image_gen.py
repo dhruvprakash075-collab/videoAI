@@ -225,6 +225,51 @@ def test_generate_images_qwen_preflight_failure_uses_one_pass_comfyui(tmp_path: 
     bonsai.assert_not_called()
 
 
+def test_generate_images_qwen_runtime_failure_falls_back_to_bonsai(tmp_path: Path):
+    cfg = {
+        "image_gen": {
+            "backend": "comfyui",
+            "composition_mode": "qwen_edit",
+            "qwen_edit": {"enabled": True},
+        }
+    }
+    with (
+        patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]),
+        patch(
+            "video.image_gen.image_gen._comfyui_qwen_edit",
+            side_effect=RuntimeError("qwen exploded"),
+        ) as qwen,
+        patch("video.image_gen.image_gen._bonsai", return_value=[tmp_path / "fallback.png"]) as bonsai,
+        patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
+    ):
+        result = generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
+
+    qwen.assert_called_once()
+    bonsai.assert_called_once()
+    comfy.assert_not_called()
+    assert result == [tmp_path / "fallback.png"]
+
+
+def test_generate_images_qwen_runtime_failure_respects_non_bonsai_fallback(tmp_path: Path):
+    cfg = {
+        "image_gen": {
+            "backend": "comfyui",
+            "composition_mode": "qwen_edit",
+            "fallback_backend": "raise",
+            "qwen_edit": {"enabled": True},
+        }
+    }
+    with (
+        patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]),
+        patch("video.image_gen.image_gen._comfyui_qwen_edit", side_effect=RuntimeError("qwen exploded")),
+        patch("video.image_gen.image_gen._bonsai", return_value=[]) as bonsai,
+    ):
+        with pytest.raises(RuntimeError, match="qwen exploded"):
+            generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
+
+    bonsai.assert_not_called()
+
+
 def test_pexels_search_url_has_no_literal_braces(tmp_path: Path, monkeypatch):
     """Regression guard for malformed f-string URLs in the dormant Pexels path."""
     import json
