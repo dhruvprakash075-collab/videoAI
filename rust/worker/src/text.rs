@@ -42,8 +42,11 @@ pub struct TextSplitArgs {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum SplitStrategy {
+    #[value(name = "by_word_count")]
     ByWordCount,
+    #[value(name = "by_chapter")]
     ByChapter,
+    #[value(name = "by_llm")]
     ByLlm,
 }
 
@@ -103,7 +106,7 @@ pub fn split_text(
     let chunks = if text.trim().is_empty() {
         empty_chunks(n_segments)
     } else {
-        let mut chunks = match strategy {
+        let chunks = match strategy {
             SplitStrategy::ByChapter => {
                 let chunks = split_by_chapter(text, source_type);
                 if chunks.is_empty() {
@@ -388,8 +391,20 @@ mod tests {
     }
 
     #[test]
+    fn by_llm_falls_back_to_word_count() {
+        let report = split_text("One. Two.", "txt", SplitStrategy::ByLlm, 2, 100);
+        assert_eq!(report.chunks.len(), 2);
+        assert_eq!(report.strategy, "by_llm");
+        assert!(report.warnings[0].contains("fell back"));
+    }
+
+    #[test]
     fn rebalance_merges_smallest_adjacent_pair() {
-        let chunks = vec![chunk("one".to_string()), chunk("two".to_string()), chunk("three four five".to_string())];
+        let chunks = vec![
+            chunk("one".to_string()),
+            chunk("two".to_string()),
+            chunk("three four five".to_string()),
+        ];
         let out = rebalance(chunks, 2);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].text, "one\n\ntwo");
