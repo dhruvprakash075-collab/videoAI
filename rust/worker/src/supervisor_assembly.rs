@@ -11,8 +11,8 @@ use anyhow::{bail, Context, Result};
 use super::{
     add_artifact_path, append_event_path, get_job_path, get_job_status_path,
     join_thread_with_timeout, now_iso, safe_filename, send_interrupt, spawn_heartbeat_thread,
-    spawn_stream_thread, update_job_path, JobUpdate, Worker, CANCEL_WAIT_SECONDS,
-    STATUS_CANCELED, STATUS_CANCEL_REQUESTED,
+    spawn_stream_thread, update_job_path, JobUpdate, Worker, CANCEL_WAIT_SECONDS, STATUS_CANCELED,
+    STATUS_CANCEL_REQUESTED,
 };
 
 const RUST_ASSEMBLY_ENV: &str = "VIDEOAI_RUST_ASSEMBLY";
@@ -190,12 +190,7 @@ fn ffmpeg_bin() -> PathBuf {
     }
 }
 
-fn run_optional_step(
-    worker: &Worker,
-    job_id: i64,
-    label: &str,
-    argv: Vec<PathBuf>,
-) -> Result<()> {
+fn run_optional_step(worker: &Worker, job_id: i64, label: &str, argv: Vec<PathBuf>) -> Result<()> {
     match run_supervised_step(worker, job_id, label, &argv) {
         Ok(()) => {
             append_event_path(
@@ -223,12 +218,7 @@ fn run_optional_step(
     }
 }
 
-fn run_supervised_step(
-    worker: &Worker,
-    job_id: i64,
-    label: &str,
-    argv: &[PathBuf],
-) -> Result<()> {
+fn run_supervised_step(worker: &Worker, job_id: i64, label: &str, argv: &[PathBuf]) -> Result<()> {
     let (program, args) = argv
         .split_first()
         .with_context(|| format!("{label}: empty command"))?;
@@ -265,7 +255,8 @@ fn run_supervised_step(
     let child_id = child.id();
 
     let stop = Arc::new(AtomicBool::new(false));
-    let heartbeat = spawn_heartbeat_thread(worker.config.db_path.clone(), job_id, Arc::clone(&stop));
+    let heartbeat =
+        spawn_heartbeat_thread(worker.config.db_path.clone(), job_id, Arc::clone(&stop));
 
     let mut stream_threads = Vec::new();
     if let Some(stdout) = child.stdout.take() {
