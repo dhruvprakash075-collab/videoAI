@@ -771,6 +771,14 @@ mod tests {
         encode_pcm16_wav(&wav).expect("test WAV should encode")
     }
 
+    fn max_adjacent_delta(samples: &[i16]) -> i32 {
+        samples
+            .windows(2)
+            .map(|pair| (i32::from(pair[1]) - i32::from(pair[0])).abs())
+            .max()
+            .unwrap_or(0)
+    }
+
     #[test]
     fn analyzes_pcm_wav_metrics() -> Result<()> {
         let wav = wav_i16(44_100, 1, &[8192, -8192, 8192, -8192]);
@@ -913,12 +921,12 @@ mod tests {
             sample_rate: TARGET_PREMIUM_SAMPLE_RATE,
             samples: vec![12_000, -12_000, 12_000, -12_000, 12_000, -12_000],
         };
-        let before_peak = wav.samples.iter().map(|sample| sample.abs()).max().unwrap();
+        let before_delta = max_adjacent_delta(&wav.samples);
 
         apply_deesser_i16(&mut wav);
 
-        let after_peak = wav.samples.iter().map(|sample| sample.abs()).max().unwrap();
-        assert!(after_peak < before_peak);
+        let after_delta = max_adjacent_delta(&wav.samples);
+        assert!(after_delta < before_delta);
     }
 
     #[test]
