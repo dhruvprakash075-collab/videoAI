@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 use crate::ffmpeg_plan::{
     concat_list_content, discover_segments, display_path, loudnorm_apply_argv,
-    options_from_concat_args, FfmpegConcatArgs, LoudnormStats,
+    options_from_concat_args, thumbnail_argv, FfmpegConcatArgs, FfmpegThumbnailArgs, LoudnormStats,
 };
 
 const STDERR_TAIL_BYTES: usize = 4_000;
@@ -66,6 +66,38 @@ async fn run_concat_async(args: FfmpegConcatArgs) -> Result<()> {
     }
 
     guard.cleanup()?;
+    Ok(())
+}
+
+pub fn run_thumbnail(args: FfmpegThumbnailArgs) -> Result<()> {
+    tokio::runtime::Runtime::new()
+        .context("failed to create tokio runtime")?
+        .block_on(run_thumbnail_async(args))
+}
+
+async fn run_thumbnail_async(args: FfmpegThumbnailArgs) -> Result<()> {
+    if !args.video.is_file() {
+        bail!("input video not found: {}", args.video.display());
+    }
+
+    if let Some(parent) = args.out.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create output directory {}", parent.display())
+            })?;
+        }
+    }
+
+    let argv = thumbnail_argv(&args)?;
+    run_argv(&argv, 60).await?;
+
+    if !args.out.is_file() {
+        bail!(
+            "thumbnail generation produced no output at {}",
+            args.out.display()
+        );
+    }
+
     Ok(())
 }
 
@@ -230,5 +262,52 @@ mod tests {
         let err =
             parse_loudnorm_json("no json here").expect_err("missing loudnorm JSON should fail");
         assert!(err.to_string().contains("loudnorm JSON block not found"));
+    }
+
+    #[test]
+    fn run_thumbnail_errors_when_video_missing() {
+        let args = FfmpegThumbnailArgs {
+            video: PathBuf::from("does/not/exist.mp4"),
+            out: PathBuf::from("thumbnail.png"),
+            at: 0.0,
+            size: "1280x720".to_string(),
+            ffmpeg_bin: PathBuf::from("ffmpeg"),
+        };
+
+        let err = run_thumbnail(args).expect_err("missing input video should error");
+        assert!(err.to_string().contains("input video not found"));
+    }
+
+    #[cfg(feature = "ffmpeg-integration")]
+    #[test]
+    fn thumbnail_generates_non_empty_png_with_real_ffmpeg() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let video = temp.path().join("input.mp4");
+        let thumb = temp.path().join("thumbnail.png");
+
+        let fixture = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=1:size=320x240:rate=1",
+                video.to_string_lossy().as_ref(),
+            ])
+            .output()
+            .context("failed to spawn ffmpeg for fixture clip")?;
+        assert!(fixture.status.success(), "fixture ffmpeg invocation failed");
+
+        run_thumbnail(FfmpegThumbnailArgs {
+            video: video.clone(),
+            out: thumb.clone(),
+            at: 0.0,
+            size: "1280x720".to_string(),
+            ffmpeg_bin: PathBuf::from("ffmpeg"),
+        })?;
+
+        let metadata = std::fs::metadata(&thumb)?;
+        assert!(metadata.len() > 0, "thumbnail PNG should be non-empty");
+        Ok(())
     }
 }

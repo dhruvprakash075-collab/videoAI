@@ -1,5 +1,6 @@
 mod doctor;
 mod status;
+mod supervisor_assembly;
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -502,6 +503,14 @@ impl Worker {
                             &self.config.db_path,
                             job_id,
                             &format!("artifact_capture_failed: {err}"),
+                            "system",
+                        )?;
+                    }
+                    if let Err(err) = supervisor_assembly::run_if_enabled(self, job_id) {
+                        append_event_path(
+                            &self.config.db_path,
+                            job_id,
+                            &format!("rust_assembly_failed: {err}"),
                             "system",
                         )?;
                     }
@@ -1356,6 +1365,14 @@ mod tests {
                 "WHERE job_id=1 AND event_type='log'"
             )?,
             1
+        );
+        assert_eq!(
+            count_rows(
+                &db_path,
+                "job_events",
+                "WHERE job_id=1 AND message LIKE 'rust_assembly_%'"
+            )?,
+            0
         );
 
         Ok(())

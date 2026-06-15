@@ -8,6 +8,7 @@ use serde::Serialize;
 const DEFAULT_TARGET_LUFS: f64 = -14.0;
 const DEFAULT_TRUE_PEAK: f64 = -1.5;
 const DEFAULT_LRA: f64 = 11.0;
+const DEFAULT_THUMBNAIL_SIZE: &str = "1280x720";
 
 #[derive(Debug, Subcommand)]
 pub enum FfmpegCommand {
@@ -16,6 +17,9 @@ pub enum FfmpegCommand {
 
     /// Execute final assembly with FFmpeg.
     Concat(FfmpegConcatArgs),
+
+    /// Extract a single-frame thumbnail (scale + pad) with FFmpeg.
+    Thumbnail(FfmpegThumbnailArgs),
 }
 
 #[derive(Clone, Debug, Args)]
@@ -80,6 +84,29 @@ pub struct FfmpegConcatArgs {
     pub ffmpeg_bin: PathBuf,
 }
 
+#[derive(Clone, Debug, Args)]
+pub struct FfmpegThumbnailArgs {
+    /// Source video to extract the thumbnail frame from.
+    #[arg(long)]
+    pub video: PathBuf,
+
+    /// Output PNG path.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Timestamp in seconds of the frame to extract.
+    #[arg(long, default_value_t = 0.0)]
+    pub at: f64,
+
+    /// Target thumbnail size formatted as WIDTHxHEIGHT.
+    #[arg(long, default_value = DEFAULT_THUMBNAIL_SIZE)]
+    pub size: String,
+
+    /// FFmpeg executable path.
+    #[arg(long, default_value = "ffmpeg")]
+    pub ffmpeg_bin: PathBuf,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct FfmpegPlan {
     pub run_dir: String,
@@ -133,6 +160,9 @@ pub fn run_command(command: FfmpegCommand) -> Result<()> {
         }
         FfmpegCommand::Concat(args) => {
             crate::ffmpeg_exec::run_concat(args)?;
+        }
+        FfmpegCommand::Thumbnail(args) => {
+            crate::ffmpeg_exec::run_thumbnail(args)?;
         }
     }
 
@@ -231,6 +261,47 @@ pub fn escape_concat_path(path: &Path) -> String {
 
 pub fn display_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+pub fn thumbnail_filter(width: u32, height: u32) -> String {
+    format!(
+        "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+    )
+}
+
+pub fn parse_thumbnail_size(size: &str) -> Result<(u32, u32)> {
+    let (width, height) = size
+        .split_once(['x', 'X'])
+        .with_context(|| format!("invalid --size '{size}', expected WIDTHxHEIGHT"))?;
+    let width: u32 = width
+        .trim()
+        .parse()
+        .with_context(|| format!("invalid width in --size '{size}'"))?;
+    let height: u32 = height
+        .trim()
+        .parse()
+        .with_context(|| format!("invalid height in --size '{size}'"))?;
+    if width == 0 || height == 0 {
+        bail!("invalid --size '{size}', width and height must be greater than zero");
+    }
+    Ok((width, height))
+}
+
+pub fn thumbnail_argv(args: &FfmpegThumbnailArgs) -> Result<Vec<String>> {
+    let (width, height) = parse_thumbnail_size(&args.size)?;
+    Ok(vec![
+        display_path(&args.ffmpeg_bin),
+        "-y".to_string(),
+        "-i".to_string(),
+        display_path(&args.video),
+        "-ss".to_string(),
+        args.at.to_string(),
+        "-vframes".to_string(),
+        "1".to_string(),
+        "-vf".to_string(),
+        thumbnail_filter(width, height),
+        display_path(&args.out),
+    ])
 }
 
 pub fn loudnorm_filter(stats: Option<&LoudnormStats>) -> String {
@@ -516,5 +587,66 @@ mod tests {
         assert_eq!(plan.commands[3].phase, "loudnorm-apply");
         assert!(!options.temp_dir.exists());
         Ok(())
+    }
+
+    #[test]
+    fn thumbnail_filter_matches_python_scale_pad() {
+        assert_eq!(
+            thumbnail_filter(1280, 720),
+            "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2"
+        );
+    }
+
+    #[test]
+    fn thumbnail_argv_matches_python_default() -> Result<()> {
+        let args = FfmpegThumbnailArgs {
+            video: PathBuf::from("studio_outputs/topic/final_video.mp4"),
+            out: PathBuf::from("studio_outputs/topic/thumbnail.png"),
+            at: 0.0,
+            size: "1280x720".to_string(),
+            ffmpeg_bin: PathBuf::from("ffmpeg"),
+        };
+
+        let argv = thumbnail_argv(&args)?;
+
+        let expected = vec![
+            "ffmpeg".to_string(),
+            "-y".to_string(),
+            "-i".to_string(),
+            "studio_outputs/topic/final_video.mp4".to_string(),
+            "-ss".to_string(),
+            "0".to_string(),
+            "-vframes".to_string(),
+            "1".to_string(),
+            "-vf".to_string(),
+            thumbnail_filter(1280, 720),
+            "studio_outputs/topic/thumbnail.png".to_string(),
+        ];
+        assert_eq!(argv, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn thumbnail_argv_honors_custom_size_and_timestamp() -> Result<()> {
+        let args = FfmpegThumbnailArgs {
+            video: PathBuf::from("in.mp4"),
+            out: PathBuf::from("out.png"),
+            at: 2.5,
+            size: "640x360".to_string(),
+            ffmpeg_bin: PathBuf::from("ffmpeg"),
+        };
+
+        let argv = thumbnail_argv(&args)?;
+
+        assert_eq!(argv[5], "2.5");
+        assert_eq!(argv[9], thumbnail_filter(640, 360));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_thumbnail_size_rejects_invalid_input() {
+        assert!(parse_thumbnail_size("1280").is_err());
+        assert!(parse_thumbnail_size("axb").is_err());
+        assert!(parse_thumbnail_size("0x720").is_err());
     }
 }
