@@ -150,7 +150,10 @@ def test_generate_images_qwen_mode_dispatches_two_pass(tmp_path: Path):
             "qwen_edit": {"enabled": True},
         }
     }
-    with patch.object(image_gen, "_comfyui_qwen_edit", return_value=[]) as qwen:
+    with (
+        patch.object(image_gen, "_qwen_preflight_issues", return_value=[]),
+        patch.object(image_gen, "_comfyui_qwen_edit", return_value=[]) as qwen,
+    ):
         image_gen.generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
 
     qwen.assert_called_once()
