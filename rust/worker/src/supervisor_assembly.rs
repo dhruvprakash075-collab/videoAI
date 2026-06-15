@@ -16,17 +16,20 @@ use super::{
 };
 
 const RUST_ASSEMBLY_ENV: &str = "VIDEOAI_RUST_ASSEMBLY";
+const RUST_MEDIA_INSPECT_ENV: &str = "VIDEOAI_RUST_MEDIA_INSPECT";
 const FFMPEG_BIN_ENV: &str = "VIDEOAI_FFMPEG_BIN";
+const FFPROBE_BIN_ENV: &str = "VIDEOAI_FFPROBE_BIN";
 const DEFAULT_FFMPEG_BIN: &str = "ffmpeg";
+const DEFAULT_FFPROBE_BIN: &str = "ffprobe";
 const ASSEMBLY_STEP_TIMEOUT_SECONDS: u64 = 1_800;
 
 pub(super) fn run_if_enabled(worker: &Worker, job_id: i64) -> Result<()> {
-    if !rust_assembly_enabled() {
+    if !rust_assembly_enabled() && !rust_media_inspect_enabled() {
         return Ok(());
     }
 
     let job = get_job_path(&worker.config.db_path, job_id)?
-        .context("job disappeared before Rust assembly")?;
+        .context("job disappeared before Rust post-success hooks")?;
     let topic_raw = job.topic.unwrap_or_else(|| "unknown".to_string());
     let run_dir = worker
         .config
@@ -39,11 +42,44 @@ pub(super) fn run_if_enabled(worker: &Worker, job_id: i64) -> Result<()> {
             &worker.config.db_path,
             job_id,
             &format!(
-                "rust_assembly_skipped: run directory not found: {}",
+                "rust_post_success_skipped: run directory not found: {}",
                 run_dir.display()
             ),
             "system",
         )?;
+        return Ok(());
+    }
+
+    let current_exe = std::env::current_exe().context("failed to resolve current worker binary")?;
+
+    if rust_media_inspect_enabled() {
+        if let Some(video) = latest_mp4_in(&run_dir)? {
+            run_optional_step(
+                worker,
+                job_id,
+                "rust_media_inspect",
+                vec![
+                    current_exe.clone(),
+                    PathBuf::from("media"),
+                    PathBuf::from("inspect"),
+                    PathBuf::from("--input"),
+                    video,
+                    PathBuf::from("--json"),
+                    PathBuf::from("--ffprobe-bin"),
+                    ffprobe_bin(),
+                ],
+            )?;
+        } else {
+            append_event_path(
+                &worker.config.db_path,
+                job_id,
+                "rust_media_inspect_skipped: no MP4 input found",
+                "system",
+            )?;
+        }
+    }
+
+    if !rust_assembly_enabled() {
         return Ok(());
     }
 
@@ -54,7 +90,6 @@ pub(super) fn run_if_enabled(worker: &Worker, job_id: i64) -> Result<()> {
         "system",
     )?;
 
-    let current_exe = std::env::current_exe().context("failed to resolve current worker binary")?;
     let ffmpeg_bin = ffmpeg_bin();
     let rust_video = run_dir.join("rust_final_video.mp4");
     let rust_thumbnail = run_dir.join("rust_thumbnail.png");
@@ -177,7 +212,15 @@ pub(super) fn run_if_enabled(worker: &Worker, job_id: i64) -> Result<()> {
 }
 
 fn rust_assembly_enabled() -> bool {
-    match std::env::var(RUST_ASSEMBLY_ENV) {
+    env_flag_enabled(RUST_ASSEMBLY_ENV)
+}
+
+fn rust_media_inspect_enabled() -> bool {
+    env_flag_enabled(RUST_MEDIA_INSPECT_ENV)
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    match std::env::var(name) {
         Ok(value) => value == "1",
         Err(_) => false,
     }
@@ -187,6 +230,13 @@ fn ffmpeg_bin() -> PathBuf {
     match std::env::var(FFMPEG_BIN_ENV) {
         Ok(value) if !value.is_empty() => PathBuf::from(value),
         _ => PathBuf::from(DEFAULT_FFMPEG_BIN),
+    }
+}
+
+fn ffprobe_bin() -> PathBuf {
+    match std::env::var(FFPROBE_BIN_ENV) {
+        Ok(value) if !value.is_empty() => PathBuf::from(value),
+        _ => PathBuf::from(DEFAULT_FFPROBE_BIN),
     }
 }
 
