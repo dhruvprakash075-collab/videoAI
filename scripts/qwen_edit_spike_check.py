@@ -24,6 +24,24 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / "config" / "config.yaml"
 DEFAULT_OUTPUT = REPO_ROOT / ".qwen_edit_cache" / "qwen_local_spike_results.md"
+FOCUSED_PYTEST_COMMAND = (
+    "venv\\Scripts\\python.exe -m pytest "
+    "tests/test_qwen_repose.py tests/test_image_gen.py "
+    "tests/test_config_schemas.py tests/test_preflight.py "
+    "tests/test_qwen_spike_check.py -q"
+)
+TARGETED_RUFF_COMMAND = (
+    "venv\\Scripts\\ruff check "
+    "video/image_gen/image_gen.py video/image_gen/qwen_repose.py "
+    "utils/preflight.py config/config_schemas.py "
+    "tests/test_qwen_repose.py tests/test_image_gen.py "
+    "tests/test_config_schemas.py tests/test_preflight.py "
+    "scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py"
+)
+VRAM_MONITOR_COMMAND = (
+    "nvidia-smi --query-gpu=timestamp,memory.used,memory.free,utilization.gpu "
+    "--format=csv -l 1"
+)
 
 
 @dataclass(frozen=True)
@@ -170,21 +188,10 @@ def write_issue_template(path: Path) -> None:
 def print_command_plan() -> None:
     """Print the local commands for the human-run GPU spike."""
     print("\nFocused repo checks:")
-    print(
-        "venv\\Scripts\\python.exe -m pytest "
-        "tests/test_qwen_repose.py tests/test_image_gen.py "
-        "tests/test_config_schemas.py tests/test_preflight.py "
-        "tests/test_qwen_spike_check.py -q"
-    )
-    print(
-        "venv\\Scripts\\ruff check "
-        "video/image_gen/image_gen.py video/image_gen/qwen_repose.py "
-        "utils/preflight.py config/config_schemas.py "
-        "scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py"
-    )
+    print(FOCUSED_PYTEST_COMMAND)
+    print(TARGETED_RUFF_COMMAND)
     print("\nVRAM monitor during spike:")
-    print("nvidia-smi --query-gpu=timestamp,memory.used,memory.free,utilization.gpu \\")
-    print("  --format=csv -l 1")
+    print(VRAM_MONITOR_COMMAND)
 
 
 def main(argv: list[str] | None = None) -> int:
