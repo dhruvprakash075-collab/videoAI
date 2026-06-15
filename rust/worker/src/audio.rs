@@ -607,9 +607,10 @@ fn apply_deesser_i16(wav: &mut Pcm16Wav) {
             *state += alpha * (current - *state);
             let high = current - *state;
             let deessed = *state + (high * high_gain);
-            wav.samples[idx] = deessed
+            let clamped = deessed
                 .round()
-                .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16;
+                .clamp(f64::from(i16::MIN), f64::from(i16::MAX));
+            wav.samples[idx] = clamped as i16;
         }
     }
 }
