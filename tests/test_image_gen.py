@@ -270,6 +270,67 @@ def test_generate_images_qwen_runtime_failure_respects_non_bonsai_fallback(tmp_p
     bonsai.assert_not_called()
 
 
+def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
+    from video.image_gen import image_gen
+
+    images = [tmp_path / "scene_01.png", tmp_path / "scene_02.png", tmp_path / "scene_03.png"]
+    cfg = {"qwen_edit": {"character_threshold": 0.05}}
+    with (
+        patch.object(image_gen, "_comfyui", return_value=images),
+        patch.object(image_gen, "_free_comfyui_memory") as free_memory,
+        patch("video.image_gen.qwen_repose.repose_character") as repose,
+    ):
+        repose.side_effect = [str(tmp_path / "edited_01.png"), str(tmp_path / "edited_03.png")]
+
+        result = image_gen._comfyui_qwen_edit(
+            ["first", "second", "third"],
+            tmp_path,
+            cfg,
+            char_presence=[{"hero": 0.1}, {}, {"villain": 0.2}],
+            project_id="project-a",
+        )
+
+    free_memory.assert_called_once_with(cfg)
+    assert repose.call_count == 2
+    assert repose.call_args_list[0].args[:4] == (
+        str(images[0]),
+        "hero",
+        "first",
+        str(images[0]),
+    )
+    assert repose.call_args_list[1].args[:4] == (
+        str(images[2]),
+        "villain",
+        "third",
+        str(images[2]),
+    )
+    assert result == [tmp_path / "edited_01.png", images[1], tmp_path / "edited_03.png"]
+
+
+def test_comfyui_qwen_edit_respects_character_threshold(tmp_path: Path):
+    from video.image_gen import image_gen
+
+    images = [tmp_path / "scene_01.png", tmp_path / "scene_02.png"]
+    cfg = {"qwen_edit": {"character_threshold": 0.5}}
+    with (
+        patch.object(image_gen, "_comfyui", return_value=images),
+        patch.object(image_gen, "_free_comfyui_memory"),
+        patch("video.image_gen.qwen_repose.repose_character", return_value=str(images[1])) as repose,
+    ):
+        result = image_gen._comfyui_qwen_edit(
+            ["low", "high"],
+            tmp_path,
+            cfg,
+            char_presence=[{"hero": 0.49}, {"hero": 0.5}],
+            project_id="project-a",
+        )
+
+    repose.assert_called_once()
+    assert repose.call_args.args[1] == "hero"
+    assert repose.call_args.args[2] == "high"
+    assert result == images
+
+
 def test_pexels_search_url_has_no_literal_braces(tmp_path: Path, monkeypatch):
     """Regression guard for malformed f-string URLs in the dormant Pexels path."""
     import json
