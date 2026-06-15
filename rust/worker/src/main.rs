@@ -1,3 +1,7 @@
+mod doctor;
+mod status;
+mod supervisor_assembly;
+
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::ToSocketAddrs;
@@ -14,6 +18,8 @@ use clap::{Parser, Subcommand};
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use serde::Serialize;
 use serde_json::{Map, Value};
+use videoai_worker::assets::{self, AssetsCommand};
+use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
 const HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
@@ -61,6 +67,48 @@ enum Commands {
         /// Path to job database.
         #[arg(long, default_value = DEFAULT_DB_PATH)]
         db_path: PathBuf,
+    },
+
+    /// Run environment health checks.
+    Doctor {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Emit machine-readable JSON.
+        #[arg(long)]
+        json: bool,
+
+        /// Treat warnings as failures.
+        #[arg(long)]
+        strict: bool,
+    },
+
+    /// Serve read-only job status endpoints.
+    Serve {
+        /// Path to job database.
+        #[arg(long, default_value = DEFAULT_DB_PATH)]
+        db_path: PathBuf,
+
+        /// Host address to bind.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind.
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
+
+    /// Inspect and validate run output assets.
+    Assets {
+        #[command(subcommand)]
+        command: AssetsCommand,
+    },
+
+    /// Plan and execute FFmpeg final assembly (concat, loudnorm, ducking).
+    Ffmpeg {
+        #[command(subcommand)]
+        command: FfmpegCommand,
     },
 }
 
@@ -130,6 +178,22 @@ fn main() -> Result<()> {
                 worker.run_forever()?;
             }
         }
+        Commands::Doctor {
+            db_path,
+            json,
+            strict,
+        } => doctor::run_doctor(db_path, json, strict)?,
+        Commands::Serve {
+            db_path,
+            host,
+            port,
+        } => {
+            tokio::runtime::Runtime::new()
+                .context("failed to create tokio runtime")?
+                .block_on(status::run_server(db_path, host, port))?;
+        }
+        Commands::Assets { command } => assets::run_command(command)?,
+        Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
 
     Ok(())
@@ -439,6 +503,14 @@ impl Worker {
                             &self.config.db_path,
                             job_id,
                             &format!("artifact_capture_failed: {err}"),
+                            "system",
+                        )?;
+                    }
+                    if let Err(err) = supervisor_assembly::run_if_enabled(self, job_id) {
+                        append_event_path(
+                            &self.config.db_path,
+                            job_id,
+                            &format!("rust_assembly_failed: {err}"),
                             "system",
                         )?;
                     }
@@ -1293,6 +1365,14 @@ mod tests {
                 "WHERE job_id=1 AND event_type='log'"
             )?,
             1
+        );
+        assert_eq!(
+            count_rows(
+                &db_path,
+                "job_events",
+                "WHERE job_id=1 AND message LIKE 'rust_assembly_%'"
+            )?,
+            0
         );
 
         Ok(())

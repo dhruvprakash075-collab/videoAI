@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Qwen-Image-Edit local spike harness.
+
+This script does repo-side checks that can run before the hardware spike:
+- verifies Qwen remains disabled in the committed/default config;
+- checks local workflow/model/custom-node paths when present;
+- writes a Markdown result template for Issue #23.
+
+It does not run ComfyUI or measure VRAM. Those parts must happen on the target GPU.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import shutil
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CONFIG = REPO_ROOT / "config" / "config.yaml"
+DEFAULT_OUTPUT = REPO_ROOT / ".qwen_edit_cache" / "qwen_local_spike_results.md"
+FOCUSED_PYTEST_COMMAND = (
+    "venv\\Scripts\\python.exe -m pytest "
+    "tests/test_qwen_repose.py tests/test_image_gen.py "
+    "tests/test_config_schemas.py tests/test_preflight.py "
+    "tests/test_qwen_spike_check.py -q"
+)
+TARGETED_RUFF_COMMAND = (
+    "venv\\Scripts\\ruff check "
+    "video/image_gen/image_gen.py video/image_gen/qwen_repose.py "
+    "utils/preflight.py config/config_schemas.py "
+    "tests/test_qwen_repose.py tests/test_image_gen.py "
+    "tests/test_config_schemas.py tests/test_preflight.py "
+    "scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py"
+)
+VRAM_MONITOR_COMMAND = (
+    "nvidia-smi --query-gpu=timestamp,memory.used,memory.free,utilization.gpu "
+    "--format=csv -l 1"
+)
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    ok: bool
+    message: str
+
+    @property
+    def status(self) -> str:
+        return "OK" if self.ok else "FAIL"
+
+
+def load_config(path: Path) -> dict[str, Any]:
+    """Load YAML config from disk."""
+    with path.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        msg = f"Config must be a mapping: {path}"
+        raise TypeError(msg)
+    return data
+
+
+def _repo_path(path_text: str) -> Path:
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def analyze_config(config: dict[str, Any]) -> list[Check]:
+    """Return default-safety and local-readiness checks for Qwen edit."""
+    image_gen = config.get("image_gen", {}) or {}
+    qwen = image_gen.get("qwen_edit", {}) or {}
+    comfyui = image_gen.get("comfyui", {}) or {}
+
+    composition_mode = image_gen.get("composition_mode", "one_pass")
+    enabled = bool(qwen.get("enabled", False))
+    workflow_path = str(qwen.get("workflow_path", ""))
+    model_path = str(qwen.get("model_path", ""))
+    required_nodes = qwen.get("required_custom_nodes", []) or []
+    comfy_root = str(comfyui.get("root", "external/ComfyUI"))
+
+    checks = [
+        Check(
+            "default composition mode",
+            composition_mode == "one_pass",
+            f"composition_mode={composition_mode!r}; committed config must stay 'one_pass'",
+        ),
+        Check(
+            "default Qwen disabled",
+            not enabled,
+            f"qwen_edit.enabled={enabled!r}; committed config must stay false",
+        ),
+    ]
+
+    if workflow_path:
+        workflow = _repo_path(workflow_path)
+        checks.append(
+            Check("workflow template exists", workflow.exists(), f"workflow_path={workflow_path}")
+        )
+    else:
+        checks.append(Check("workflow template configured", False, "workflow_path is empty"))
+
+    if model_path:
+        model = _repo_path(model_path)
+        checks.append(Check("local Qwen model exists", model.exists(), f"model_path={model_path}"))
+    else:
+        checks.append(
+            Check(
+                "local Qwen model configured",
+                False,
+                "model_path is empty; fill it only in a local test config before GPU spike",
+            )
+        )
+
+    custom_nodes_dir = _repo_path(comfy_root) / "custom_nodes"
+    for node in required_nodes:
+        node_path = custom_nodes_dir / str(node)
+        checks.append(Check(f"custom node: {node}", node_path.exists(), str(node_path)))
+
+    checks.append(
+        Check(
+            "nvidia-smi available",
+            shutil.which("nvidia-smi") is not None,
+            "needed for VRAM measurement during local spike",
+        )
+    )
+    return checks
+
+
+def build_issue_template() -> str:
+    """Build the Markdown template to paste into GitHub Issue #23."""
+    generated = dt.datetime.now(tz=dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return f"""## Qwen local GPU spike results
+
+Generated: {generated}
+
+Machine:
+- GPU: RTX 4050 6 GB
+- Backend: Nunchaku INT4
+- Resolution: 1024x576
+- Steps: 8
+
+Normal mode:
+- Qwen disabled on committed config: pass/fail
+- Existing focused tests: pass/fail
+- Targeted Ruff: pass/fail
+
+One-frame test:
+- Peak VRAM:
+- Seconds/image:
+- OOM? yes/no
+- Output path unchanged? yes/no
+- Fallback behavior OK? yes/no
+
+Three-frame identity test:
+- Frame 1 identity preserved? yes/no
+- Frame 2 identity preserved? yes/no
+- Frame 3 identity preserved? yes/no
+- Held props generated by Qwen? yes/no
+- Background-first then Qwen pass confirmed? yes/no
+
+Cache test:
+- Re-run hit Qwen cache? yes/no
+- Expensive Qwen calls skipped? yes/no
+
+Workflow compatibility:
+- Placeholder workflow worked? yes/no
+- Needed exported real ComfyUI API workflow? yes/no
+- Notes:
+
+Decision:
+- Ready to keep as optional experimental feature? yes/no
+"""
+
+
+def write_issue_template(path: Path) -> None:
+    """Write the Issue #23 local spike result template."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(build_issue_template(), encoding="utf-8")
+
+
+def print_command_plan() -> None:
+    """Print the local commands for the human-run GPU spike."""
+    print("\nFocused repo checks:")
+    print(FOCUSED_PYTEST_COMMAND)
+    print(TARGETED_RUFF_COMMAND)
+    print("\nVRAM monitor during spike:")
+    print(VRAM_MONITOR_COMMAND)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--no-write", action="store_true", help="Do not write the issue template")
+    parser.add_argument(
+        "--strict-defaults",
+        action="store_true",
+        help="Return non-zero if committed-default safety checks fail",
+    )
+    args = parser.parse_args(argv)
+
+    config_path = args.config.resolve()
+    config = load_config(config_path)
+    checks = analyze_config(config)
+
+    print("Qwen-Image-Edit local spike harness")
+    print(f"Config: {config_path}")
+    print("\nRepo-side checks:")
+    for check in checks:
+        print(f"  {check.status:4} {check.name:28} {check.message}")
+
+    if not args.no_write:
+        output_path = args.output.resolve()
+        write_issue_template(output_path)
+        print(f"\nWrote Issue #23 template: {output_path}")
+
+    print_command_plan()
+
+    default_checks = checks[:2]
+    if args.strict_defaults and any(not check.ok for check in default_checks):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

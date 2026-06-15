@@ -78,7 +78,7 @@ class VisionDocument(BaseModel):
     ambiguity_fields: list[str] = []
     recommendations: list[str] = []
     segment_count: int = Field(default=3, ge=1, le=20)
-    words_per_segment: int = Field(default=130, ge=50, le=800)  # aligned with config.yaml
+    words_per_segment: int = Field(default=130, ge=50, le=800)
     image_count_per_segment: int = Field(default=6, ge=1, le=30)
     topic: str = ""
     source_hash: str = ""
@@ -94,7 +94,7 @@ class VisionDocument(BaseModel):
 # ── Writer Breakdown ──
 class WriterBreakdown(BaseModel):
     segment_count: int = Field(default=3, ge=1, le=20)
-    words_per_segment: int = Field(default=130, ge=50, le=800)  # aligned with config.yaml
+    words_per_segment: int = Field(default=130, ge=50, le=800)
     image_count_per_segment: int = Field(default=6, ge=1, le=30)
     opening_hook_style: str = ""
     pacing_notes: str = ""
@@ -173,7 +173,6 @@ class TTSConfig(BaseModel):
     devanagari: DevanagariConfig = Field(default_factory=DevanagariConfig)
     supertonic: SuperTonicSubConfig = Field(default_factory=SuperTonicSubConfig)
     omnivoice: OmniVoiceSubConfig = Field(default_factory=OmniVoiceSubConfig)
-    # Fish Speech specific settings — empty string means "find in PATH"
     fish_speech_model_path: str = ""
     fish_speech_temperature: float = 0.7
     fish_speech_top_p: float = 0.9
@@ -205,7 +204,7 @@ class SubtitleOverlay(BaseModel):
     size: int = Field(default=24, ge=8, le=72)
     color: str = "&H00FFFFFF&"
     position: str = "bottom"
-    language: str = "en"  # 2026-06-02: force English-only subtitle text; whisper `task=translate` if audio is non-English
+    language: str = "en"
 
 
 class PacingConfig(BaseModel):
@@ -234,8 +233,6 @@ class VideoConfig(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """Config section for LLM model selection."""
-
     model_config = {"extra": "forbid"}
     director: str = "hermes-director"
     director_max_tokens: int = 2048
@@ -312,8 +309,6 @@ class PerformanceConfig(BaseModel):
 
 
 class ComfyUIConfig(BaseModel):
-    """Sub-config for ComfyUI settings inside image_gen."""
-
     model_config = {"extra": "forbid"}
     server: str = "127.0.0.1"
     host: str = "127.0.0.1"
@@ -356,6 +351,27 @@ class LayeredV3Config(BaseModel):
     character_dir: str = "studio_projects/{project}/characters"
 
 
+class QwenEditConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+    backend: str = "nunchaku"
+    workflow_path: str = "config/comfyui/workflows/qwen_image_edit_api.json"
+    model_path: str = ""
+    lightning_lora: str = ""
+    steps: int = 8
+    cfg: float = 1.0
+    denoise: float = 0.6
+    max_resolution: int = 1024
+    youtube_aspect: str = "16:9"
+    vram_offload: bool = True
+    trigger: str = "any_character"
+    character_threshold: float = 0.05
+    cache_dir: str = ".qwen_edit_cache"
+    timeout_seconds: int = 600
+    poll_seconds: float = 1.0
+    required_custom_nodes: list[str] = Field(default_factory=list)
+
+
 class ImageGenConfig(BaseModel):
     model_config = {"extra": "forbid"}
     backend: str = "comfyui"
@@ -377,6 +393,7 @@ class ImageGenConfig(BaseModel):
     comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
     fallback_backend: str = "bonsai"
     composition_mode: str = "one_pass"
+    qwen_edit: QwenEditConfig = Field(default_factory=QwenEditConfig)
     layered_v3: LayeredV3Config = Field(default_factory=LayeredV3Config)
 
 
@@ -422,7 +439,6 @@ class RvcConfig(BaseModel):
     enabled: bool = False
 
 
-# ── Phase 0: New top-level config sections ─────────────────────────
 class AlignmentConfig(BaseModel):
     model_config = {"extra": "forbid"}
     enabled: bool = True
@@ -469,8 +485,6 @@ class SourceConfig(BaseModel):
 
 
 class LanguageConfig(BaseModel):
-    """First-class language dimension for the pipeline."""
-
     model_config = {"extra": "forbid"}
     code: str = Field(
         default="hi", min_length=2, max_length=10, pattern=r"^[a-z]{2}(-[a-z]{2,4})?$"
@@ -485,14 +499,6 @@ class LanguageConfig(BaseModel):
 
 
 class VideoAIConfig(BaseModel):
-    """Top-level config mirror for the Phase 0 verification check.
-
-    Loads the 4 new top-level sections (critic, research, seo, source) plus
-    an aligned TTS sub-config. The raw YAML is still loaded permissively by
-    `config.load_config()`; this class is for typed access during tests and
-    for code that wants schema validation.
-    """
-
     model_config = {"extra": "allow"}
     critic: CriticConfig = Field(default_factory=CriticConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
@@ -502,7 +508,6 @@ class VideoAIConfig(BaseModel):
 
     @classmethod
     def from_dict(cls, raw: dict) -> "VideoAIConfig":
-        """Build a VideoAIConfig from a raw config dict (skip-validation)."""
         try:
             return cls(**{k: raw[k] for k in raw if k in cls.model_fields})
         except Exception:
@@ -556,10 +561,6 @@ def overlay_from_dict(d):
     return validate_or_default(d, ConfigOverlay)
 
 
-# ── SECTION_MODELS registry ─────────────────────────────────────────
-# Every known dict-valued config section maps to its Pydantic model.
-# Scalar fields (language, characters, scene_templates) are excluded
-# because they are not dict sections.
 SECTION_MODELS: dict[str, type[BaseModel]] = {
     "critic": CriticConfig,
     "research": ResearchConfig,
@@ -594,9 +595,7 @@ class SceneTemplatesConfig(RootModel[dict[str, str]]):
 
 
 ALLOWED_KEYS = {
-    # Dict-valued sections validated by SECTION_MODELS
     *SECTION_MODELS.keys(),
-    # Other valid sections
     "language",
     "project_name",
     "theme",
@@ -615,12 +614,7 @@ ALLOWED_KEYS = {
 
 
 def validate_config(raw_config: dict) -> dict:
-    """Strict full-config validation via Pydantic schemas.
-
-    Every known config section is validated through its Pydantic model.
-    Unknown top-level sections are rejected.
-    On validation failure, raises a FatalError with section+field detail.
-    """
+    """Strict full-config validation via Pydantic schemas."""
     from pydantic import ValidationError
 
     from utils.errors import FatalError
@@ -654,7 +648,6 @@ def validate_config(raw_config: dict) -> dict:
             if isinstance(value, dict):
                 try:
                     validated[key] = CharactersConfig(value).root
-                    # Dump back to plain dict of dicts
                     validated[key] = {k: v.model_dump() for k, v in validated[key].items()}
                 except ValidationError as exc:
                     errors = []
@@ -700,45 +693,32 @@ def validate_config(raw_config: dict) -> dict:
                         "Config section 'language' validation failed: %s" % ("; ".join(errors))
                     ) from exc
             else:
-                # pass through scalar language code
                 validated[key] = value
         else:
-            # project_name, theme, narrator_persona, world_lore, active_plot_threads, etc.
             validated[key] = value
 
     return validated
 
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ── Decision Record (single source of truth for structural decisions) ─────────
-# ══════════════════════════════════════════════════════════════════════════════
-
-import logging as _log_dr  # noqa: E402  (placed after the schema section for readability)
+import logging as _log_dr  # noqa: E402
 
 _dr_log = _log_dr.getLogger(__name__)
 
 DECISION_SCHEMA_VERSION = 1
-
 Provenance = Literal["default", "director", "writer", "user", "cli_flag"]
-
 EndMode = Literal["full", "cliffhanger", "compact"]
 RunMode = Literal["project", "one_time"]
 
 
 class Decision(BaseModel):
-    """A single structural value with its origin and lock state."""
-
     model_config = {"extra": "allow"}
     value: Any
     provenance: Provenance = "default"
-    locked: bool = False  # True → downstream MUST NOT change
-    rationale: str = ""  # optional, e.g. Writer's reason for adjustment
+    locked: bool = False
+    rationale: str = ""
 
 
 class PerSegmentOverride(BaseModel):
-    """Optional per-segment word/image override (data model present in v1; CLI not yet exposed)."""
-
     seg: int = Field(ge=1)
     words: int | None = Field(default=None, ge=50, le=800)
     images: int | None = Field(default=None, ge=1, le=30)
@@ -746,56 +726,23 @@ class PerSegmentOverride(BaseModel):
 
 
 class DecisionConflict(Exception):
-    """Raised when two locked structural values are mutually inconsistent."""
-
     pass
 
 
 class DecisionRecord(BaseModel):
-    """Versioned, provenance-tracked record of all structural decisions for a run.
-
-    Authority order (lowest → highest):
-        default < director < writer < user / cli_flag
-
-    Only user / cli_flag provenance may lock a field.
-    """
-
     model_config = {"extra": "allow"}
-
     version: int = DECISION_SCHEMA_VERSION
-
-    # ── Core structural decisions ──────────────────────────────────────────
-    total_duration_min: Decision = Field(
-        default_factory=lambda: Decision(value=10, provenance="default")
-    )
+    total_duration_min: Decision = Field(default_factory=lambda: Decision(value=10, provenance="default"))
     segment_count: Decision = Field(default_factory=lambda: Decision(value=5, provenance="default"))
-    segment_duration_min: Decision = Field(
-        default_factory=lambda: Decision(value=2, provenance="default")
-    )
-    words_per_segment: Decision = Field(
-        default_factory=lambda: Decision(value=130, provenance="default")
-    )
-    images_per_segment: Decision = Field(
-        default_factory=lambda: Decision(value=6, provenance="default")
-    )
-
-    # ── Optional per-segment fine control ─────────────────────────────────
+    segment_duration_min: Decision = Field(default_factory=lambda: Decision(value=2, provenance="default"))
+    words_per_segment: Decision = Field(default_factory=lambda: Decision(value=130, provenance="default"))
+    images_per_segment: Decision = Field(default_factory=lambda: Decision(value=6, provenance="default"))
     per_segment: list[PerSegmentOverride] = Field(default_factory=list)
-
-    # ── Length-control outcome ─────────────────────────────────────────────
     end_mode: Decision = Field(default_factory=lambda: Decision(value="full", provenance="default"))
-    cliffhanger_point: Decision | None = None  # % through story (0–100)
-
-    # ── Run mode ──────────────────────────────────────────────────────────
-    run_mode: Decision = Field(
-        default_factory=lambda: Decision(value="one_time", provenance="default")
-    )
+    cliffhanger_point: Decision | None = None
+    run_mode: Decision = Field(default_factory=lambda: Decision(value="one_time", provenance="default"))
     project_name: str | None = None
-
-    # ── Audit trail ───────────────────────────────────────────────────────
     adjustments: list[dict[str, Any]] = Field(default_factory=list)
-
-    # ── Authority ranking ─────────────────────────────────────────────────
     _AUTHORITY: dict[str, int] = {
         "default": 0,
         "director": 1,
@@ -807,75 +754,25 @@ class DecisionRecord(BaseModel):
     def _rank(self, provenance: str) -> int:
         return self._AUTHORITY.get(provenance, 0)
 
-    def set(
-        self,
-        field: str,
-        value: Any,
-        provenance: Provenance,
-        *,
-        lock: bool = False,
-        rationale: str = "",
-    ) -> bool:
-        """Set a structural field respecting lock immutability.
-
-        Returns True if the value was applied, False if blocked by a lock.
-        Only user/cli_flag provenance may lock or overwrite a locked field.
-        """
+    def set(self, field: str, value: Any, provenance: Provenance, *, lock: bool = False, rationale: str = "") -> bool:
         current: Decision | None = getattr(self, field, None)
         if current is None:
             return False
-
         incoming_rank = self._rank(provenance)
         can_lock = provenance in ("user", "cli_flag")
-
-        # Blocked: current is locked and incoming is not user/cli_flag
         if current.locked and not can_lock:
-            _dr_log.debug(
-                f"[DECISION] '{field}' locked by {current.provenance} — "
-                f"ignoring {provenance} proposal (value={value})"
-            )
             return False
-
-        # Blocked: lower-authority write on an unlocked field
         if not current.locked and incoming_rank < self._rank(current.provenance):
-            _dr_log.debug(
-                f"[DECISION] '{field}' already set by higher authority "
-                f"({current.provenance} > {provenance}) — ignoring"
-            )
             return False
-
-        # Apply clamp for known numeric fields
         clamped_value = self._clamp(field, value)
         if clamped_value != value:
-            self.adjustments.append(
-                {
-                    "field": field,
-                    "type": "clamp",
-                    "from": value,
-                    "to": clamped_value,
-                    "provenance": provenance,
-                }
-            )
+            self.adjustments.append({"field": field, "type": "clamp", "from": value, "to": clamped_value, "provenance": provenance})
             value = clamped_value
-
-        object.__setattr__(
-            self,
-            field,
-            Decision(
-                value=value,
-                provenance=provenance,
-                locked=lock if can_lock else False,
-                rationale=rationale,
-            ),
-        )
-        _dr_log.debug(
-            f"[DECISION] '{field}' = {value} (provenance={provenance}, locked={lock and can_lock})"
-        )
+        object.__setattr__(self, field, Decision(value=value, provenance=provenance, locked=lock if can_lock else False, rationale=rationale))
         return True
 
     @staticmethod
     def _clamp(field: str, value: Any) -> Any:
-        """Clamp numeric structural fields to safe ranges."""
         clamps = {
             "total_duration_min": (0.5, 600),
             "segment_count": (1, 200),
@@ -885,28 +782,17 @@ class DecisionRecord(BaseModel):
         }
         if field in clamps and isinstance(value, (int, float)):
             lo, hi = clamps[field]
-            # P4-23 fix: preserve float type so fractional minutes survive the clamp.
             return max(lo, min(hi, value))
         return value
 
     def resolve_conflicts(self) -> None:
-        """Reconcile segment_count vs total_duration_min / segment_duration_min.
-
-        Rules (per Req 3.3, 4.2):
-        - Both locked and inconsistent → raise DecisionConflict (never silent).
-        - One locked → locked one wins; recompute the other.
-        - Neither locked → prefer segment_count; recompute total_duration_min.
-        """
         sc = self.segment_count
         td = self.total_duration_min
         sdm = self.segment_duration_min
-
         derived_total = sc.value * sdm.value
-        derived_segs = max(1, -(-td.value // sdm.value))  # ceiling div
-
+        derived_segs = max(1, -(-td.value // sdm.value))
         if abs(derived_total - td.value) <= 1:
-            return  # consistent enough
-
+            return
         both_locked = sc.locked and td.locked
         if both_locked:
             if not sdm.locked:
@@ -939,156 +825,40 @@ class DecisionRecord(BaseModel):
                 )
                 return
             raise DecisionConflict(
-                f"Conflict: segment_count={sc.value} × segment_duration={sdm.value}min "
-                f"= {derived_total}min, but total_duration_min is locked to {td.value}min. "
-                f"Please resolve by unlocking one of them."
+                f"Conflict: segment_count={sc.value} × segment_duration={sdm.value}min = {derived_total}min, but total_duration_min is locked to {td.value}min. Please resolve by unlocking one of them."
             )
-
         if sc.locked:
-            # segment_count wins → recompute total_duration_min
             new_total = sc.value * sdm.value
-            self.adjustments.append(
-                {
-                    "field": "total_duration_min",
-                    "type": "conflict_resolved",
-                    "rule": "segment_count locked → total recomputed",
-                    "from": td.value,
-                    "to": new_total,
-                }
-            )
-            object.__setattr__(
-                self,
-                "total_duration_min",
-                Decision(
-                    value=new_total,
-                    provenance=sc.provenance,
-                    locked=False,
-                    rationale="recomputed from locked segment_count × segment_duration_min",
-                ),
-            )
-            _dr_log.info(
-                f"[DECISION] Conflict resolved: segment_count locked ({sc.value}) → "
-                f"total_duration_min recomputed to {new_total}min"
-            )
+            self.adjustments.append({"field": "total_duration_min", "type": "conflict_resolved", "rule": "segment_count locked → total recomputed", "from": td.value, "to": new_total})
+            object.__setattr__(self, "total_duration_min", Decision(value=new_total, provenance=sc.provenance, locked=False, rationale="recomputed from locked segment_count × segment_duration_min"))
         elif td.locked:
-            # total_duration_min wins → recompute segment_count
-            self.adjustments.append(
-                {
-                    "field": "segment_count",
-                    "type": "conflict_resolved",
-                    "rule": "total_duration_min locked → segment_count recomputed",
-                    "from": sc.value,
-                    "to": derived_segs,
-                }
-            )
-            object.__setattr__(
-                self,
-                "segment_count",
-                Decision(
-                    value=derived_segs,
-                    provenance=td.provenance,
-                    locked=False,
-                    rationale="recomputed from locked total_duration_min / segment_duration_min",
-                ),
-            )
-            _dr_log.info(
-                f"[DECISION] Conflict resolved: total_duration_min locked ({td.value}min) → "
-                f"segment_count recomputed to {derived_segs}"
-            )
+            self.adjustments.append({"field": "segment_count", "type": "conflict_resolved", "rule": "total_duration_min locked → segment_count recomputed", "from": sc.value, "to": derived_segs})
+            object.__setattr__(self, "segment_count", Decision(value=derived_segs, provenance=td.provenance, locked=False, rationale="recomputed from locked total_duration_min / segment_duration_min"))
         else:
-            # Neither locked → prefer segment_count, recompute total
             new_total = sc.value * sdm.value
-            self.adjustments.append(
-                {
-                    "field": "total_duration_min",
-                    "type": "conflict_resolved",
-                    "rule": "neither locked → prefer segment_count",
-                    "from": td.value,
-                    "to": new_total,
-                }
-            )
-            object.__setattr__(
-                self,
-                "total_duration_min",
-                Decision(
-                    value=new_total,
-                    provenance="director",
-                    rationale="recomputed from segment_count × segment_duration_min",
-                ),
-            )
-            _dr_log.info(
-                f"[DECISION] Conflict resolved (prefer segment_count={sc.value}) → "
-                f"total_duration_min={new_total}min"
-            )
+            self.adjustments.append({"field": "total_duration_min", "type": "conflict_resolved", "rule": "neither locked → prefer segment_count", "from": td.value, "to": new_total})
+            object.__setattr__(self, "total_duration_min", Decision(value=new_total, provenance="director", rationale="recomputed from segment_count × segment_duration_min"))
 
     def to_overlay(self) -> dict[str, Any]:
-        """Flatten to the existing config-overlay shape for _deep_merge compatibility."""
-        script_overlay = {
-            "words_per_segment": self.words_per_segment.value,
-            "default_images_per_segment": self.images_per_segment.value,
-        }
-        # When the image count is explicitly locked (user/CLI), force a fixed
-        # image count so the Director's per-segment num_images can't override it.
+        script_overlay = {"words_per_segment": self.words_per_segment.value, "default_images_per_segment": self.images_per_segment.value}
         if self.images_per_segment.locked:
             script_overlay["dynamic_image_count"] = False
-        return {
-            "video": {
-                "total_duration_min": self.total_duration_min.value,
-                "segment_duration_min": self.segment_duration_min.value,
-            },
-            "script": script_overlay,
-            "_decision_record": self.model_dump(),
-        }
+        return {"video": {"total_duration_min": self.total_duration_min.value, "segment_duration_min": self.segment_duration_min.value}, "script": script_overlay, "_decision_record": self.model_dump()}
 
     def provenance_report(self) -> dict[str, Any]:
-        """Return a manifest-ready dict of all fields with provenance."""
         fields = {}
-        for fname in (
-            "total_duration_min",
-            "segment_count",
-            "segment_duration_min",
-            "words_per_segment",
-            "images_per_segment",
-            "end_mode",
-            "run_mode",
-        ):
+        for fname in ("total_duration_min", "segment_count", "segment_duration_min", "words_per_segment", "images_per_segment", "end_mode", "run_mode"):
             d: Decision = getattr(self, fname)
-            fields[fname] = {
-                "value": d.value,
-                "provenance": d.provenance,
-                "locked": d.locked,
-                "rationale": d.rationale,
-            }
-        return {
-            "schema_version": self.version,
-            "fields": fields,
-            "resolved": {
-                "segment_count": self.segment_count.value,
-                "total_duration_min": self.total_duration_min.value,
-                "words_per_segment": self.words_per_segment.value,
-                "images_per_segment": self.images_per_segment.value,
-            },
-            "adjustments": self.adjustments,
-        }
-
-
-# ── Schema versioning & migration ─────────────────────────────────────────────
+            fields[fname] = {"value": d.value, "provenance": d.provenance, "locked": d.locked, "rationale": d.rationale}
+        return {"schema_version": self.version, "fields": fields, "resolved": {"segment_count": self.segment_count.value, "total_duration_min": self.total_duration_min.value, "words_per_segment": self.words_per_segment.value, "images_per_segment": self.images_per_segment.value}, "adjustments": self.adjustments}
 
 
 def build_default_decision_record(config: dict) -> "DecisionRecord":
-    """Build a DecisionRecord from an existing config dict (provenance=default/cli_flag)."""
     rec = DecisionRecord()
     video = config.get("video", {})
     script = config.get("script", {})
     rec.set("total_duration_min", video.get("total_duration_min", 10), "default")
-    rec.set(
-        "segment_count",
-        max(
-            1,
-            -(-video.get("total_duration_min", 10) // max(1, video.get("segment_duration_min", 2))),
-        ),
-        "default",
-    )
+    rec.set("segment_count", max(1, -(-video.get("total_duration_min", 10) // max(1, video.get("segment_duration_min", 2)))), "default")
     rec.set("segment_duration_min", video.get("segment_duration_min", 2), "default")
     rec.set("words_per_segment", script.get("words_per_segment", 130), "default")
     rec.set("images_per_segment", script.get("default_images_per_segment", 6), "default")
@@ -1096,16 +866,8 @@ def build_default_decision_record(config: dict) -> "DecisionRecord":
 
 
 def migrate_decision_record(raw: dict, from_version: int) -> dict:
-    """Apply ordered, idempotent migration steps from_version → current."""
-    # v0 → v1: wrap bare numeric fields into Decision dicts
     if from_version < 1:
-        for field in (
-            "total_duration_min",
-            "segment_count",
-            "segment_duration_min",
-            "words_per_segment",
-            "images_per_segment",
-        ):
+        for field in ("total_duration_min", "segment_count", "segment_duration_min", "words_per_segment", "images_per_segment"):
             if field in raw and not isinstance(raw[field], dict):
                 raw[field] = {"value": raw[field], "provenance": "default", "locked": False}
         raw["version"] = 1
@@ -1113,10 +875,6 @@ def migrate_decision_record(raw: dict, from_version: int) -> dict:
 
 
 def load_decision_record(raw: dict, config: dict | None = None) -> "DecisionRecord":
-    """Load a DecisionRecord from a raw dict, migrating if needed.
-
-    Falls back to building from config on any unrecoverable error.
-    """
     from pydantic import ValidationError
 
     v = raw.get("version", 0)

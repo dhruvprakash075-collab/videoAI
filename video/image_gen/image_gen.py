@@ -85,6 +85,16 @@ from video.image_gen.ip_adapter import (
 )
 
 
+def _qwen_preflight_issues(cfg: dict) -> list[str]:
+    """Return Qwen preflight issues for an image_gen config dict."""
+    try:
+        from video.image_gen.qwen_repose import preflight_qwen_edit
+
+        return preflight_qwen_edit({"image_gen": cfg})
+    except Exception as e:
+        return [f"qwen_edit preflight raised: {e}"]
+
+
 def generate_images(
     prompts,
     output_dir: Path,
@@ -115,6 +125,40 @@ def generate_images(
 
     backend = cfg.get("backend", "bonsai")
     composition_mode = cfg.get("composition_mode", "one_pass")
+
+    if backend == "comfyui" and composition_mode == "qwen_edit":
+        qwen_cfg = cfg.get("qwen_edit", {}) or {}
+        if qwen_cfg.get("enabled", False):
+            qwen_issues = _qwen_preflight_issues(cfg)
+            if qwen_issues:
+                log.warning(
+                    "[image_gen] qwen_edit preflight failed; using one_pass ComfyUI. Issues: %s",
+                    "; ".join(qwen_issues),
+                )
+            else:
+                try:
+                    return _comfyui_qwen_edit(
+                        prompt_list,
+                        output_dir,
+                        cfg,
+                        char_presence=char_presence,
+                        project_id=project_id or "",
+                    )
+                except Exception as e:
+                    log.warning(f"[image_gen] Qwen edit failed: {e}")
+                    fallback = cfg.get("fallback_backend", "bonsai")
+                    if fallback == "bonsai":
+                        log.info("[image_gen] Falling back to Bonsai after qwen_edit error")
+                        return _bonsai(
+                            prompt_list,
+                            output_dir,
+                            cfg,
+                            char_presence=char_presence,
+                            project_id=project_id or "",
+                        )
+                    raise
+        else:
+            log.info("[image_gen] qwen_edit mode is configured but disabled; using one_pass")
 
     if backend == "comfyui" and composition_mode == "layered_v3":
         try:
@@ -280,13 +324,21 @@ def _resolve_dominant_char(char_presence: dict | None) -> tuple[str | None, floa
 
     Threshold: weight >= 0.3 means the frame is "about" that character.
     """
+    return _resolve_dominant_char_at_threshold(char_presence, 0.3)
+
+
+def _resolve_dominant_char_at_threshold(
+    char_presence: dict | None,
+    threshold: float,
+) -> tuple[str | None, float]:
+    """Return dominant character using a caller-provided presence threshold."""
     if not char_presence:
         return None, 0.0
     if not isinstance(char_presence, dict) or not char_presence:
         return None, 0.0
     best_key = max(char_presence, key=char_presence.get)
     best_weight = float(char_presence[best_key])
-    if best_weight < 0.3:
+    if best_weight < threshold:
         return None, 0.0
     return best_key, best_weight
 
@@ -708,6 +760,81 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     return images
 
 
+def _qwen_seed(char_key: str, frame_index: int, prompt: str) -> int:
+    raw = f"qwen_edit|{char_key}|{frame_index}|{prompt[:80]}"
+    return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16) % (2**32)
+
+
+def _free_comfyui_memory(cfg: dict) -> None:
+    try:
+        from video.image_gen.comfyui_client import ComfyUIClient
+        from video.image_gen.comfyui_runtime import get_comfyui_runtime
+
+        comfy_cfg = cfg.get("comfyui", {}) or {}
+        runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
+        client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+        client.free_memory()
+        log.info("[ComfyUI] Requested memory free before Qwen edit pass")
+    except Exception as e:
+        log.debug("[ComfyUI] Could not free memory before Qwen edit pass: %s", e)
+
+
+def _comfyui_qwen_edit(
+    prompts: list[str],
+    out: Path,
+    cfg: dict,
+    char_presence: list[dict[str, float]] | None = None,
+    project_id: str = "",
+) -> list[Path]:
+    """Two-pass ComfyUI pipeline: generate full backgrounds, then paste characters.
+
+    Pass 1 deliberately uses the existing character-blind ComfyUI one-pass path
+    to create complete backgrounds. Pass 2 loads Qwen-Image-Edit only for frames
+    with a saved character and writes the result back to the same frame path.
+    """
+    qwen_cfg = cfg.get("qwen_edit", {}) or {}
+    threshold = float(qwen_cfg.get("character_threshold", 0.05))
+
+    log.info("[qwen_edit] Pass 1/2: generating full backgrounds")
+    images = _comfyui(prompts, out, cfg)
+    if not images:
+        return images
+
+    _free_comfyui_memory(cfg)
+
+    from video.image_gen.qwen_repose import repose_character
+
+    edited: list[Path] = []
+    with tqdm(total=len(images), desc="  Qwen edit", leave=False) as pbar:
+        for i, image_path in enumerate(images):
+            cp = {}
+            if isinstance(char_presence, list) and i < len(char_presence):
+                val = char_presence[i]
+                if isinstance(val, dict):
+                    cp = val
+            dom_char, _dom_weight = _resolve_dominant_char_at_threshold(cp, threshold)
+            if not dom_char:
+                edited.append(Path(image_path))
+                pbar.update(1)
+                continue
+
+            prompt = prompts[i] if i < len(prompts) else ""
+            seed = _qwen_seed(dom_char, i, prompt)
+            result = repose_character(
+                str(image_path),
+                dom_char,
+                prompt,
+                str(image_path),
+                config={"image_gen": cfg},
+                project_id=project_id,
+                seed=seed,
+            )
+            edited.append(Path(result))
+            pbar.update(1)
+
+    return edited
+
+
 # ── REPLICATE / PEXELS (kept as code; not in active path) ────────────────
 
 
@@ -757,7 +884,10 @@ def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
             query = urllib.parse.quote_plus(prompt[:100])
-            url = f"https://api.pexels.com/v1/search?query={query}&per_page=1&orientation=landscape"
+            url = (
+                f"https://api.pexels.com/v1/search?query={query}"
+                "&per_page=1&orientation=landscape"
+            )
             req = urllib.request.Request(url, headers={"Authorization": api_key})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read())

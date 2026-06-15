@@ -1,0 +1,87 @@
+{
+  "1": {
+    "inputs": {
+      "image": "__BASE_IMAGE__"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Background image"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "__CHARACTER_IMAGE__"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Character reference image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "model_path": "__MODEL_PATH__",
+      "backend": "nunchaku",
+      "vram_offload": true
+    },
+    "class_type": "QwenImageEdit2509Loader",
+    "_meta": {
+      "title": "Qwen-Image-Edit-2509 loader"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "__EDIT_PROMPT__",
+      "model": ["3", 0]
+    },
+    "class_type": "QwenImageEditTextEncode",
+    "_meta": {
+      "title": "Edit prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "background_image": ["1", 0],
+      "reference_image": ["2", 0],
+      "conditioning": ["4", 0],
+      "model": ["3", 0]
+    },
+    "class_type": "QwenImageEditMultiImageEncode",
+    "_meta": {
+      "title": "Multi-image edit encode"
+    }
+  },
+  "6": {
+    "inputs": {
+      "seed": "__SEED__",
+      "steps": "__STEPS__",
+      "cfg": "__CFG__",
+      "denoise": "__DENOISE__",
+      "samples": ["5", 0],
+      "model": ["3", 0]
+    },
+    "class_type": "QwenImageEditSampler",
+    "_meta": {
+      "title": "Qwen edit sampler"
+    }
+  },
+  "7": {
+    "inputs": {
+      "samples": ["6", 0],
+      "vae": ["3", 1]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "8": {
+    "inputs": {
+      "filename_prefix": "__FILENAME_PREFIX__",
+      "images": ["7", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save composited frame"
+    }
+  }
+}
