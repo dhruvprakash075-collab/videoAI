@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -33,13 +34,16 @@ if not Path("sfx").exists():
 
 
 def _try_native_audio_master(input_path: Path, output_path: Path) -> bool:
-    """Use the optional PyO3 Rust extension when it is installed.
+    """Use the optional PyO3 Rust extension when explicitly enabled.
 
     The import is intentionally lazy so normal source installs keep using the
-    established Python/pydub path. When `videoai_worker_native` is available,
-    this avoids subprocess JSON marshalling between Python and Rust for the
-    audio mastering entrypoint.
+    established Python/pydub path. Native mastering is guarded by
+    VIDEOAI_RUST_AUDIO=1 because the Rust implementation currently represents
+    the fallback FFmpeg chain rather than full premium pydub parity.
     """
+    if os.environ.get("VIDEOAI_RUST_AUDIO") != "1":
+        return False
+
     try:
         import videoai_worker_native
     except Exception:
