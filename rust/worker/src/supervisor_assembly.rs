@@ -333,10 +333,7 @@ fn run_supervised_step(worker: &Worker, job_id: i64, label: &str, argv: &[PathBu
     let status = child
         .wait()
         .with_context(|| format!("{label}: failed to wait for subprocess"))?;
-    let rc = match status.code() {
-        Some(code) => code,
-        None => -1,
-    };
+    let rc = status.code().unwrap_or(-1);
     if rc != 0 {
         bail!("{label}: exit_code:{rc}");
     }
