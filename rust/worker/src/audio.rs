@@ -15,6 +15,8 @@ const TARGET_RMS_DBFS: f64 = -14.0;
 const RMS_TOLERANCE_DB: f64 = 2.5;
 const COMPRESSOR_THRESHOLD_DBFS: f64 = -24.0;
 const COMPRESSOR_RATIO: f64 = 2.0;
+const DEESSER_FREQUENCY_HZ: f64 = 6_000.0;
+const DEESSER_REDUCTION_DB: f64 = -3.0;
 const SILENCE_TRIM_THRESHOLD_DBFS: f64 = -45.0;
 const SILENCE_TRIM_MIN_MS: u32 = 800;
 const SILENCE_TRIM_KEEP_MS: u32 = 500;
@@ -474,6 +476,7 @@ fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
     let mut wav = decode_pcm_wav(&bytes)?;
     trim_long_silences_i16(&mut wav);
     compress_dynamic_range_i16(&mut wav.samples);
+    apply_deesser_i16(&mut wav);
     normalize_and_limit_i16(&mut wav.samples);
     let output_bytes = encode_pcm16_wav(&wav)?;
     fs::write(output, output_bytes)
@@ -572,6 +575,42 @@ fn compress_dynamic_range_i16(samples: &mut [i16]) {
         }
         let compressed = threshold + ((magnitude - threshold) / COMPRESSOR_RATIO);
         *sample = original.signum() as i16 * compressed.round() as i16;
+    }
+}
+
+fn apply_deesser_i16(wav: &mut Pcm16Wav) {
+    let channels = usize::from(wav.channels);
+    if channels == 0 || wav.sample_rate == 0 || wav.samples.is_empty() {
+        return;
+    }
+
+    let cutoff = DEESSER_FREQUENCY_HZ.min(f64::from(wav.sample_rate) / 2.0);
+    if cutoff <= 0.0 {
+        return;
+    }
+
+    let rc = 1.0 / (2.0 * std::f64::consts::PI * cutoff);
+    let dt = 1.0 / f64::from(wav.sample_rate);
+    let alpha = dt / (rc + dt);
+    let high_gain = dbfs_to_linear(DEESSER_REDUCTION_DB);
+    let frame_count = wav.samples.len() / channels;
+    let mut low_state = vec![0.0_f64; channels];
+
+    for (channel, state) in low_state.iter_mut().enumerate() {
+        *state = f64::from(wav.samples[channel]);
+    }
+
+    for frame in 0..frame_count {
+        for (channel, state) in low_state.iter_mut().enumerate() {
+            let idx = frame * channels + channel;
+            let current = f64::from(wav.samples[idx]);
+            *state += alpha * (current - *state);
+            let high = current - *state;
+            let deessed = *state + (high * high_gain);
+            wav.samples[idx] = deessed
+                .round()
+                .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16;
+        }
     }
 }
 
@@ -864,6 +903,21 @@ mod tests {
         assert!(samples[1].abs() < loud);
         assert!(samples[2] < loud);
         assert_eq!(samples[1].abs(), samples[2]);
+    }
+
+    #[test]
+    fn native_deesser_reduces_high_frequency_changes() {
+        let mut wav = Pcm16Wav {
+            channels: 1,
+            sample_rate: TARGET_PREMIUM_SAMPLE_RATE,
+            samples: vec![12_000, -12_000, 12_000, -12_000, 12_000, -12_000],
+        };
+        let before_peak = wav.samples.iter().map(|sample| sample.abs()).max().unwrap();
+
+        apply_deesser_i16(&mut wav);
+
+        let after_peak = wav.samples.iter().map(|sample| sample.abs()).max().unwrap();
+        assert!(after_peak < before_peak);
     }
 
     #[test]
