@@ -153,9 +153,12 @@ async fn run_ffprobe(ffprobe_bin: &Path, input: &Path) -> Result<Value> {
         .with_context(|| format!("failed to spawn {}", ffprobe_bin.display()))?;
 
     let wait = child.wait_with_output();
-    let output = tokio::time::timeout(std::time::Duration::from_secs(FFPROBE_TIMEOUT_SECONDS), wait)
-        .await
-        .with_context(|| format!("ffprobe timeout (> {FFPROBE_TIMEOUT_SECONDS}s)"))??;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(FFPROBE_TIMEOUT_SECONDS),
+        wait,
+    )
+    .await
+    .with_context(|| format!("ffprobe timeout (> {FFPROBE_TIMEOUT_SECONDS}s)"))??;
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if !output.status.success() {
@@ -251,9 +254,8 @@ fn inspect_probe(
         .and_then(parse_frame_rate);
     if let Some(value) = fps {
         if (value - 24.0).abs() > FPS_TOLERANCE && (value - 12.0).abs() > FPS_TOLERANCE {
-            warnings.push(
-                "Framerate differs from target classic 24fps or zoompan 12fps".to_string(),
-            );
+            warnings
+                .push("Framerate differs from target classic 24fps or zoompan 12fps".to_string());
         }
     }
 
