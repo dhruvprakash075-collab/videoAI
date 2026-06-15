@@ -3,9 +3,13 @@ from pathlib import Path
 import yaml
 
 from scripts.qwen_edit_spike_check import (
+    FOCUSED_PYTEST_COMMAND,
+    TARGETED_RUFF_COMMAND,
+    VRAM_MONITOR_COMMAND,
     analyze_config,
     build_issue_template,
     load_config,
+    print_command_plan,
     write_issue_template,
 )
 
@@ -83,3 +87,17 @@ def test_load_config_reads_yaml(tmp_path: Path):
     loaded = load_config(config_path)
 
     assert loaded["image_gen"]["composition_mode"] == "one_pass"
+
+
+def test_command_plan_lists_all_focused_qwen_checks(capsys):
+    print_command_plan()
+
+    captured = capsys.readouterr().out
+    assert FOCUSED_PYTEST_COMMAND in captured
+    assert TARGETED_RUFF_COMMAND in captured
+    assert VRAM_MONITOR_COMMAND in captured
+    assert "tests/test_qwen_repose.py" in TARGETED_RUFF_COMMAND
+    assert "tests/test_image_gen.py" in TARGETED_RUFF_COMMAND
+    assert "tests/test_config_schemas.py" in TARGETED_RUFF_COMMAND
+    assert "tests/test_preflight.py" in TARGETED_RUFF_COMMAND
+    assert "tests/test_qwen_spike_check.py" in TARGETED_RUFF_COMMAND
