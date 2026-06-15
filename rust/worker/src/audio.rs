@@ -585,7 +585,8 @@ fn resample_to_sample_rate_i16(wav: &mut Pcm16Wav, target_sample_rate: u32) {
     let mut output = Vec::with_capacity(target_frames * channels);
 
     for frame in 0..target_frames {
-        let source_position = frame as f64 * f64::from(wav.sample_rate) / f64::from(target_sample_rate);
+        let source_position =
+            frame as f64 * f64::from(wav.sample_rate) / f64::from(target_sample_rate);
         let base_frame = source_position.floor() as usize;
         let next_frame = (base_frame + 1).min(frame_count - 1);
         let fraction = source_position - base_frame as f64;
