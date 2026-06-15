@@ -157,7 +157,10 @@ pub fn build_plan(options: &AssemblyOptions) -> Result<FfmpegPlan> {
     ensure_run_dir(&options.run_dir)?;
     let segments = discover_segments(&options.run_dir)?;
     if segments.is_empty() {
-        bail!("no segment MP4 files found under {}", options.run_dir.display());
+        bail!(
+            "no segment MP4 files found under {}",
+            options.run_dir.display()
+        );
     }
 
     if let Some(music) = options.music.as_deref() {
@@ -264,8 +267,8 @@ impl LoudnormStats {
 }
 
 fn collect_segment_files(dir: &Path, segments: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("failed to read directory {}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("failed to read directory {}", dir.display()))?
     {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         let path = entry.path();
@@ -336,7 +339,8 @@ fn concat_argv(options: &AssemblyOptions, output: &Path) -> Vec<String> {
                 "[0:a]asplit=2[voice_mix][voice_key];[1:a]volume=0.15,afade=t=in:st=0:d=3[music_in];[music_in][voice_key]sidechaincompress=threshold=0.05:ratio={comp_ratio:.1}:attack=20:release=300[ducked];[voice_mix][ducked]amix=inputs=2:duration=first:normalize=0[outa]"
             )
         } else {
-            "[1:a]volume=0.15,afade=t=in:st=0:d=3[bg];[0:a][bg]amix=inputs=2:duration=first[outa]".to_string()
+            "[1:a]volume=0.15,afade=t=in:st=0:d=3[bg];[0:a][bg]amix=inputs=2:duration=first[outa]"
+                .to_string()
         };
         vec![
             ffmpeg,

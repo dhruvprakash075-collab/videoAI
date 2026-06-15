@@ -6,8 +6,8 @@ use anyhow::{bail, Context, Result};
 use tokio::process::Command;
 
 use crate::ffmpeg_plan::{
-    concat_list_content, discover_segments, display_path, loudnorm_apply_argv, options_from_concat_args,
-    FfmpegConcatArgs, LoudnormStats,
+    concat_list_content, discover_segments, display_path, loudnorm_apply_argv,
+    options_from_concat_args, FfmpegConcatArgs, LoudnormStats,
 };
 
 const STDERR_TAIL_BYTES: usize = 4_000;
@@ -37,7 +37,10 @@ async fn run_concat_async(args: FfmpegConcatArgs) -> Result<()> {
 
     let segments = discover_segments(&options.run_dir)?;
     if segments.is_empty() {
-        bail!("no segment MP4 files found under {}", options.run_dir.display());
+        bail!(
+            "no segment MP4 files found under {}",
+            options.run_dir.display()
+        );
     }
 
     write_concat_list(&options.concat_list, &segments)?;
@@ -224,7 +227,8 @@ mod tests {
 
     #[test]
     fn parse_loudnorm_json_errors_without_block() {
-        let err = parse_loudnorm_json("no json here").expect_err("missing loudnorm JSON should fail");
+        let err =
+            parse_loudnorm_json("no json here").expect_err("missing loudnorm JSON should fail");
         assert!(err.to_string().contains("loudnorm JSON block not found"));
     }
 }
