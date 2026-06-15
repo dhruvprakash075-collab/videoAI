@@ -43,7 +43,7 @@ def load_config(path: Path) -> dict[str, Any]:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         msg = f"Config must be a mapping: {path}"
-        raise ValueError(msg)
+        raise TypeError(msg)
     return data
 
 

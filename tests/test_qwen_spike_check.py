@@ -70,10 +70,10 @@ def test_load_config_requires_mapping(tmp_path: Path):
 
     try:
         load_config(config_path)
-    except ValueError as exc:
+    except TypeError as exc:
         assert "Config must be a mapping" in str(exc)
     else:
-        raise AssertionError("Expected ValueError for non-mapping YAML")
+        raise AssertionError("Expected TypeError for non-mapping YAML")
 
 
 def test_load_config_reads_yaml(tmp_path: Path):
