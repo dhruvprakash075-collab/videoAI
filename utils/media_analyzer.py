@@ -53,8 +53,28 @@ def check_ffprobe() -> bool:
 # ── Audio Quality Analytics ────────────────────────────────────────────────
 
 
+def _native_analyze_audio_wave(path: Path) -> dict[str, Any] | None:
+    try:
+        import videoai_worker_native
+    except Exception:
+        return None
+
+    try:
+        return json.loads(videoai_worker_native.analyze_audio_wave(str(path)))
+    except Exception:
+        return None
+
+
 def analyze_audio_wave(path: Path) -> dict[str, Any]:
     """Inspect raw WAV structure, bit rate, sample rate, peak volume, and clipping."""
+    native_info = _native_analyze_audio_wave(path)
+    if native_info is not None:
+        if "sample_width_bits" in native_info:
+            native_info["sample_width"] = int(native_info["sample_width_bits"] / 8)
+        if "duration_s" in native_info:
+            native_info["duration"] = native_info["duration_s"]
+        return native_info
+
     try:
         with wave.open(str(path), "rb") as w:
             params = w.getparams()

@@ -1,5 +1,6 @@
 """audio_fx.py - Sound effects mixing for video segments."""
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -29,6 +30,30 @@ _DEFAULT_SFX = {
 # Check if sfx directory exists
 if not Path("sfx").exists():
     log.warning("sfx/ directory not found - SFX mixing will be skipped")
+
+
+def _try_native_audio_master(input_path: Path, output_path: Path) -> bool:
+    """Use the optional PyO3 Rust extension when it is installed.
+
+    The import is intentionally lazy so normal source installs keep using the
+    established Python/pydub path. When `videoai_worker_native` is available,
+    this avoids subprocess JSON marshalling between Python and Rust for the
+    audio mastering entrypoint.
+    """
+    try:
+        import videoai_worker_native
+    except Exception:
+        return False
+
+    try:
+        report = json.loads(videoai_worker_native.master_audio(str(input_path), str(output_path)))
+        if report.get("passed") and output_path.exists():
+            log.info("Native Rust audio mastering done: %s", output_path.name)
+            return True
+        log.debug("Native Rust audio mastering declined: %s", report)
+    except Exception as exc:
+        log.debug("Native Rust audio mastering failed; falling back to Python: %s", exc)
+    return False
 
 
 def mix_sfx(
@@ -187,6 +212,9 @@ def apply_premium_voice_processing(input_path: Path, output_path: Path) -> bool:
     4. Light de-esser: reduce harsh sibilance above 6kHz
     5. RMS Normalization to -14.0 dBFS with peak protection at -1.0 dBFS
     """
+    if _try_native_audio_master(input_path, output_path):
+        return True
+
     try:
         from pydub import AudioSegment
         from pydub.effects import compress_dynamic_range
