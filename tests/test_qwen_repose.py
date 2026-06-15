@@ -61,12 +61,65 @@ def test_preflight_qwen_edit_reports_missing_model(tmp_path: Path):
     assert any("model_path is empty" in item for item in missing)
 
 
+def test_preflight_qwen_edit_reports_missing_workflow_and_custom_node(tmp_path: Path):
+    model = tmp_path / "qwen.safetensors"
+    model.write_bytes(b"fake-model")
+    config = {
+        "image_gen": {
+            "comfyui": {"root": str(tmp_path / "ComfyUI")},
+            "qwen_edit": {
+                "workflow_path": str(tmp_path / "missing_workflow.json"),
+                "model_path": str(model),
+                "required_custom_nodes": ["ComfyUI-nunchaku"],
+            },
+        }
+    }
+
+    missing = preflight_qwen_edit(config)
+
+    assert any("workflow file not found" in item for item in missing)
+    assert any("missing ComfyUI custom node: ComfyUI-nunchaku" in item for item in missing)
+    assert not any("model_path" in item for item in missing)
+
+
+def test_preflight_qwen_edit_reports_missing_lightning_lora(tmp_path: Path):
+    workflow = tmp_path / "workflow.json"
+    data = _workflow_with_required_placeholders()
+    data["1"]["inputs"]["lightning_lora"] = "__LIGHTNING_LORA__"
+    workflow.write_text(json.dumps(data), encoding="utf-8")
+    model = tmp_path / "qwen.safetensors"
+    model.write_bytes(b"fake-model")
+    config = {
+        "image_gen": {
+            "qwen_edit": {
+                "workflow_path": str(workflow),
+                "model_path": str(model),
+                "lightning_lora": str(tmp_path / "missing_lora.safetensors"),
+            }
+        }
+    }
+
+    missing = preflight_qwen_edit(config)
+
+    assert missing == [f"qwen_edit lightning_lora not found: {tmp_path / 'missing_lora.safetensors'}"]
+
+
 def test_validate_qwen_workflow_template_accepts_committed_template():
     workflow = Path("config/comfyui/workflows/qwen_image_edit_api.json")
 
     issues = validate_qwen_workflow_template(workflow)
 
     assert issues == []
+
+
+def test_validate_qwen_workflow_template_reports_invalid_json(tmp_path: Path):
+    workflow = tmp_path / "workflow.json"
+    workflow.write_text("{not-json", encoding="utf-8")
+
+    issues = validate_qwen_workflow_template(workflow)
+
+    assert len(issues) == 1
+    assert "workflow JSON is invalid" in issues[0]
 
 
 def test_validate_qwen_workflow_template_reports_missing_placeholders(tmp_path: Path):
