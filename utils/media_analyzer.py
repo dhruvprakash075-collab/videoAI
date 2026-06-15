@@ -40,7 +40,7 @@ def log_warn(msg: str):
 
 
 def log_error(msg: str):
-    print(f"{RED}[ERROR] {msg}")
+    print(f"{RED}[ERROR] {msg}{RESET}")
 
 
 def check_ffprobe() -> bool:
