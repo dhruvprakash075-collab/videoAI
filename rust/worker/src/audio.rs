@@ -13,6 +13,9 @@ const PEAK_SAFE_MIN_DBFS: f64 = -2.0;
 const PEAK_LIMIT_DBFS: f64 = -1.0;
 const TARGET_RMS_DBFS: f64 = -14.0;
 const RMS_TOLERANCE_DB: f64 = 2.5;
+const SILENCE_TRIM_THRESHOLD_DBFS: f64 = -45.0;
+const SILENCE_TRIM_MIN_MS: u32 = 800;
+const SILENCE_TRIM_KEEP_MS: u32 = 500;
 const CLIPPING_I16_THRESHOLD: i16 = 32_760;
 const AUDIO_MASTER_FILTER: &str =
     "highpass=f=60,acompressor=threshold=-24dB:ratio=2:attack=10:release=100,loudnorm=I=-14:TP=-1.5:LRA=9";
@@ -467,11 +470,81 @@ fn analyze_i16_samples(samples: impl IntoIterator<Item = i16>) -> (f64, f64, f64
 fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
     let bytes = fs::read(input).with_context(|| format!("failed to read {}", input.display()))?;
     let mut wav = decode_pcm_wav(&bytes)?;
+    trim_long_silences_i16(&mut wav);
     normalize_and_limit_i16(&mut wav.samples);
     let output_bytes = encode_pcm16_wav(&wav)?;
     fs::write(output, output_bytes)
         .with_context(|| format!("failed to write {}", output.display()))?;
     Ok(())
+}
+
+fn trim_long_silences_i16(wav: &mut Pcm16Wav) {
+    let channels = usize::from(wav.channels);
+    if channels == 0 || wav.sample_rate == 0 || wav.samples.is_empty() {
+        return;
+    }
+
+    let min_silence_frames = ms_to_frames(wav.sample_rate, SILENCE_TRIM_MIN_MS);
+    let keep_silence_frames = ms_to_frames(wav.sample_rate, SILENCE_TRIM_KEEP_MS);
+    if keep_silence_frames >= min_silence_frames {
+        return;
+    }
+
+    let frame_count = wav.samples.len() / channels;
+    let silence_threshold = dbfs_to_linear(SILENCE_TRIM_THRESHOLD_DBFS);
+    let mut output = Vec::with_capacity(wav.samples.len());
+    let mut cursor = 0usize;
+    let mut frame = 0usize;
+    let mut trimmed = false;
+
+    while frame < frame_count {
+        if !is_silent_frame(&wav.samples, frame, channels, silence_threshold) {
+            frame += 1;
+            continue;
+        }
+
+        let silence_start = frame;
+        while frame < frame_count && is_silent_frame(&wav.samples, frame, channels, silence_threshold) {
+            frame += 1;
+        }
+        let silence_len = frame - silence_start;
+        if silence_len > min_silence_frames {
+            append_frames(&wav.samples, channels, cursor, silence_start, &mut output);
+            append_frames(
+                &wav.samples,
+                channels,
+                silence_start,
+                silence_start + keep_silence_frames,
+                &mut output,
+            );
+            cursor = frame;
+            trimmed = true;
+        }
+    }
+
+    if trimmed {
+        append_frames(&wav.samples, channels, cursor, frame_count, &mut output);
+        wav.samples = output;
+    }
+}
+
+fn ms_to_frames(sample_rate: u32, ms: u32) -> usize {
+    ((u64::from(sample_rate) * u64::from(ms)) / 1_000).max(1) as usize
+}
+
+fn is_silent_frame(samples: &[i16], frame: usize, channels: usize, threshold: f64) -> bool {
+    let start = frame * channels;
+    let end = start + channels;
+    samples[start..end]
+        .iter()
+        .all(|sample| f64::from(*sample).abs() / 32_768.0 <= threshold)
+}
+
+fn append_frames(samples: &[i16], channels: usize, start: usize, end: usize, output: &mut Vec<i16>) {
+    if start >= end {
+        return;
+    }
+    output.extend_from_slice(&samples[start * channels..end * channels]);
 }
 
 fn normalize_and_limit_i16(samples: &mut [i16]) {
@@ -722,6 +795,32 @@ mod tests {
         let after = report.after.expect("native master should analyze output");
         assert!(after.peak_db <= PEAK_CLIPPING_DBFS);
         assert!((after.rms_db - TARGET_RMS_DBFS).abs() <= RMS_TOLERANCE_DB);
+        Ok(())
+    }
+
+    #[test]
+    fn native_mastering_trims_long_silences() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let input = temp.path().join("voice.wav");
+        let output = temp.path().join("mastered.wav");
+        let mut samples = Vec::new();
+        samples.extend(std::iter::repeat(2048).take(100));
+        samples.extend(std::iter::repeat(0).take(1_000));
+        samples.extend(std::iter::repeat(-2048).take(100));
+        fs::write(&input, wav_i16(1_000, 1, &samples))?;
+
+        let report = master_path(&AudioMasterArgs {
+            input,
+            output,
+            json: true,
+            ffmpeg_bin: PathBuf::from("does-not-run"),
+        })?;
+
+        assert!(report.passed);
+        assert!(report.native_pcm_mastered);
+        let after = report.after.expect("native master should analyze output");
+        assert_eq!(after.frames, 700);
+        assert_eq!(after.duration_s, 0.7);
         Ok(())
     }
 
