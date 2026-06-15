@@ -162,6 +162,25 @@ image_gen:
     unload_after_batch: false
   fallback_backend: bonsai
   composition_mode: one_pass
+  qwen_edit:
+    enabled: false
+    backend: nunchaku
+    workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
+    model_path: ""
+    lightning_lora: ""
+    steps: 8
+    cfg: 1.0
+    denoise: 0.6
+    max_resolution: 1024
+    youtube_aspect: "16:9"
+    vram_offload: true
+    trigger: any_character
+    character_threshold: 0.05
+    cache_dir: .qwen_edit_cache
+    timeout_seconds: 600
+    poll_seconds: 1.0
+    required_custom_nodes:
+      - ComfyUI-nunchaku
   layered_v3:
     approval_mode: auto
     character_threshold: 0.3
