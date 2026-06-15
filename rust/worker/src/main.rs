@@ -22,6 +22,7 @@ use videoai_worker::assets::{self, AssetsCommand};
 use videoai_worker::audio::{self, AudioCommand};
 use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
 use videoai_worker::media::{self, MediaCommand};
+use videoai_worker::text::{self, TextCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
 const HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
@@ -123,6 +124,12 @@ enum Commands {
     Media {
         #[command(subcommand)]
         command: MediaCommand,
+    },
+
+    /// Split source text into per-segment chunks.
+    Text {
+        #[command(subcommand)]
+        command: TextCommand,
     },
 
     /// Plan and execute FFmpeg final assembly (concat, loudnorm, ducking).
@@ -255,6 +262,7 @@ fn main() -> Result<()> {
         Commands::Assets { command } => assets::run_command(command)?,
         Commands::Audio { command } => audio::run_command(command)?,
         Commands::Media { command } => media::run_command(command)?,
+        Commands::Text { command } => text::run_command(command)?,
         Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
 
