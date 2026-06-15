@@ -9,6 +9,7 @@ Video.AI project rendering and narration standards.
 
 import json
 import math
+import os
 import struct
 import subprocess
 import sys
@@ -39,7 +40,7 @@ def log_warn(msg: str):
 
 
 def log_error(msg: str):
-    print(f"{RED}[ERROR] {msg}{RESET}")
+    print(f"{RED}[ERROR] {msg}")
 
 
 def check_ffprobe() -> bool:
@@ -54,6 +55,9 @@ def check_ffprobe() -> bool:
 
 
 def _native_analyze_audio_wave(path: Path) -> dict[str, Any] | None:
+    if os.environ.get("VIDEOAI_RUST_AUDIO") != "1":
+        return None
+
     try:
         import videoai_worker_native
     except Exception:
