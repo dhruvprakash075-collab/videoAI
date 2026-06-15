@@ -99,8 +99,8 @@ pub fn run_command(command: CheckpointCommand) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         CheckpointCommand::Save(args) => {
-            let data: Value = serde_json::from_str(&args.data_json)
-                .context("--data-json must be valid JSON")?;
+            let data: Value =
+                serde_json::from_str(&args.data_json).context("--data-json must be valid JSON")?;
             let report = save_checkpoint(&args.dir, &args.topic, &args.step, data)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
@@ -116,11 +116,7 @@ pub fn checkpoint_path(dir: &Path, topic: &str) -> PathBuf {
     dir.join(format!("{}.json", safe_filename(topic)))
 }
 
-pub fn get_checkpoint(
-    dir: &Path,
-    topic: &str,
-    max_age_hours: f64,
-) -> Result<CheckpointReadReport> {
+pub fn get_checkpoint(dir: &Path, topic: &str, max_age_hours: f64) -> Result<CheckpointReadReport> {
     let path = checkpoint_path(dir, topic);
     if !path.exists() {
         return Ok(CheckpointReadReport {
@@ -137,7 +133,10 @@ pub fn get_checkpoint(
     let data = match serde_json::from_str(&text) {
         Ok(data) => Some(data),
         Err(err) => {
-            warnings.push(format!("Corrupt checkpoint {}; ignoring: {err}", path.display()));
+            warnings.push(format!(
+                "Corrupt checkpoint {}; ignoring: {err}",
+                path.display()
+            ));
             None
         }
     };
@@ -186,9 +185,8 @@ pub fn save_checkpoint(
         attempts += 1;
         let attempt_result = (|| -> Result<()> {
             if path.exists() {
-                fs::copy(&path, bak_path(&path)).with_context(|| {
-                    format!("failed to back up checkpoint {}", path.display())
-                })?;
+                fs::copy(&path, bak_path(&path))
+                    .with_context(|| format!("failed to back up checkpoint {}", path.display()))?;
                 backed_up = true;
             }
             fs::rename(&tmp, &path).with_context(|| {
@@ -275,7 +273,7 @@ fn checkpoint_age_warnings(path: &Path, topic: &str, max_age_hours: f64) -> Resu
     let modified = fs::metadata(path)
         .with_context(|| format!("failed to stat checkpoint {}", path.display()))?
         .modified()
-        .context("checkpoint modified time unavailable")?;
+ .context("checkpoint modified time unavailable")?;
     let age_h = SystemTime::now()
         .duration_since(modified)
         .unwrap_or_default()
@@ -400,7 +398,12 @@ mod tests {
         let path = checkpoint_path(temp.path(), "topic");
         fs::write(&path, "not json")?;
 
-        save_checkpoint(temp.path(), "topic", "step", serde_json::json!({"ok": true}))?;
+        save_checkpoint(
+            temp.path(),
+            "topic",
+            "step",
+            serde_json::json!({"ok": true}),
+        )?;
 
         let corrupt_files = fs::read_dir(temp.path())?
             .filter_map(|entry| entry.ok())
