@@ -1331,7 +1331,7 @@ mod tests {
         let (temp_dir, db_path) = create_seeded_job_db(
             r#"
             INSERT INTO jobs (status, topic, request_json, created_at, updated_at)
-            VALUES ('queued', 'Happy Topic', '{\"dry_run\":true}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            VALUES ('queued', 'Happy Topic', '{"dry_run":true}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
             "#,
         )?;
         let fake = write_fake_python(
