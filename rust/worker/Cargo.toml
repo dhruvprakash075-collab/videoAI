@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+ffmpeg-integration = []
+
 [dependencies]
 anyhow = "=1.0.89"
 axum = "=0.7.7"
