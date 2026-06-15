@@ -26,6 +26,10 @@ pub struct MediaInspectArgs {
     #[arg(long)]
     pub input: PathBuf,
 
+    /// Emit machine-readable JSON. Accepted for consistency with other worker subcommands.
+    #[arg(long)]
+    pub json: bool,
+
     /// Expect a 1080x1920 portrait render.
     #[arg(long)]
     pub expect_portrait: bool,
@@ -133,7 +137,7 @@ pub fn inspect_path(args: &MediaInspectArgs) -> Result<MediaInspectReport> {
 }
 
 async fn run_ffprobe(ffprobe_bin: &Path, input: &Path) -> Result<Value> {
-    let mut child = Command::new(ffprobe_bin)
+    let child = Command::new(ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -199,7 +203,9 @@ fn inspect_probe(
     let format = probe.get("format").unwrap_or(&Value::Null);
     let duration_s = parse_f64(format.get("duration"));
     if format.get("duration").is_some() && duration_s.is_none() {
-        issues.push("Could not read video duration (ffprobe returned N/A or invalid value)".to_string());
+        issues.push(
+            "Could not read video duration (ffprobe returned N/A or invalid value)".to_string(),
+        );
     }
 
     if let Some(expected_s) = config
@@ -245,13 +251,17 @@ fn inspect_probe(
         .and_then(parse_frame_rate);
     if let Some(value) = fps {
         if (value - 24.0).abs() > FPS_TOLERANCE && (value - 12.0).abs() > FPS_TOLERANCE {
-            warnings.push("Framerate differs from target classic 24fps or zoompan 12fps".to_string());
+            warnings.push(
+                "Framerate differs from target classic 24fps or zoompan 12fps".to_string(),
+            );
         }
     }
 
     let audio_duration = audio_stream.and_then(|stream| parse_f64(stream.get("duration")));
     let drift_s = match (duration_s, audio_duration) {
-        (Some(format_duration), Some(audio_duration)) => Some((format_duration - audio_duration).abs()),
+        (Some(format_duration), Some(audio_duration)) => {
+            Some((format_duration - audio_duration).abs())
+        }
         _ => None,
     };
     if drift_s.is_some_and(|drift| drift > DRIFT_WARNING_SECONDS) {
@@ -382,12 +392,23 @@ mod tests {
             ..MediaInspectConfig::default()
         };
 
-        let report = inspect_probe(&base_probe(1920, 1080, "24/1", "10.0"), Some(1024 * 1024), &config, "out.mp4")?;
+        let report = inspect_probe(
+            &base_probe(1920, 1080, "24/1", "10.0"),
+            Some(1024 * 1024),
+            &config,
+            "out.mp4",
+        )?;
 
         assert!(report.passed);
         assert!(report.issues.is_empty());
         assert!(report.warnings.is_empty());
-        assert_eq!(report.resolution, Some(Resolution { width: 1920, height: 1080 }));
+        assert_eq!(
+            report.resolution,
+            Some(Resolution {
+                width: 1920,
+                height: 1080
+            })
+        );
         assert_eq!(report.audio.sample_rate, Some(48000));
         Ok(())
     }
@@ -399,7 +420,12 @@ mod tests {
             ..MediaInspectConfig::default()
         };
 
-        let report = inspect_probe(&base_probe(1080, 1920, "24/1", "10.0"), Some(1024 * 1024), &config, "out.mp4")?;
+        let report = inspect_probe(
+            &base_probe(1080, 1920, "24/1", "10.0"),
+            Some(1024 * 1024),
+            &config,
+            "out.mp4",
+        )?;
 
         assert!(report.passed);
         assert!(report.issues.is_empty());
@@ -421,10 +447,18 @@ mod tests {
             ]
         });
 
-        let report = inspect_probe(&probe, Some(1024 * 1024), &MediaInspectConfig::default(), "out.mp4")?;
+        let report = inspect_probe(
+            &probe,
+            Some(1024 * 1024),
+            &MediaInspectConfig::default(),
+            "out.mp4",
+        )?;
 
         assert!(!report.passed);
-        assert!(report.issues.iter().any(|issue| issue == "No audio stream found"));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue == "No audio stream found"));
         assert!(!report.audio.present);
         Ok(())
     }
@@ -437,7 +471,12 @@ mod tests {
             ..MediaInspectConfig::default()
         };
 
-        let report = inspect_probe(&base_probe(1920, 1080, "24/1", "10.0"), Some(1024 * 1024), &config, "out.mp4")?;
+        let report = inspect_probe(
+            &base_probe(1920, 1080, "24/1", "10.0"),
+            Some(1024 * 1024),
+            &config,
+            "out.mp4",
+        )?;
 
         assert!(!report.passed);
         assert!(report
@@ -449,13 +488,27 @@ mod tests {
 
     #[test]
     fn inspect_warns_for_drift_nonstandard_resolution_and_fps() -> Result<()> {
-        let report = inspect_probe(&base_probe(1000, 1000, "30/1", "9.5"), Some(1024 * 1024), &MediaInspectConfig::default(), "out.mp4")?;
+        let report = inspect_probe(
+            &base_probe(1000, 1000, "30/1", "9.5"),
+            Some(1024 * 1024),
+            &MediaInspectConfig::default(),
+            "out.mp4",
+        )?;
 
         assert!(report.passed);
         assert_eq!(report.warnings.len(), 3);
-        assert!(report.warnings.iter().any(|warning| warning.contains("Non-standard")));
-        assert!(report.warnings.iter().any(|warning| warning.contains("Framerate")));
-        assert!(report.warnings.iter().any(|warning| warning.contains("drift")));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Non-standard")));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Framerate")));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("drift")));
         assert_eq!(report.drift_s, Some(0.5));
         Ok(())
     }
@@ -467,11 +520,22 @@ mod tests {
             ..MediaInspectConfig::default()
         };
 
-        let report = inspect_probe(&base_probe(1080, 1920, "24/1", "10.0"), Some(1024), &config, "out.mp4")?;
+        let report = inspect_probe(
+            &base_probe(1080, 1920, "24/1", "10.0"),
+            Some(1024),
+            &config,
+            "out.mp4",
+        )?;
 
         assert!(!report.passed);
-        assert!(report.issues.iter().any(|issue| issue.contains("File too small")));
-        assert!(report.issues.iter().any(|issue| issue.contains("Resolution")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.contains("File too small")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.contains("Resolution")));
         Ok(())
     }
 }
