@@ -7,6 +7,8 @@ from config.config_schemas import (
     ConfigOverlay,
     DecisionConflict,
     DecisionRecord,
+    ImageGenConfig,
+    QwenEditConfig,
     ShotDistribution,
     UserResponses,
     VideoAIConfig,
@@ -68,6 +70,34 @@ def test_video_ai_config():
     # Trigger exception in from_dict
     cfg_invalid = VideoAIConfig.from_dict({"critic": "invalid-type"})
     assert cfg_invalid.critic.threshold == 60
+
+
+def test_qwen_edit_schema_defaults_and_validation():
+    img = ImageGenConfig()
+    assert img.composition_mode == "one_pass"
+    assert isinstance(img.qwen_edit, QwenEditConfig)
+    assert img.qwen_edit.enabled is False
+    assert img.qwen_edit.backend == "nunchaku"
+
+    valid = validate_config(
+        {
+            "image_gen": {
+                "composition_mode": "qwen_edit",
+                "qwen_edit": {
+                    "enabled": True,
+                    "backend": "nunchaku",
+                    "model_path": "models/qwen-image-edit.safetensors",
+                    "required_custom_nodes": ["ComfyUI-nunchaku"],
+                },
+            }
+        }
+    )
+    assert valid["image_gen"]["composition_mode"] == "qwen_edit"
+    assert valid["image_gen"]["qwen_edit"]["enabled"] is True
+    assert valid["image_gen"]["qwen_edit"]["required_custom_nodes"] == ["ComfyUI-nunchaku"]
+
+    with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
+        validate_config({"image_gen": {"qwen_edit": {"unknown_key": True}}})
 
 
 def test_helpers():

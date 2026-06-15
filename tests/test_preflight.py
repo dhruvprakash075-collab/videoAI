@@ -9,6 +9,7 @@ from utils.preflight import (
     _check_disk,
     _check_ffmpeg,
     _check_python,
+    _check_qwen_edit,
     _timed,
     run_preflight,
 )
@@ -104,6 +105,34 @@ class TestDiskCheck:
         assert "GB free" in msg
 
 
+class TestQwenEditCheck:
+    def test_qwen_edit_skips_when_disabled(self):
+        status, msg = _check_qwen_edit(
+            {"image_gen": {"composition_mode": "one_pass", "qwen_edit": {"enabled": False}}}
+        )
+        assert status == "skip"
+        assert "disabled" in msg
+
+    def test_qwen_edit_warns_on_missing_items(self):
+        with patch(
+            "video.image_gen.qwen_repose.preflight_qwen_edit",
+            return_value=["qwen_edit.model_path is empty"],
+        ):
+            status, msg = _check_qwen_edit(
+                {"image_gen": {"composition_mode": "qwen_edit", "qwen_edit": {"enabled": True}}}
+            )
+        assert status == "warn"
+        assert "model_path" in msg
+
+    def test_qwen_edit_passes_when_preflight_clear(self):
+        with patch("video.image_gen.qwen_repose.preflight_qwen_edit", return_value=[]):
+            status, msg = _check_qwen_edit(
+                {"image_gen": {"composition_mode": "qwen_edit", "qwen_edit": {"enabled": True}}}
+            )
+        assert status == "ok"
+        assert "passed" in msg
+
+
 class TestRunPreflight:
     def test_returns_result_object(self):
         result = run_preflight(config={}, quiet=True)
@@ -131,3 +160,7 @@ class TestRunPreflight:
             assert len(result.checks) == 1
             assert result.checks[0].name == "python"
             assert result.checks[0].status == "fail"
+
+    def test_includes_qwen_edit_check(self):
+        result = run_preflight(config={}, quiet=True)
+        assert any(check.name == "qwen_edit" for check in result.checks)
