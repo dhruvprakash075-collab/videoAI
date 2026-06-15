@@ -20,6 +20,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use videoai_worker::assets::{self, AssetsCommand};
 use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
+use videoai_worker::media::{self, MediaCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
 const HEARTBEAT_INTERVAL_SECONDS: u64 = 10;
@@ -109,6 +110,12 @@ enum Commands {
     Assets {
         #[command(subcommand)]
         command: AssetsCommand,
+    },
+
+    /// Inspect media files for file-level QC.
+    Media {
+        #[command(subcommand)]
+        command: MediaCommand,
     },
 
     /// Plan and execute FFmpeg final assembly (concat, loudnorm, ducking).
@@ -239,6 +246,7 @@ fn main() -> Result<()> {
             QueueCommand::Gc(args) => run_queue_gc(args)?,
         },
         Commands::Assets { command } => assets::run_command(command)?,
+        Commands::Media { command } => media::run_command(command)?,
         Commands::Ffmpeg { command } => ffmpeg_plan::run_command(command)?,
     }
 
