@@ -80,8 +80,12 @@ pub fn run_command(command: AudioCommand) -> Result<()> {
 }
 
 pub fn analyze_path(args: &AudioAnalyzeArgs) -> Result<AudioAnalyzeReport> {
-    let bytes = fs::read(&args.input)
-        .with_context(|| format!("input audio not found or unreadable: {}", args.input.display()))?;
+    let bytes = fs::read(&args.input).with_context(|| {
+        format!(
+            "input audio not found or unreadable: {}",
+            args.input.display()
+        )
+    })?;
     let info = analyze_wav_bytes(&bytes)?;
     Ok(build_report(
         info,
@@ -190,8 +194,10 @@ fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
                 if chunk_size < 16 {
                     bail!("invalid WAV file: fmt chunk too small");
                 }
-                let audio_format = u16::from_le_bytes(bytes[chunk_start..chunk_start + 2].try_into()?);
-                let channels = u16::from_le_bytes(bytes[chunk_start + 2..chunk_start + 4].try_into()?);
+                let audio_format =
+                    u16::from_le_bytes(bytes[chunk_start..chunk_start + 2].try_into()?);
+                let channels =
+                    u16::from_le_bytes(bytes[chunk_start + 2..chunk_start + 4].try_into()?);
                 let sample_rate =
                     u32::from_le_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into()?);
                 let bits_per_sample =
@@ -263,8 +269,16 @@ fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
     }
 
     let rms = (sum_squares / sample_count as f64).sqrt();
-    let peak_db = if peak > 0.0 { 20.0 * peak.log10() } else { -99.0 };
-    let rms_db = if rms > 0.0 { 20.0 * rms.log10() } else { -99.0 };
+    let peak_db = if peak > 0.0 {
+        20.0 * peak.log10()
+    } else {
+        -99.0
+    };
+    let rms_db = if rms > 0.0 {
+        20.0 * rms.log10()
+    } else {
+        -99.0
+    };
     let clipping_pct = (clipping_samples as f64 / sample_count as f64) * 100.0;
     (peak_db, rms_db, clipping_pct)
 }
@@ -344,14 +358,20 @@ mod tests {
             "raw.wav",
             None,
         );
-        assert!(raw.warnings.iter().any(|warning| warning.contains("OmniVoice")));
+        assert!(raw
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("OmniVoice")));
 
         let odd = build_report(
             analyze_wav_bytes(&wav_i16(48_000, 1, &[4096, -4096]))?,
             "odd.wav",
             None,
         );
-        assert!(odd.warnings.iter().any(|warning| warning.contains("Non-standard")));
+        assert!(odd
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Non-standard")));
         Ok(())
     }
 
