@@ -42,13 +42,13 @@ Select-String -Path config\config.yaml -Pattern "composition_mode: one_pass", "e
 Run the focused tests:
 
 ```powershell
-venv\Scripts\python.exe -m pytest tests/test_qwen_repose.py tests/test_image_gen.py tests/test_config_schemas.py tests/test_preflight.py -q
+venv\Scripts\python.exe -m pytest tests/test_qwen_repose.py tests/test_image_gen.py tests/test_config_schemas.py tests/test_preflight.py tests/test_qwen_spike_check.py -q
 ```
 
 Run the targeted Ruff check:
 
 ```powershell
-venv\Scripts\ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_config_schemas.py tests/test_preflight.py
+venv\Scripts\ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_config_schemas.py tests/test_preflight.py scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py
 ```
 
 Optional full local gate:
@@ -57,6 +57,22 @@ Optional full local gate:
 venv\Scripts\python.exe -m pytest tests/ -q
 venv\Scripts\ruff check .
 ```
+
+## Repo-side local spike harness
+
+Use the harness before the hardware run to keep the Qwen validation focused and repeatable:
+
+```powershell
+venv\Scripts\python.exe scripts\qwen_edit_spike_check.py --strict-defaults
+```
+
+The script checks that the committed config still keeps Qwen off by default, verifies the workflow template path, reports missing local-only Qwen model/custom-node paths, prints the focused pytest/Ruff commands, and writes a paste-ready Issue #23 result template to:
+
+```text
+.qwen_edit_cache/qwen_local_spike_results.md
+```
+
+Missing model/custom-node checks are expected before local installation. They are a reminder to fill `model_path` only in a local test config or temporary working tree. Do not commit enabled Qwen defaults.
 
 ## Recommended 6 GB setup
 
