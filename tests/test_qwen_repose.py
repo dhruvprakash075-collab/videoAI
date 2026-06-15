@@ -1,7 +1,11 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from video.image_gen.qwen_repose import build_qwen_edit_prompt, preflight_qwen_edit, repose_character
+from video.image_gen.qwen_repose import (
+    build_qwen_edit_prompt,
+    preflight_qwen_edit,
+    repose_character,
+)
 
 
 def test_build_qwen_edit_prompt_includes_depth_and_props():
