@@ -469,7 +469,8 @@ fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
     let mut wav = decode_pcm_wav(&bytes)?;
     normalize_and_limit_i16(&mut wav.samples);
     let output_bytes = encode_pcm16_wav(&wav)?;
-    fs::write(output, output_bytes).with_context(|| format!("failed to write {}", output.display()))?;
+    fs::write(output, output_bytes)
+        .with_context(|| format!("failed to write {}", output.display()))?;
     Ok(())
 }
 
