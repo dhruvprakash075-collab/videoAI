@@ -183,6 +183,48 @@ def test_generate_images_empty_list(tmp_path: Path):
     assert bns.call_args.args[0] == []
 
 
+def test_generate_images_qwen_preflight_pass_dispatches_two_pass(tmp_path: Path):
+    cfg = {
+        "image_gen": {
+            "backend": "comfyui",
+            "composition_mode": "qwen_edit",
+            "qwen_edit": {"enabled": True},
+        }
+    }
+    with (
+        patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]) as preflight,
+        patch("video.image_gen.image_gen._comfyui_qwen_edit", return_value=[]) as qwen,
+        patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
+    ):
+        generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
+
+    preflight.assert_called_once()
+    qwen.assert_called_once()
+    comfy.assert_not_called()
+
+
+def test_generate_images_qwen_preflight_failure_uses_one_pass_comfyui(tmp_path: Path):
+    cfg = {
+        "image_gen": {
+            "backend": "comfyui",
+            "composition_mode": "qwen_edit",
+            "qwen_edit": {"enabled": True, "model_path": ""},
+        }
+    }
+    with (
+        patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=["missing model"]) as preflight,
+        patch("video.image_gen.image_gen._comfyui_qwen_edit", return_value=[]) as qwen,
+        patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
+        patch("video.image_gen.image_gen._bonsai", return_value=[]) as bonsai,
+    ):
+        generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
+
+    preflight.assert_called_once()
+    qwen.assert_not_called()
+    comfy.assert_called_once()
+    bonsai.assert_not_called()
+
+
 def test_pexels_search_url_has_no_literal_braces(tmp_path: Path, monkeypatch):
     """Regression guard for malformed f-string URLs in the dormant Pexels path."""
     import json

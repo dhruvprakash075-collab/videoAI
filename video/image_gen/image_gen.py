@@ -85,6 +85,16 @@ from video.image_gen.ip_adapter import (
 )
 
 
+def _qwen_preflight_issues(cfg: dict) -> list[str]:
+    """Return Qwen preflight issues for an image_gen config dict."""
+    try:
+        from video.image_gen.qwen_repose import preflight_qwen_edit
+
+        return preflight_qwen_edit({"image_gen": cfg})
+    except Exception as e:
+        return [f"qwen_edit preflight raised: {e}"]
+
+
 def generate_images(
     prompts,
     output_dir: Path,
@@ -119,28 +129,36 @@ def generate_images(
     if backend == "comfyui" and composition_mode == "qwen_edit":
         qwen_cfg = cfg.get("qwen_edit", {}) or {}
         if qwen_cfg.get("enabled", False):
-            try:
-                return _comfyui_qwen_edit(
-                    prompt_list,
-                    output_dir,
-                    cfg,
-                    char_presence=char_presence,
-                    project_id=project_id or "",
+            qwen_issues = _qwen_preflight_issues(cfg)
+            if qwen_issues:
+                log.warning(
+                    "[image_gen] qwen_edit preflight failed; using one_pass ComfyUI. Issues: %s",
+                    "; ".join(qwen_issues),
                 )
-            except Exception as e:
-                log.warning(f"[image_gen] Qwen edit failed: {e}")
-                fallback = cfg.get("fallback_backend", "bonsai")
-                if fallback == "bonsai":
-                    log.info("[image_gen] Falling back to Bonsai after qwen_edit error")
-                    return _bonsai(
+            else:
+                try:
+                    return _comfyui_qwen_edit(
                         prompt_list,
                         output_dir,
                         cfg,
                         char_presence=char_presence,
                         project_id=project_id or "",
                     )
-                raise
-        log.info("[image_gen] qwen_edit mode is configured but disabled; using one_pass")
+                except Exception as e:
+                    log.warning(f"[image_gen] Qwen edit failed: {e}")
+                    fallback = cfg.get("fallback_backend", "bonsai")
+                    if fallback == "bonsai":
+                        log.info("[image_gen] Falling back to Bonsai after qwen_edit error")
+                        return _bonsai(
+                            prompt_list,
+                            output_dir,
+                            cfg,
+                            char_presence=char_presence,
+                            project_id=project_id or "",
+                        )
+                    raise
+        else:
+            log.info("[image_gen] qwen_edit mode is configured but disabled; using one_pass")
 
     if backend == "comfyui" and composition_mode == "layered_v3":
         try:
