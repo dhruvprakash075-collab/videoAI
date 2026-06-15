@@ -10,6 +10,7 @@ const TARGET_RAW_SAMPLE_RATE: u32 = 24_000;
 const TARGET_PREMIUM_SAMPLE_RATE: u32 = 44_100;
 const PEAK_CLIPPING_DBFS: f64 = -0.5;
 const PEAK_SAFE_MIN_DBFS: f64 = -2.0;
+const PEAK_LIMIT_DBFS: f64 = -1.0;
 const TARGET_RMS_DBFS: f64 = -14.0;
 const RMS_TOLERANCE_DB: f64 = 2.5;
 const CLIPPING_I16_THRESHOLD: i16 = 32_760;
@@ -88,6 +89,7 @@ pub struct AudioMasterReport {
     pub output: String,
     pub skipped: bool,
     pub copied_original: bool,
+    pub native_pcm_mastered: bool,
     pub ffmpeg_filter: String,
     pub before: Option<AudioAnalyzeReport>,
     pub after: Option<AudioAnalyzeReport>,
@@ -104,6 +106,13 @@ struct WavInfo {
     peak_db: f64,
     rms_db: f64,
     clipping_pct: f64,
+}
+
+#[derive(Clone, Debug)]
+struct Pcm16Wav {
+    channels: u16,
+    sample_rate: u32,
+    samples: Vec<i16>,
 }
 
 pub fn run_command(command: AudioCommand) -> Result<()> {
@@ -165,6 +174,7 @@ pub fn master_path(args: &AudioMasterArgs) -> Result<AudioMasterReport> {
     let mut warnings = Vec::new();
     let mut skipped = false;
     let mut copied_original = false;
+    let mut native_pcm_mastered = false;
 
     if args
         .input
@@ -177,13 +187,23 @@ pub fn master_path(args: &AudioMasterArgs) -> Result<AudioMasterReport> {
         copied_original = true;
         warnings.push("Skipped mastering for silence audio file".to_string());
     } else {
-        let argv = master_argv(args);
-        if let Err(err) = run_master_argv(&argv) {
-            warnings.push(format!(
-                "FFmpeg mastering fallback failed; copied original audio: {err}"
-            ));
-            copy_audio(&args.input, &args.output)?;
-            copied_original = true;
+        match run_native_pcm_master(&args.input, &args.output) {
+            Ok(()) => {
+                native_pcm_mastered = true;
+            }
+            Err(native_err) => {
+                warnings.push(format!(
+                    "Native PCM mastering unavailable; used FFmpeg fallback: {native_err}"
+                ));
+                let argv = master_argv(args);
+                if let Err(err) = run_master_argv(&argv) {
+                    warnings.push(format!(
+                        "FFmpeg mastering fallback failed; copied original audio: {err}"
+                    ));
+                    copy_audio(&args.input, &args.output)?;
+                    copied_original = true;
+                }
+            }
         }
     }
 
@@ -212,6 +232,7 @@ pub fn master_path(args: &AudioMasterArgs) -> Result<AudioMasterReport> {
         output: display_path(&args.output),
         skipped,
         copied_original,
+        native_pcm_mastered,
         ffmpeg_filter: AUDIO_MASTER_FILTER.to_string(),
         before,
         after,
@@ -298,6 +319,23 @@ fn build_report(info: WavInfo, input: &str, expected_duration: Option<f64>) -> A
 }
 
 fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
+    let wav = decode_pcm_wav(bytes)?;
+    let frames = u32::try_from(wav.samples.len() / usize::from(wav.channels))
+        .context("WAV has too many frames")?;
+    let (peak_db, rms_db, clipping_pct) = analyze_i16_samples(&wav.samples);
+
+    Ok(WavInfo {
+        channels: wav.channels,
+        sample_width_bytes: 2,
+        sample_rate: wav.sample_rate,
+        frames,
+        peak_db,
+        rms_db,
+        clipping_pct,
+    })
+}
+
+fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         bail!("unsupported WAV file: missing RIFF/WAVE header");
     }
@@ -328,12 +366,6 @@ fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
                     u32::from_le_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into()?);
                 let bits_per_sample =
                     u16::from_le_bytes(bytes[chunk_start + 14..chunk_start + 16].try_into()?);
-                if audio_format != 1 {
-                    bail!("unsupported WAV file: only PCM format is supported");
-                }
-                if bits_per_sample % 8 != 0 {
-                    bail!("unsupported WAV file: bits per sample must be byte-aligned");
-                }
                 fmt = Some((audio_format, channels, sample_rate, bits_per_sample));
             }
             b"data" => data = Some(&bytes[chunk_start..chunk_end]),
@@ -343,40 +375,41 @@ fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
         offset = chunk_end + (chunk_size % 2);
     }
 
-    let Some((_audio_format, channels, sample_rate, bits_per_sample)) = fmt else {
+    let Some((audio_format, channels, sample_rate, bits_per_sample)) = fmt else {
         bail!("invalid WAV file: missing fmt chunk");
     };
     let Some(data) = data else {
         bail!("invalid WAV file: missing data chunk");
     };
 
-    let sample_width_bytes = bits_per_sample / 8;
-    let bytes_per_frame = usize::from(channels) * usize::from(sample_width_bytes);
-    if bytes_per_frame == 0 {
-        bail!("invalid WAV file: zero-sized audio frame");
+    if audio_format != 1 {
+        bail!("unsupported WAV file: only PCM format is supported");
     }
-    let frames = u32::try_from(data.len() / bytes_per_frame).context("WAV has too many frames")?;
+    if bits_per_sample != 16 {
+        bail!("unsupported WAV file: native mastering requires 16-bit PCM");
+    }
+    if channels == 0 {
+        bail!("invalid WAV file: zero audio channels");
+    }
+    let bytes_per_frame = usize::from(channels) * 2;
+    if data.len() % bytes_per_frame != 0 {
+        bail!("invalid WAV file: partial PCM frame");
+    }
 
-    let (peak_db, rms_db, clipping_pct) = if sample_width_bytes == 2 {
-        analyze_i16_pcm(data)
-    } else {
-        (-99.0, -99.0, 0.0)
-    };
+    let samples = data
+        .chunks_exact(2)
+        .map(|sample_bytes| i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]))
+        .collect();
 
-    Ok(WavInfo {
+    Ok(Pcm16Wav {
         channels,
-        sample_width_bytes,
         sample_rate,
-        frames,
-        peak_db,
-        rms_db,
-        clipping_pct,
+        samples,
     })
 }
 
-fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
-    let sample_count = data.len() / 2;
-    if sample_count == 0 {
+fn analyze_i16_samples(samples: &[i16]) -> (f64, f64, f64) {
+    if samples.is_empty() {
         return (-99.0, -99.0, 0.0);
     }
 
@@ -384,25 +417,113 @@ fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
     let mut sum_squares = 0.0_f64;
     let mut clipping_samples = 0usize;
 
-    for sample_bytes in data.chunks_exact(2) {
-        let sample = i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]);
-        let normalized = f64::from(sample).abs() / 32_768.0;
+    for sample in samples {
+        let normalized = f64::from(*sample).abs() / 32_768.0;
         peak = peak.max(normalized);
         sum_squares += normalized * normalized;
-        if sample == i16::MIN || sample.abs() >= CLIPPING_I16_THRESHOLD {
+        if *sample == i16::MIN || sample.abs() >= CLIPPING_I16_THRESHOLD {
             clipping_samples += 1;
         }
     }
 
-    let rms = (sum_squares / sample_count as f64).sqrt();
+    let rms = (sum_squares / samples.len() as f64).sqrt();
     let peak_db = if peak > 0.0 {
         20.0 * peak.log10()
     } else {
         -99.0
     };
     let rms_db = if rms > 0.0 { 20.0 * rms.log10() } else { -99.0 };
-    let clipping_pct = (clipping_samples as f64 / sample_count as f64) * 100.0;
+    let clipping_pct = (clipping_samples as f64 / samples.len() as f64) * 100.0;
     (peak_db, rms_db, clipping_pct)
+}
+
+fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
+    let bytes = fs::read(input).with_context(|| format!("failed to read {}", input.display()))?;
+    let mut wav = decode_pcm_wav(&bytes)?;
+    normalize_and_limit_i16(&mut wav.samples);
+    let output_bytes = encode_pcm16_wav(&wav)?;
+    fs::write(output, output_bytes).with_context(|| format!("failed to write {}", output.display()))?;
+    Ok(())
+}
+
+fn normalize_and_limit_i16(samples: &mut [i16]) {
+    if samples.is_empty() {
+        return;
+    }
+
+    let peak_limit = dbfs_to_linear(PEAK_LIMIT_DBFS);
+    let target_rms = dbfs_to_linear(TARGET_RMS_DBFS);
+    let current_peak = samples
+        .iter()
+        .map(|sample| f64::from(*sample).abs() / 32_768.0)
+        .fold(0.0_f64, f64::max);
+
+    if current_peak > peak_limit && current_peak > 0.0 {
+        apply_gain_and_limit(samples, peak_limit / current_peak, peak_limit);
+    }
+
+    let current_rms = rms_linear(samples);
+    if current_rms > 0.0 {
+        apply_gain_and_limit(samples, target_rms / current_rms, peak_limit);
+    }
+}
+
+fn rms_linear(samples: &[i16]) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_squares = samples
+        .iter()
+        .map(|sample| {
+            let normalized = f64::from(*sample) / 32_768.0;
+            normalized * normalized
+        })
+        .sum::<f64>();
+    (sum_squares / samples.len() as f64).sqrt()
+}
+
+fn apply_gain_and_limit(samples: &mut [i16], gain: f64, peak_limit: f64) {
+    let limit = peak_limit * 32_768.0;
+    for sample in samples {
+        let scaled = (f64::from(*sample) * gain).clamp(-limit, limit).round();
+        *sample = scaled.clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16;
+    }
+}
+
+fn dbfs_to_linear(dbfs: f64) -> f64 {
+    10_f64.powf(dbfs / 20.0)
+}
+
+fn encode_pcm16_wav(wav: &Pcm16Wav) -> Result<Vec<u8>> {
+    if wav.channels == 0 {
+        bail!("invalid WAV file: zero audio channels");
+    }
+    if wav.samples.len() % usize::from(wav.channels) != 0 {
+        bail!("invalid WAV file: sample count is not frame-aligned");
+    }
+
+    let data_bytes = u32::try_from(wav.samples.len() * 2).context("WAV data is too large")?;
+    let byte_rate = wav.sample_rate * u32::from(wav.channels) * 2;
+    let block_align = wav.channels * 2;
+    let mut out = Vec::with_capacity(44 + data_bytes as usize);
+
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&wav.channels.to_le_bytes());
+    out.extend_from_slice(&wav.sample_rate.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_bytes.to_le_bytes());
+    for sample in &wav.samples {
+        out.extend_from_slice(&sample.to_le_bytes());
+    }
+    Ok(out)
 }
 
 fn master_argv(args: &AudioMasterArgs) -> Vec<String> {
@@ -473,27 +594,12 @@ mod tests {
     use super::*;
 
     fn wav_i16(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
-        let data_bytes = samples.len() * 2;
-        let byte_rate = sample_rate * u32::from(channels) * 2;
-        let block_align = channels * 2;
-        let mut out = Vec::new();
-        out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&(36 + data_bytes as u32).to_le_bytes());
-        out.extend_from_slice(b"WAVE");
-        out.extend_from_slice(b"fmt ");
-        out.extend_from_slice(&16u32.to_le_bytes());
-        out.extend_from_slice(&1u16.to_le_bytes());
-        out.extend_from_slice(&channels.to_le_bytes());
-        out.extend_from_slice(&sample_rate.to_le_bytes());
-        out.extend_from_slice(&byte_rate.to_le_bytes());
-        out.extend_from_slice(&block_align.to_le_bytes());
-        out.extend_from_slice(&16u16.to_le_bytes());
-        out.extend_from_slice(b"data");
-        out.extend_from_slice(&(data_bytes as u32).to_le_bytes());
-        for sample in samples {
-            out.extend_from_slice(&sample.to_le_bytes());
-        }
-        out
+        let wav = Pcm16Wav {
+            channels,
+            sample_rate,
+            samples: samples.to_vec(),
+        };
+        encode_pcm16_wav(&wav).expect("test WAV should encode")
     }
 
     #[test]
@@ -569,6 +675,29 @@ mod tests {
     }
 
     #[test]
+    fn native_mastering_normalizes_and_limits_pcm() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let input = temp.path().join("voice.wav");
+        let output = temp.path().join("mastered.wav");
+        fs::write(&input, wav_i16(44_100, 1, &[2048, -2048, 2048, -2048]))?;
+
+        let report = master_path(&AudioMasterArgs {
+            input,
+            output,
+            json: true,
+            ffmpeg_bin: PathBuf::from("does-not-run"),
+        })?;
+
+        assert!(report.passed);
+        assert!(report.native_pcm_mastered);
+        assert!(!report.copied_original);
+        let after = report.after.expect("native master should analyze output");
+        assert!(after.peak_db <= PEAK_CLIPPING_DBFS);
+        assert!((after.rms_db - TARGET_RMS_DBFS).abs() <= RMS_TOLERANCE_DB);
+        Ok(())
+    }
+
+    #[test]
     fn master_argv_matches_audio_fx_fallback_chain() {
         let args = AudioMasterArgs {
             input: PathBuf::from("voice.wav"),
@@ -610,6 +739,7 @@ mod tests {
         assert!(report.passed);
         assert!(report.skipped);
         assert!(report.copied_original);
+        assert!(!report.native_pcm_mastered);
         assert_eq!(fs::read(input)?, fs::read(output)?);
         Ok(())
     }
