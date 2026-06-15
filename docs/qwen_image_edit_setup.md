@@ -48,7 +48,7 @@ venv\Scripts\python.exe -m pytest tests/test_qwen_repose.py tests/test_image_gen
 Run the targeted Ruff check:
 
 ```powershell
-venv\Scripts\ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_config_schemas.py tests/test_preflight.py scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py
+venv\Scripts\ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_image_gen.py tests/test_config_schemas.py tests/test_preflight.py scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py
 ```
 
 Optional full local gate:
@@ -142,6 +142,34 @@ image_gen:
 - `__DENOISE__`
 
 If your installed Qwen/Nunchaku node pack uses different node class names, export a working ComfyUI API workflow and keep these placeholders in the relevant inputs.
+
+## Preflight-gated dispatch
+
+When `image_gen.backend: comfyui`, `image_gen.composition_mode: qwen_edit`, and `image_gen.qwen_edit.enabled: true`, the dispatcher runs Qwen preflight before entering the two-pass Qwen path.
+
+Preflight checks only local readiness. It does not contact ComfyUI or run CUDA. It verifies:
+
+- the Qwen workflow JSON exists and contains the required placeholders
+- `image_gen.qwen_edit.model_path` is set and exists
+- optional `lightning_lora` exists when configured
+- configured ComfyUI custom nodes exist under the configured ComfyUI root
+
+If preflight reports issues, the render logs them and uses normal one-pass ComfyUI instead of attempting Qwen. This keeps enabled-but-not-installed local configs from crashing or accidentally falling into a different generation path. If preflight passes but the Qwen runtime call fails later, the existing runtime fallback behavior still applies.
+
+## Qwen cache behavior
+
+Qwen edited frames are cached under the configured `image_gen.qwen_edit.cache_dir` relative to the frame output directory. The cache key includes:
+
+- character identity hash
+- base background image content hash
+- full Qwen edit prompt
+- Qwen seed
+- Qwen backend
+- Qwen steps and denoise values
+- Qwen model path
+- optional Lightning LoRA path
+
+A cache hit copies the cached image back to the requested output frame path and skips the expensive ComfyUI Qwen call. Changing the seed, model path, LoRA path, background frame, character identity, or edit prompt should produce a different cache path.
 
 ## GPU spike protocol: RTX 4050 / 6 GB
 
@@ -243,7 +271,7 @@ Do not touch `rust/**`, `video/renderer/**`, `audio/**`, `bootstrap_pipeline.py`
 
 ## Fallback behavior
 
-If Qwen preflight fails, ComfyUI errors, or no character reference exists, the render keeps the background frame and continues. This feature must never crash the video render.
+If Qwen dispatch preflight fails, the render uses normal one-pass ComfyUI. If an individual Qwen edit fails after preflight passes, the render keeps the background frame and continues. This feature must never crash the video render.
 
 ## Rollback
 
