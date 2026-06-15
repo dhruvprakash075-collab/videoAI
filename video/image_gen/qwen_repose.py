@@ -324,6 +324,8 @@ def _patch_qwen_workflow(
             inputs["vram_offload"] = bool(qwen.get("vram_offload", inputs["vram_offload"]))
         if "model_path" in inputs:
             inputs["model_path"] = qwen.get("model_path", inputs["model_path"])
+        if "model_name" in inputs and qwen.get("model_path", ""):
+            inputs["model_name"] = Path(qwen.get("model_path", "")).name
         for lora_key in ("lightning_lora", "lora_name", "lora_path"):
             if lora_key in inputs and qwen.get("lightning_lora", ""):
                 inputs[lora_key] = qwen.get("lightning_lora", "")
@@ -331,6 +333,8 @@ def _patch_qwen_workflow(
             inputs["filename_prefix"] = output_path.stem
         if "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")):
             inputs["text"] = edit_prompt
+        if "prompt" in inputs and ("prompt" in title or "textencode" in class_type.lower()):
+            inputs["prompt"] = edit_prompt
         if "image" in inputs and "background" in title:
             inputs["image"] = str(base_image_path)
         if "image" in inputs and ("character" in title or "reference" in title):

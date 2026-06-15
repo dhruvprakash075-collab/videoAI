@@ -19,65 +19,195 @@
   },
   "3": {
     "inputs": {
-      "model_path": "__MODEL_PATH__",
-      "backend": "nunchaku",
-      "vram_offload": true
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "image": [
+        "1",
+        0
+      ]
     },
-    "class_type": "QwenImageEdit2509Loader",
+    "class_type": "ImageScaleToTotalPixels",
     "_meta": {
-      "title": "Qwen-Image-Edit-2509 loader"
+      "title": "Scale background"
     }
   },
   "4": {
     "inputs": {
-      "text": "__EDIT_PROMPT__",
-      "model": ["3", 0]
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
     },
-    "class_type": "QwenImageEditTextEncode",
+    "class_type": "CLIPLoader",
     "_meta": {
-      "title": "Edit prompt"
+      "title": "Load Qwen text encoder"
     }
   },
   "5": {
     "inputs": {
-      "background_image": ["1", 0],
-      "reference_image": ["2", 0],
-      "conditioning": ["4", 0],
-      "model": ["3", 0]
+      "vae_name": "qwen_image_vae.safetensors"
     },
-    "class_type": "QwenImageEditMultiImageEncode",
+    "class_type": "VAELoader",
     "_meta": {
-      "title": "Multi-image edit encode"
+      "title": "Load Qwen VAE"
     }
   },
   "6": {
     "inputs": {
-      "seed": "__SEED__",
-      "steps": "__STEPS__",
-      "cfg": "__CFG__",
-      "denoise": "__DENOISE__",
-      "samples": ["5", 0],
-      "model": ["3", 0]
+      "model_name": "__MODEL_PATH__",
+      "cpu_offload": "enable",
+      "num_blocks_on_gpu": 20,
+      "use_pin_memory": "disable"
     },
-    "class_type": "QwenImageEditSampler",
+    "class_type": "NunchakuQwenImageDiTLoader",
     "_meta": {
-      "title": "Qwen edit sampler"
+      "title": "Qwen-Image-Edit-2509 loader"
     }
   },
   "7": {
     "inputs": {
-      "samples": ["6", 0],
-      "vae": ["3", 1]
+      "shift": 3,
+      "model": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "Sampling shift"
+    }
+  },
+  "8": {
+    "inputs": {
+      "strength": "__CFG__",
+      "model": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "CFGNorm",
+    "_meta": {
+      "title": "CFG normalization"
+    }
+  },
+  "9": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "3",
+        0
+      ],
+      "image2": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Negative prompt"
+    }
+  },
+  "10": {
+    "inputs": {
+      "prompt": "__EDIT_PROMPT__",
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "3",
+        0
+      ],
+      "image2": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Edit prompt"
+    }
+  },
+  "11": {
+    "inputs": {
+      "pixels": [
+        "3",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "Encode background latent"
+    }
+  },
+  "12": {
+    "inputs": {
+      "seed": "__SEED__",
+      "steps": "__STEPS__",
+      "cfg": "__CFG__",
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": "__DENOISE__",
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "10",
+        0
+      ],
+      "negative": [
+        "9",
+        0
+      ],
+      "latent_image": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Qwen edit sampler"
+    }
+  },
+  "13": {
+    "inputs": {
+      "samples": [
+        "12",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ]
     },
     "class_type": "VAEDecode",
     "_meta": {
       "title": "Decode"
     }
   },
-  "8": {
+  "14": {
     "inputs": {
       "filename_prefix": "__FILENAME_PREFIX__",
-      "images": ["7", 0]
+      "images": [
+        "13",
+        0
+      ]
     },
     "class_type": "SaveImage",
     "_meta": {
