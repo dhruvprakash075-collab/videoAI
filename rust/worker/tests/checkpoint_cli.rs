@@ -27,7 +27,7 @@ fn checkpoint_subcommand_round_trips_and_clears_state() {
             .arg("--step")
             .arg("render")
             .arg("--data-json")
-            .arg(r#"{"ok":true,"path":"out.mp4"}"#)
+            .arg("{\"ok\":true,\"path\":\"out.mp4\"}")
             .output()
             .expect("checkpoint save should run"),
     );
