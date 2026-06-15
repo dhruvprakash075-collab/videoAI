@@ -273,7 +273,7 @@ fn checkpoint_age_warnings(path: &Path, topic: &str, max_age_hours: f64) -> Resu
     let modified = fs::metadata(path)
         .with_context(|| format!("failed to stat checkpoint {}", path.display()))?
         .modified()
- .context("checkpoint modified time unavailable")?;
+        .context("checkpoint modified time unavailable")?;
     let age_h = SystemTime::now()
         .duration_since(modified)
         .unwrap_or_default()
