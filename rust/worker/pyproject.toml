@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "videoai-worker-native"
+version = "0.1.0"
+description = "Optional PyO3 native audio bridge for Video.AI"
+requires-python = ">=3.10"
+
+[tool.maturin]
+module-name = "videoai_worker_native"
+features = ["python-extension"]
+python-source = "python"
+strip = true
