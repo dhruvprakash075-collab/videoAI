@@ -198,7 +198,6 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
 
     errors: list[str] = []
 
-    # 1. ComfyUI must be reachable
     host = comfy_cfg.get("host", "127.0.0.1")
     port = comfy_cfg.get("port", 8188)
     try:
@@ -214,7 +213,6 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
     except Exception as e:
         errors.append(f"ComfyUI probe failed: {e}")
 
-    # 2. Workflow files must exist
     workflow_names = {
         "character_sheet": workflows.get("character_sheet", ""),
         "background": workflows.get("background", ""),
@@ -225,7 +223,6 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
         if path and not Path(path).exists():
             errors.append(f"workflow file not found [{name}]: {path}")
 
-    # 3. Required ComfyUI custom nodes must be installed
     comfy_root = Path(comfy_cfg.get("root", "external/ComfyUI"))
     custom_nodes_dir = comfy_root / "custom_nodes"
     required_nodes = {
@@ -240,7 +237,6 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
             f"See docs/layered_v3_setup.md for installation instructions."
         )
 
-    # 4. Required models (IPAdapter plus checkpoint)
     ipadapter_dir = comfy_root / "models" / "ipadapter"
     required_models = {
         "ip-adapter-plus_sd15.bin": ipadapter_dir / "ip-adapter-plus_sd15.bin",
@@ -265,6 +261,29 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
     return "ok", "layered_v3 preflight passed (ComfyUI, workflows, nodes, models all present)"
 
 
+def _check_qwen_edit(config: dict) -> tuple[Status, str]:
+    """Check Qwen-Image-Edit only when the optional mode is enabled."""
+    img = config.get("image_gen", {}) or {}
+    composition_mode = img.get("composition_mode", "one_pass")
+    qwen = img.get("qwen_edit", {}) or {}
+    if composition_mode != "qwen_edit" or not qwen.get("enabled", False):
+        return "skip", "Qwen edit disabled"
+
+    try:
+        from video.image_gen.qwen_repose import preflight_qwen_edit
+    except Exception as e:
+        return "fail", f"could not import Qwen edit preflight: {e}"
+
+    missing = preflight_qwen_edit(config)
+    if missing:
+        return (
+            "warn",
+            f"qwen_edit preflight found {len(missing)} issue(s); frames will fall back to base images. Issues:\n"
+            + "\n".join(f"  - {item}" for item in missing),
+        )
+    return "ok", "qwen_edit preflight passed (workflow, model path, LoRA, and custom nodes present)"
+
+
 def _check_playwright(config: dict) -> tuple[Status, str]:
     """When upload is enabled, verify Playwright browser is installed."""
     upload = config.get("upload", {})
@@ -286,8 +305,8 @@ def _check_playwright(config: dict) -> tuple[Status, str]:
             except FileNotFoundError:
                 continue
             except subprocess.TimeoutExpired:
-                return None  # timeout marker
-        return None  # neither worked
+                return None
+        return None
 
     try:
         rc = _try_playwright(["install", "--dry-run"])
@@ -357,6 +376,7 @@ def run_preflight(
         _timed(lambda: _check_disk(config), name="disk_space"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
         _timed(lambda: _check_layered_v3(config), name="layered_v3"),
+        _timed(lambda: _check_qwen_edit(config), name="qwen_edit"),
         _timed(_check_ffmpeg, name="ffmpeg"),
         _timed(lambda: _check_playwright(config), name="playwright"),
     ]
