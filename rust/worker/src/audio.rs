@@ -13,6 +13,8 @@ const PEAK_SAFE_MIN_DBFS: f64 = -2.0;
 const PEAK_LIMIT_DBFS: f64 = -1.0;
 const TARGET_RMS_DBFS: f64 = -14.0;
 const RMS_TOLERANCE_DB: f64 = 2.5;
+const COMPRESSOR_THRESHOLD_DBFS: f64 = -24.0;
+const COMPRESSOR_RATIO: f64 = 2.0;
 const SILENCE_TRIM_THRESHOLD_DBFS: f64 = -45.0;
 const SILENCE_TRIM_MIN_MS: u32 = 800;
 const SILENCE_TRIM_KEEP_MS: u32 = 500;
@@ -471,6 +473,7 @@ fn run_native_pcm_master(input: &Path, output: &Path) -> Result<()> {
     let bytes = fs::read(input).with_context(|| format!("failed to read {}", input.display()))?;
     let mut wav = decode_pcm_wav(&bytes)?;
     trim_long_silences_i16(&mut wav);
+    compress_dynamic_range_i16(&mut wav.samples);
     normalize_and_limit_i16(&mut wav.samples);
     let output_bytes = encode_pcm16_wav(&wav)?;
     fs::write(output, output_bytes)
@@ -553,6 +556,23 @@ fn append_frames(
         return;
     }
     output.extend_from_slice(&samples[start * channels..end * channels]);
+}
+
+fn compress_dynamic_range_i16(samples: &mut [i16]) {
+    if samples.is_empty() || COMPRESSOR_RATIO <= 0.0 {
+        return;
+    }
+
+    let threshold = dbfs_to_linear(COMPRESSOR_THRESHOLD_DBFS) * 32_768.0;
+    for sample in samples {
+        let original = f64::from(*sample);
+        let magnitude = original.abs();
+        if magnitude <= threshold {
+            continue;
+        }
+        let compressed = threshold + ((magnitude - threshold) / COMPRESSOR_RATIO);
+        *sample = original.signum() as i16 * compressed.round() as i16;
+    }
 }
 
 fn normalize_and_limit_i16(samples: &mut [i16]) {
@@ -830,6 +850,20 @@ mod tests {
         assert_eq!(after.frames, 700);
         assert_eq!(after.duration_s, 0.7);
         Ok(())
+    }
+
+    #[test]
+    fn native_compressor_reduces_samples_above_threshold() {
+        let threshold = (dbfs_to_linear(COMPRESSOR_THRESHOLD_DBFS) * 32_768.0).round() as i16;
+        let loud = threshold.saturating_mul(4);
+        let mut samples = vec![threshold / 2, -loud, loud];
+
+        compress_dynamic_range_i16(&mut samples);
+
+        assert_eq!(samples[0], threshold / 2);
+        assert!(samples[1].abs() < loud);
+        assert!(samples[2] < loud);
+        assert_eq!(samples[1].abs(), samples[2]);
     }
 
     #[test]
