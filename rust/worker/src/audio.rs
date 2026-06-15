@@ -319,15 +319,28 @@ fn build_report(info: WavInfo, input: &str, expected_duration: Option<f64>) -> A
 }
 
 fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
-    let wav = decode_pcm_wav(bytes)?;
-    let frames = u32::try_from(wav.samples.len() / usize::from(wav.channels))
-        .context("WAV has too many frames")?;
-    let (peak_db, rms_db, clipping_pct) = analyze_i16_samples(&wav.samples);
+    let (_audio_format, channels, sample_rate, bits_per_sample, data) = parse_wav_chunks(bytes)?;
+    if bits_per_sample % 8 != 0 {
+        bail!("unsupported WAV file: bits per sample must be byte-aligned");
+    }
+
+    let sample_width_bytes = bits_per_sample / 8;
+    let bytes_per_frame = usize::from(channels) * usize::from(sample_width_bytes);
+    if bytes_per_frame == 0 {
+        bail!("invalid WAV file: zero-sized audio frame");
+    }
+    let frames = u32::try_from(data.len() / bytes_per_frame).context("WAV has too many frames")?;
+
+    let (peak_db, rms_db, clipping_pct) = if sample_width_bytes == 2 {
+        analyze_i16_pcm(data)
+    } else {
+        (-99.0, -99.0, 0.0)
+    };
 
     Ok(WavInfo {
-        channels: wav.channels,
-        sample_width_bytes: 2,
-        sample_rate: wav.sample_rate,
+        channels,
+        sample_width_bytes,
+        sample_rate,
         frames,
         peak_db,
         rms_db,
@@ -335,7 +348,7 @@ fn analyze_wav_bytes(bytes: &[u8]) -> Result<WavInfo> {
     })
 }
 
-fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
+fn parse_wav_chunks(bytes: &[u8]) -> Result<(u16, u16, u32, u16, &[u8])> {
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         bail!("unsupported WAV file: missing RIFF/WAVE header");
     }
@@ -366,6 +379,9 @@ fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
                     u32::from_le_bytes(bytes[chunk_start + 4..chunk_start + 8].try_into()?);
                 let bits_per_sample =
                     u16::from_le_bytes(bytes[chunk_start + 14..chunk_start + 16].try_into()?);
+                if audio_format != 1 {
+                    bail!("unsupported WAV file: only PCM format is supported");
+                }
                 fmt = Some((audio_format, channels, sample_rate, bits_per_sample));
             }
             b"data" => data = Some(&bytes[chunk_start..chunk_end]),
@@ -381,10 +397,12 @@ fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
     let Some(data) = data else {
         bail!("invalid WAV file: missing data chunk");
     };
+    Ok((audio_format, channels, sample_rate, bits_per_sample, data))
+}
 
-    if audio_format != 1 {
-        bail!("unsupported WAV file: only PCM format is supported");
-    }
+fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
+    let (_audio_format, channels, sample_rate, bits_per_sample, data) = parse_wav_chunks(bytes)?;
+
     if bits_per_sample != 16 {
         bail!("unsupported WAV file: native mastering requires 16-bit PCM");
     }
@@ -408,32 +426,41 @@ fn decode_pcm_wav(bytes: &[u8]) -> Result<Pcm16Wav> {
     })
 }
 
-fn analyze_i16_samples(samples: &[i16]) -> (f64, f64, f64) {
-    if samples.is_empty() {
-        return (-99.0, -99.0, 0.0);
-    }
+fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
+    let samples = data
+        .chunks_exact(2)
+        .map(|sample_bytes| i16::from_le_bytes([sample_bytes[0], sample_bytes[1]]));
+    analyze_i16_samples(samples)
+}
 
+fn analyze_i16_samples(samples: impl IntoIterator<Item = i16>) -> (f64, f64, f64) {
+    let mut sample_count = 0usize;
     let mut peak = 0.0_f64;
     let mut sum_squares = 0.0_f64;
     let mut clipping_samples = 0usize;
 
     for sample in samples {
-        let normalized = f64::from(*sample).abs() / 32_768.0;
+        sample_count += 1;
+        let normalized = f64::from(sample).abs() / 32_768.0;
         peak = peak.max(normalized);
         sum_squares += normalized * normalized;
-        if *sample == i16::MIN || sample.abs() >= CLIPPING_I16_THRESHOLD {
+        if sample == i16::MIN || sample.abs() >= CLIPPING_I16_THRESHOLD {
             clipping_samples += 1;
         }
     }
 
-    let rms = (sum_squares / samples.len() as f64).sqrt();
+    if sample_count == 0 {
+        return (-99.0, -99.0, 0.0);
+    }
+
+    let rms = (sum_squares / sample_count as f64).sqrt();
     let peak_db = if peak > 0.0 {
         20.0 * peak.log10()
     } else {
         -99.0
     };
     let rms_db = if rms > 0.0 { 20.0 * rms.log10() } else { -99.0 };
-    let clipping_pct = (clipping_samples as f64 / samples.len() as f64) * 100.0;
+    let clipping_pct = (clipping_samples as f64 / sample_count as f64) * 100.0;
     (peak_db, rms_db, clipping_pct)
 }
 
