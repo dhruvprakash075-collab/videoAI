@@ -1,5 +1,6 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
@@ -12,11 +13,17 @@ const PEAK_SAFE_MIN_DBFS: f64 = -2.0;
 const TARGET_RMS_DBFS: f64 = -14.0;
 const RMS_TOLERANCE_DB: f64 = 2.5;
 const CLIPPING_I16_THRESHOLD: i16 = 32_760;
+const AUDIO_MASTER_FILTER: &str =
+    "highpass=f=60,acompressor=threshold=-24dB:ratio=2:attack=10:release=100,loudnorm=I=-14:TP=-1.5:LRA=9";
+const STDERR_TAIL_BYTES: usize = 4_000;
 
 #[derive(Debug, Subcommand)]
 pub enum AudioCommand {
     /// Analyze WAV structure and mastering metrics.
     Analyze(AudioAnalyzeArgs),
+
+    /// Apply the Rust-side FFmpeg mastering fallback chain to a WAV file.
+    Master(AudioMasterArgs),
 }
 
 #[derive(Clone, Debug, Args)]
@@ -38,6 +45,25 @@ pub struct AudioAnalyzeArgs {
     pub requested_duration: Option<f64>,
 }
 
+#[derive(Clone, Debug, Args)]
+pub struct AudioMasterArgs {
+    /// Input WAV file to master.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Output WAV file to write.
+    #[arg(long)]
+    pub output: PathBuf,
+
+    /// Emit machine-readable JSON. Accepted for consistency with other worker subcommands.
+    #[arg(long)]
+    pub json: bool,
+
+    /// FFmpeg executable path.
+    #[arg(long, default_value = "ffmpeg")]
+    pub ffmpeg_bin: PathBuf,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct AudioAnalyzeReport {
     pub passed: bool,
@@ -51,6 +77,20 @@ pub struct AudioAnalyzeReport {
     pub peak_db: f64,
     pub rms_db: f64,
     pub clipping_pct: f64,
+    pub issues: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct AudioMasterReport {
+    pub passed: bool,
+    pub input: String,
+    pub output: String,
+    pub skipped: bool,
+    pub copied_original: bool,
+    pub ffmpeg_filter: String,
+    pub before: Option<AudioAnalyzeReport>,
+    pub after: Option<AudioAnalyzeReport>,
     pub issues: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -75,6 +115,13 @@ pub fn run_command(command: AudioCommand) -> Result<()> {
                 std::process::exit(2);
             }
         }
+        AudioCommand::Master(args) => {
+            let report = master_path(&args)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            if !report.passed {
+                std::process::exit(2);
+            }
+        }
     }
     Ok(())
 }
@@ -92,6 +139,85 @@ pub fn analyze_path(args: &AudioAnalyzeArgs) -> Result<AudioAnalyzeReport> {
         &args.input.to_string_lossy(),
         args.requested_duration.or(args.expected_duration),
     ))
+}
+
+pub fn master_path(args: &AudioMasterArgs) -> Result<AudioMasterReport> {
+    if !args.input.is_file() {
+        bail!("input audio not found: {}", args.input.display());
+    }
+    if let Some(parent) = args.output.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create output directory {}", parent.display())
+            })?;
+        }
+    }
+
+    let before = analyze_path(&AudioAnalyzeArgs {
+        input: args.input.clone(),
+        json: true,
+        expected_duration: None,
+        requested_duration: None,
+    })
+    .ok();
+
+    let mut issues = Vec::new();
+    let mut warnings = Vec::new();
+    let mut skipped = false;
+    let mut copied_original = false;
+
+    if args
+        .input
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_ascii_lowercase().contains("silence"))
+    {
+        copy_audio(&args.input, &args.output)?;
+        skipped = true;
+        copied_original = true;
+        warnings.push("Skipped mastering for silence audio file".to_string());
+    } else {
+        let argv = master_argv(args);
+        if let Err(err) = run_master_argv(&argv) {
+            warnings.push(format!(
+                "FFmpeg mastering fallback failed; copied original audio: {err}"
+            ));
+            copy_audio(&args.input, &args.output)?;
+            copied_original = true;
+        }
+    }
+
+    if !args.output.is_file() {
+        issues.push(format!(
+            "mastering produced no output at {}",
+            args.output.display()
+        ));
+    }
+
+    let after = if args.output.is_file() {
+        analyze_path(&AudioAnalyzeArgs {
+            input: args.output.clone(),
+            json: true,
+            expected_duration: None,
+            requested_duration: None,
+        })
+        .ok()
+    } else {
+        None
+    };
+
+    Ok(AudioMasterReport {
+        passed: issues.is_empty(),
+        input: display_path(&args.input),
+        output: display_path(&args.output),
+        skipped,
+        copied_original,
+        ffmpeg_filter: AUDIO_MASTER_FILTER.to_string(),
+        before,
+        after,
+        issues,
+        warnings,
+    })
 }
 
 fn build_report(info: WavInfo, input: &str, expected_duration: Option<f64>) -> AudioAnalyzeReport {
@@ -279,6 +405,57 @@ fn analyze_i16_pcm(data: &[u8]) -> (f64, f64, f64) {
     (peak_db, rms_db, clipping_pct)
 }
 
+fn master_argv(args: &AudioMasterArgs) -> Vec<String> {
+    vec![
+        display_path(&args.ffmpeg_bin),
+        "-y".to_string(),
+        "-i".to_string(),
+        display_path(&args.input),
+        "-af".to_string(),
+        AUDIO_MASTER_FILTER.to_string(),
+        "-c:a".to_string(),
+        "pcm_s16le".to_string(),
+        display_path(&args.output),
+    ]
+}
+
+fn run_master_argv(argv: &[String]) -> Result<()> {
+    let (program, command_args) = argv
+        .split_first()
+        .context("internal error: empty audio master argv")?;
+    let output = Command::new(program)
+        .args(command_args)
+        .output()
+        .with_context(|| format!("failed to spawn {program}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        bail!("ffmpeg failed: {}", stderr_tail(&stderr));
+    }
+    Ok(())
+}
+
+fn copy_audio(input: &Path, output: &Path) -> Result<()> {
+    fs::copy(input, output).with_context(|| {
+        format!(
+            "failed to copy audio from {} to {}",
+            input.display(),
+            output.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn stderr_tail(stderr: &str) -> String {
+    if stderr.len() <= STDERR_TAIL_BYTES {
+        return stderr.to_string();
+    }
+    stderr[stderr.len().saturating_sub(STDERR_TAIL_BYTES)..].to_string()
+}
+
 fn round_2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
 }
@@ -389,5 +566,51 @@ mod tests {
     fn rejects_missing_wav_header() {
         let err = analyze_wav_bytes(b"not wav").expect_err("invalid header should fail");
         assert!(err.to_string().contains("RIFF/WAVE"));
+    }
+
+    #[test]
+    fn master_argv_matches_audio_fx_fallback_chain() {
+        let args = AudioMasterArgs {
+            input: PathBuf::from("voice.wav"),
+            output: PathBuf::from("mastered.wav"),
+            json: true,
+            ffmpeg_bin: PathBuf::from("ffmpeg"),
+        };
+
+        assert_eq!(
+            master_argv(&args),
+            vec![
+                "ffmpeg".to_string(),
+                "-y".to_string(),
+                "-i".to_string(),
+                "voice.wav".to_string(),
+                "-af".to_string(),
+                "highpass=f=60,acompressor=threshold=-24dB:ratio=2:attack=10:release=100,loudnorm=I=-14:TP=-1.5:LRA=9".to_string(),
+                "-c:a".to_string(),
+                "pcm_s16le".to_string(),
+                "mastered.wav".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn silence_mastering_copies_original_without_ffmpeg() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let input = temp.path().join("silence_00.wav");
+        let output = temp.path().join("mastered.wav");
+        fs::write(&input, wav_i16(44_100, 1, &[0, 0, 0, 0]))?;
+
+        let report = master_path(&AudioMasterArgs {
+            input: input.clone(),
+            output: output.clone(),
+            json: true,
+            ffmpeg_bin: PathBuf::from("does-not-run"),
+        })?;
+
+        assert!(report.passed);
+        assert!(report.skipped);
+        assert!(report.copied_original);
+        assert_eq!(fs::read(input)?, fs::read(output)?);
+        Ok(())
     }
 }
