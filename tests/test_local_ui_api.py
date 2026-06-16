@@ -255,6 +255,42 @@ class TestJobsExtension:
         assert data["request"]["topic"] == "Test Topic"
         assert data["request"]["dry_run"] is True
 
+    def test_post_jobs_rejects_invalid_run_mode(self):
+        resp = client.post("/api/jobs", json={"topic": "T", "run_mode": "../../bad"})
+
+        assert resp.status_code == 400
+        assert "run_mode must be one of" in resp.json()["message"]
+
+    @patch("utils.local_ui.job_store")
+    def test_upload_script_rejects_invalid_run_mode(self, mock_store):
+        mock_store.create_job.return_value = 42
+        mock_store.append_event = MagicMock()
+
+        resp = client.post(
+            "/api/upload_script",
+            data={"topic": "T", "run_mode": "../../bad"},
+            files={"file": ("story.txt", b"hello story", "text/plain")},
+        )
+
+        assert resp.status_code == 400
+        assert "run_mode must be one of" in resp.json()["message"]
+        mock_store.create_job.assert_not_called()
+
+    @patch("utils.local_ui.job_store")
+    def test_upload_script_rejects_invalid_boolean_form_field(self, mock_store):
+        mock_store.create_job.return_value = 42
+        mock_store.append_event = MagicMock()
+
+        resp = client.post(
+            "/api/upload_script",
+            data={"topic": "T", "series": "not-a-bool"},
+            files={"file": ("story.txt", b"hello story", "text/plain")},
+        )
+
+        assert resp.status_code == 400
+        assert "series" in resp.json()["message"]
+        mock_store.create_job.assert_not_called()
+
 
 # -------------------- Artifacts Tests --------------------
 

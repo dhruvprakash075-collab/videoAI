@@ -860,11 +860,18 @@ class DirectorAgent:
         else:
             content_block = ""
 
+        research_block_parts = []
+        if research_text:
+            research_block_parts.append(f"Research:\n{research_text[:1000]}")
+        if content_block:
+            research_block_parts.append(content_block)
+        research_block = "\n\n".join(research_block_parts)
+
         prompt = self._prompt(
-            "analyze_story",
+            "vision_document",
             topic=topic,
-            research_text=research_text,
-            content_block=content_block,
+            target_duration=target_duration_min,
+            research_block=research_block,
         ) or (
             f"You are the Creative Director for a narrative video production.\n"
             f"Analyze this story topic: {topic}\n"

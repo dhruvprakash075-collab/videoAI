@@ -18,6 +18,19 @@ def _safe_filename(name: str, maxlen: int = 80) -> str:
     return s[:maxlen]
 
 
+def _project_config_path(project_name: str) -> Path:
+    if ".." in project_name or "/" in project_name or "\\" in project_name:
+        raise ValueError(f"Invalid project name: {project_name!r}")
+
+    projects_root = Path("projects").resolve()
+    project_file = (projects_root / f"{_safe_filename(project_name)}.yaml").resolve()
+    try:
+        project_file.relative_to(projects_root)
+    except ValueError as exc:
+        raise ValueError(f"Invalid project name: {project_name!r}") from exc
+    return project_file
+
+
 # ── CONFIG ─────────────────────────────────────────────────────────────────
 
 
@@ -42,14 +55,15 @@ def load_config(
         log.warning("config.yaml missing — using defaults")
 
     if project_name:
-        project_file = Path("projects") / f"{project_name}.yaml"
+        project_file = _project_config_path(project_name)
+        project_display = Path("projects") / f"{_safe_filename(project_name)}.yaml"
         if project_file.exists():
             with open(project_file, encoding="utf-8") as f:
                 project_config = yaml.safe_load(f) or {}
                 base_config = dict_merge(base_config, project_config)
                 log.info(f"Loaded project configuration: {project_name}")
         else:
-            log.warning(f"Project configuration not found: {project_file}")
+            log.warning(f"Project configuration not found: {project_display}")
 
     # Validate against schema — strict: invalid config fails fast
     validated_config = validate_config(base_config)

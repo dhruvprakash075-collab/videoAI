@@ -60,15 +60,15 @@ vision_document: |
 
   
   Example structure (create your own analysis, do NOT copy this content):
-  {
-    "characters": [{"name": "Character Name", "description": "Precise visual description: hair, eyes, clothing, build, key items", "voice": "deep/mellow/sharp"}],
+  {{
+    "characters": [{{"name": "Character Name", "description": "Precise visual description: hair, eyes, clothing, build, key items", "voice": "deep/mellow/sharp"}}],
     "visual_style": "dark fantasy anime",
     "theme": "Core theme in 3-5 words",
     "emotions": "emotion1, emotion2, emotion3",
     "pacing": "slow atmospheric",
-    "shot_distribution": {"establishing": 0.15, "environment": 0.25, "character_medium": 0.30, "character_closeup": 0.15, "emotional_detail": 0.10, "action": 0.05},
+    "shot_distribution": {{"establishing": 0.15, "environment": 0.25, "character_medium": 0.30, "character_closeup": 0.15, "emotional_detail": 0.10, "action": 0.05}},
     "tts_recommendation": "omnivoice",
-    "subtitle_style": {"format": "classic", "size": "small", "color": "white", "position": "bottom"},
+    "subtitle_style": {{"format": "classic", "size": "small", "color": "white", "position": "bottom"}},
     "ambiguity_detected": false,
     "ambiguity_question": "",
     "ambiguity_fields": [],
@@ -77,7 +77,7 @@ vision_document: |
     "words_per_segment": 280,
     "image_count_per_segment": 8,
     "recommended_duration_min": 10
-  }
+  }}
 
 # ── Phase 3: Single questionnaire (all ambiguous fields at once) ──
 consultation_questionnaire: |
@@ -223,7 +223,7 @@ cliffhanger_detection: |
     - outcome: one sentence describing what the viewer would get from this version
   
   Output ONLY valid JSON array:
-  [{"point": 35, "reason": "...", "outcome": "Video ends at ~X min -- ..."}, ...]
+  [{{"point": 35, "reason": "...", "outcome": "Video ends at ~X min -- ..."}}, ...]
   Choose points that resolve a mini-arc (not mid-scene) so the video feels complete.
 
 # Phase 2.5: Story compaction

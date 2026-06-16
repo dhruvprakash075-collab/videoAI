@@ -67,6 +67,19 @@ def test_load_config_project_missing():
         assert "models" in cfg
 
 
+def test_load_config_rejects_project_name_traversal(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "projects").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config.yaml").write_text("models:\n  director: base-director\n", encoding="utf-8")
+    (tmp_path / "config" / "config.yaml").write_text(
+        "models:\n  director: traversed-director\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="Invalid project name"):
+        load_config(Path("config.yaml"), project_name="../config/config")
+
+
 def test_load_config_validation_failure():
     """Invalid config now raises; fail-fast replaces fail-soft."""
     with patch("config.config.validate_config", side_effect=ValueError("validation error")):

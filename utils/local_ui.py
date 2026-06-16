@@ -100,6 +100,18 @@ def _form_bool(value: str | None, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_job_form_bool(value: str | None, field_name: str, default: bool) -> bool:
+    if value is None:
+        return default
+
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{field_name} must be a boolean form value, got {value!r}")
+
+
 _VALID_RUN_MODES = {"project", "one_time"}
 
 
@@ -320,44 +332,52 @@ async def upload_script(
             content={"status": "error", "message": f"Failed to read script file: {e}"},
         )
 
-    def _parse_bool(v: str | None, default: bool) -> bool:
-        if v is None:
-            return default
-        return v.strip().lower() in ("1", "true", "yes", "on")
+    try:
+        job_request = {"topic": topic, "content_text": script_text}
 
-    job_request = {"topic": topic, "content_text": script_text}
+        if duration is not None:
+            job_request["duration"] = duration
+        job_request["dry_run"] = _parse_job_form_bool(dry_run, "dry_run", False)
+        job_request["no_resume"] = _parse_job_form_bool(no_resume, "no_resume", True)
+        job_request["skip_rvc"] = _parse_job_form_bool(skip_rvc, "skip_rvc", True)
+        if project is not None:
+            job_request["project"] = project
+        if series is not None:
+            job_request["series"] = _parse_job_form_bool(series, "series", False)
+        if director_mode is not None:
+            job_request["director_mode"] = _parse_job_form_bool(
+                director_mode, "director_mode", False
+            )
+        if run_mode is not None:
+            job_request["run_mode"] = run_mode
+        if eval_models is not None:
+            job_request["eval_models"] = _parse_job_form_bool(
+                eval_models, "eval_models", False
+            )
+        if preview is not None:
+            job_request["preview"] = _parse_job_form_bool(preview, "preview", False)
+        if skip_preflight is not None:
+            job_request["skip_preflight"] = _parse_job_form_bool(
+                skip_preflight, "skip_preflight", False
+            )
+        if preflight_only is not None:
+            job_request["preflight_only"] = _parse_job_form_bool(
+                preflight_only, "preflight_only", False
+            )
+        if words_per_segment is not None:
+            job_request["words_per_segment"] = words_per_segment
+        if images_per_segment is not None:
+            job_request["images_per_segment"] = images_per_segment
+        if segment_count is not None:
+            job_request["segment_count"] = segment_count
+        if yes is not None:
+            job_request["yes"] = _parse_job_form_bool(yes, "yes", False)
+        if source is not None:
+            job_request["source"] = source
 
-    if duration is not None:
-        job_request["duration"] = duration
-    job_request["dry_run"] = _parse_bool(dry_run, False)
-    job_request["no_resume"] = _parse_bool(no_resume, True)
-    job_request["skip_rvc"] = _parse_bool(skip_rvc, True)
-    if project is not None:
-        job_request["project"] = project
-    if series is not None:
-        job_request["series"] = _parse_bool(series, False)
-    if director_mode is not None:
-        job_request["director_mode"] = _parse_bool(director_mode, False)
-    if run_mode is not None:
-        job_request["run_mode"] = run_mode
-    if eval_models is not None:
-        job_request["eval_models"] = _parse_bool(eval_models, False)
-    if preview is not None:
-        job_request["preview"] = _parse_bool(preview, False)
-    if skip_preflight is not None:
-        job_request["skip_preflight"] = _parse_bool(skip_preflight, False)
-    if preflight_only is not None:
-        job_request["preflight_only"] = _parse_bool(preflight_only, False)
-    if words_per_segment is not None:
-        job_request["words_per_segment"] = words_per_segment
-    if images_per_segment is not None:
-        job_request["images_per_segment"] = images_per_segment
-    if segment_count is not None:
-        job_request["segment_count"] = segment_count
-    if yes is not None:
-        job_request["yes"] = _parse_bool(yes, False)
-    if source is not None:
-        job_request["source"] = source
+        _validate_job_request(job_request)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(exc)})
 
     # Try to include image backend info from config
     try:
@@ -410,6 +430,8 @@ async def create_job_endpoint(job_request: dict = Body(...)):
             "job_id": job_id,
             "request": normalized,
         })
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
     except Exception as e:
         log.exception("Failed to create job")
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})

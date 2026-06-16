@@ -1,9 +1,11 @@
 """test_director_agent_extended.py - Extended unit tests for agents/director_agent.py"""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from agents.director_agent import DirectorAgent
 
@@ -211,6 +213,51 @@ def test_director_analyze_with_research(agent, tmp_path):
         assert vision["visual_style"] == "Watercolor"
         assert vision["recommended_duration_min"] == 15
         assert vision["tts_recommendation"] == "omnivoice"
+
+
+def test_director_analyze_with_research_uses_vision_document_template(agent):
+    original_prompts = DirectorAgent._prompts
+    DirectorAgent._prompts = {
+        "vision_document": "VISION {topic} | {target_duration} | {research_block}"
+    }
+
+    try:
+        with (
+            patch("utils.vision_cache.VisionCache") as MockCache,
+            patch.object(agent.llm, "_call_ollama", return_value='{"theme": "epic", "characters": []}') as mock_call,
+        ):
+            instance = MockCache.return_value
+            instance.get.return_value = None
+
+            agent.analyze_with_research(
+                "Topic Theme",
+                {"combined_summary": "Interesting research summary"},
+                target_duration_min=12,
+            )
+
+        prompt = mock_call.call_args.args[0]
+        assert prompt.startswith("VISION Topic Theme | 12 |")
+        assert "Interesting research summary" in prompt
+    finally:
+        DirectorAgent._prompts = original_prompts
+
+
+def test_yaml_vision_and_cliffhanger_prompts_format_cleanly():
+    prompts_path = Path(__file__).resolve().parents[1] / "prompts.yaml"
+    prompts = yaml.safe_load(prompts_path.read_text(encoding="utf-8"))
+
+    rendered_vision = prompts["vision_document"].format(
+        topic="Topic Theme",
+        target_duration=12,
+        research_block="Interesting research summary",
+    )
+    rendered_cliffhanger = prompts["cliffhanger_detection"].format(
+        current_minutes=12,
+        content="Story content",
+    )
+
+    assert '"characters": [' in rendered_vision
+    assert '"point": 35' in rendered_cliffhanger
 
 
 def test_director_produce_runtime_config(agent):
