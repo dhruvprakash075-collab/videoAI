@@ -53,6 +53,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_LOCAL_ONLY_PREFIXES = ("/studio_outputs", "/studio_projects", "/static")
+_LOCALHOST_CLIENTS = ("127.0.0.1", "::1", "localhost")
+
+
+@app.middleware("http")
+async def _restrict_static_to_localhost(request, call_next):
+    """Refuse the unauthenticated StaticFiles mounts (/studio_outputs,
+    /studio_projects, /static) for any non-loopback client.
+
+    These mounts expose generated artefacts and project assets without auth.
+    uvicorn already binds to 127.0.0.1, but this is defence-in-depth in case the
+    app is ever placed behind a proxy or bound to a non-local interface.
+    """
+    if request.url.path.startswith(_LOCAL_ONLY_PREFIXES):
+        client_host = request.client.host if request.client else None
+        if client_host not in _LOCALHOST_CLIENTS:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Static assets are only available to local clients."},
+            )
+    return await call_next(request)
+
+
 # A/B Director's Chair — in-memory job store
 _ab_jobs_lock = threading.Lock()
 _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [...], "error": str}}
