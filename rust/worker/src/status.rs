@@ -101,11 +101,32 @@ struct PageParams {
     offset: Option<u32>,
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => false,
+    }
+}
+
 pub async fn run_server(db_path: PathBuf, host: String, port: u16) -> Result<()> {
     if !db_path.is_file() {
         bail!(
             "job database not found: {} — start the Python app once to create it",
             db_path.display()
+        );
+    }
+    // Security: the /jobs endpoints expose job request payloads. Refuse to bind
+    // to a non-loopback interface unless an explicit access token is configured,
+    // so job data is never served to the network by accident.
+    let token = std::env::var("VIDEOAI_STATUS_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty());
+    if !is_loopback_host(&host) && token.is_none() {
+        bail!(
+            "refusing to bind status endpoint to non-loopback host '{host}' without VIDEOAI_STATUS_TOKEN set; bind to 127.0.0.1 or set a token"
         );
     }
     let addr: SocketAddr = format!("{host}:{port}")
@@ -278,7 +299,15 @@ fn read_jobs(db_path: &Path, limit: u32, offset: u32) -> Result<Vec<JobRecord>> 
          FROM jobs ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
     )?;
     let rows = stmt.query_map((i64::from(limit), i64::from(offset)), row_to_job_record)?;
-    collect_rows(rows)
+    let mut jobs = collect_rows(rows)?;
+    // Security: the bulk list must not leak full request payloads or raw error
+    // strings (which can contain file paths / prompt text). The single-job
+    // detail endpoint still returns the full record.
+    for job in &mut jobs {
+        job.request_json = None;
+        job.error = None;
+    }
+    Ok(jobs)
 }
 
 fn read_job_detail(db_path: &Path, id: i64) -> Result<Option<JobDetailResponse>> {
