@@ -50,9 +50,9 @@ class IPAdapterManager:
     """Loads, caches, and unloads the FLUX IP-Adapter for one Bonsai pipeline.
 
     Thread-safety: the manager uses a lock around load/unload because
-    `pipe.load_ip_adapter()` mutates the pipeline. Frame generation does not
-    hold the lock — only the per-frame `set_ip_adapter_scale()` call, which is
-    fast and does not require serialization.
+    `pipe.load_ip_adapter()` mutates the pipeline. The per-frame `set_scale()`
+    call also acquires the lock so it can't race with a concurrent
+    attach()/detach() that swaps the pipeline out mid-call.
     """
 
     def __init__(
@@ -133,7 +133,8 @@ class IPAdapterManager:
     def set_scale(self, scale: float) -> None:
         """Set the IP-Adapter scale (0.0–1.0, default 0.8) on the attached pipe.
 
-        Safe to call between frames without holding the lock.
+        Acquires the manager lock so a concurrent attach()/detach() can't swap
+        the pipeline out from under set_ip_adapter_scale().
         """
         with self._lock:
             if self._pipe is None:

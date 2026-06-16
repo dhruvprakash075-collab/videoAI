@@ -29,6 +29,7 @@ Supertonic facts (v1.3.1, v3 model):
     consent, attribution required).
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -89,8 +90,11 @@ def _synthesize_once(
 ) -> dict:
     """Run a single synthesis. Returns the same dict shape as the persistent response."""
     if seed is None or seed < 0:
-        # Use hash of text for deterministic chunk variability
-        np.random.seed(abs(hash(text)) % (2**31 - 1))
+        # Use a STABLE hash of the text for deterministic chunk variability.
+        # Python's built-in hash() is salted per process (PYTHONHASHSEED), so the
+        # same text would seed differently across runs; SHA-256 is stable.
+        _seed_digest = hashlib.sha256(text.encode("utf-8")).digest()
+        np.random.seed(int.from_bytes(_seed_digest[:4], "big") % (2**31 - 1))
     else:
         np.random.seed(seed)
 

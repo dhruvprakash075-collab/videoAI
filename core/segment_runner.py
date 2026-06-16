@@ -60,7 +60,7 @@ def get_director_abort() -> bool:
         return _director_abort
 
 
-# ── VRAM management (shared with orchestrator) ────────────────────────────
+# ── VRAM management (shared with orchestrator) ────────────────────────
 
 
 def evict_ollama_models(config: dict, reason: str = "") -> None:
@@ -219,7 +219,7 @@ def aggressive_vram_cleanup(global_scheduler) -> None:
         pass
 
 
-# ── Director Mode approval gate ───────────────────────────────────────────
+# ── Director Mode approval gate ─────────────────────────────────
 
 
 def _director_approval(script: str, prompts: str, seg_num: int, config: dict) -> str:
@@ -235,7 +235,7 @@ def _director_approval(script: str, prompts: str, seg_num: int, config: dict) ->
     from agents.director_agent import UIState
 
     with _director_lock:
-        if _director_abort:
+        if _director_aborted():
             return "__QUIT__"
 
         prompt_summary = (
@@ -390,7 +390,7 @@ def _preview_gate(mp4_path, config: dict) -> None:
     print(sep + "\n")
 
 
-# ── Main per-segment processor ────────────────────────────────────────────
+# ── Main per-segment processor ─────────────────────────────────
 
 
 def make_process_segment(
@@ -818,7 +818,7 @@ def make_process_segment(
                         f"  Seg {i}: TTS audio duration {_wav_dur:.0f}s exceeds "
                         f"limit {_dur_limit:.0f}s — retrying with truncated narration"
                     )
-                    # Truncate to ~80% of segment target words
+                    # Truncate to ~60% of segment target words
                     _words = script_for_tts.split()
                     _trunc_words = _words[: max(10, int(len(_words) * 0.6))]
                     script_for_tts = " ".join(_trunc_words)
@@ -953,7 +953,7 @@ def make_process_segment(
 
         return {"mp4_path": str(mp4_path)}
 
-    # ── Identity-critical image trigger detection ──────────────────────────
+    # ── Identity-critical image trigger detection ─────────────────────
     _OUTFIT_KEYWORDS = {
         "outfit",
         "gown",
@@ -1290,7 +1290,7 @@ def make_process_segment(
     graph = builder.build()
 
     def process_segment(i: int) -> None:
-        if _director_abort:
+        if _director_aborted():
             return
         log_vram_usage(f"Seg {i} Start")
         try:

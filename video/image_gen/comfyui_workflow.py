@@ -53,32 +53,102 @@ class WorkflowPatcher:
             return node_id, nodes[node_id]
         return None
 
+    def _resolve_prompt_nodes(self) -> tuple[set[str], set[str]]:
+        """Resolve which CLIPTextEncode nodes are positive vs negative.
+
+        Primary signal: the KSampler's `positive`/`negative` input links, which
+        point at the CLIPTextEncode nodes feeding each conditioning slot. Falls
+        back to `_meta.title` keywords, then to declaration order (first node =
+        positive, second = negative) so a minimal default workflow still works.
+        """
+        positive_ids: set[str] = set()
+        negative_ids: set[str] = set()
+        if not self.workflow:
+            return positive_ids, negative_ids
+
+        encode_nodes = self.find_nodes("CLIPTextEncode")
+
+        # 1) Follow KSampler conditioning links (most reliable).
+        for _ks_id, ks_node in self.find_nodes("KSampler").items():
+            ks_inputs = ks_node.get("inputs", {})
+            pos_link = ks_inputs.get("positive")
+            neg_link = ks_inputs.get("negative")
+            if isinstance(pos_link, list) and pos_link and str(pos_link[0]) in encode_nodes:
+                positive_ids.add(str(pos_link[0]))
+            if isinstance(neg_link, list) and neg_link and str(neg_link[0]) in encode_nodes:
+                negative_ids.add(str(neg_link[0]))
+
+        # 2) Title hints for any still-unclassified encode nodes.
+        for node_id, node in encode_nodes.items():
+            if node_id in positive_ids or node_id in negative_ids:
+                continue
+            title = str((node.get("_meta") or {}).get("title", "")).lower()
+            if "negative" in title:
+                negative_ids.add(node_id)
+            elif "positive" in title:
+                positive_ids.add(node_id)
+
+        # 3) Declaration-order fallback so a minimal 2-node workflow still works.
+        if not positive_ids and not negative_ids:
+            keys = list(encode_nodes.keys())
+            if keys:
+                positive_ids.add(keys[0])
+            if len(keys) >= 2:
+                negative_ids.add(keys[1])
+
+        return positive_ids, negative_ids
+
     def patch_positive_prompt(self, prompt: str) -> "WorkflowPatcher":
-        """Patch the positive prompt into CLIPTextEncode nodes."""
+        """Patch the positive prompt into the positive CLIPTextEncode node(s).
+
+        Only writes into nodes resolved as positive so the negative-conditioning
+        node is never clobbered (previously every CLIPTextEncode received the
+        positive text, relying on patch_negative_prompt to overwrite one again).
+        """
         if not self.workflow:
             raise ValueError("No workflow loaded")
+
+        positive_ids, negative_ids = self._resolve_prompt_nodes()
 
         for node_id, node in self.workflow.items():
             if not isinstance(node, dict):
                 continue
-            if node.get("class_type") == "CLIPTextEncode":
-                inputs = node.get("inputs", {})
-                if "text" in inputs:
-                    inputs["text"] = prompt
-                    log.debug(f"[ComfyUI] Patched positive prompt into node {node_id}")
+            if node.get("class_type") != "CLIPTextEncode":
+                continue
+            # Never write the positive prompt into a known negative node.
+            if node_id in negative_ids and node_id not in positive_ids:
+                continue
+            # If we resolved explicit positive nodes, only patch those.
+            if positive_ids and node_id not in positive_ids:
+                continue
+            inputs = node.get("inputs", {})
+            if "text" in inputs:
+                inputs["text"] = prompt
+                log.debug(f"[ComfyUI] Patched positive prompt into node {node_id}")
 
         return self
 
     def patch_negative_prompt(self, prompt: str) -> "WorkflowPatcher":
-        """Patch the negative prompt into CLIPTextEncode nodes.
+        """Patch the negative prompt into the negative CLIPTextEncode node(s).
 
-        Typically the second CLIPTextEncode node or one with specific naming.
+        Resolves the negative node from the KSampler `negative` link (falling
+        back to node title, then to the second CLIPTextEncode node) instead of
+        blindly assuming it is the second node in declaration order.
         """
         if not self.workflow:
             raise ValueError("No workflow loaded")
 
         encode_nodes = self.find_nodes("CLIPTextEncode")
-        if len(encode_nodes) >= 2:
+        positive_ids, negative_ids = self._resolve_prompt_nodes()
+        target_ids = [nid for nid in negative_ids if nid not in positive_ids]
+
+        if target_ids:
+            for node_id in target_ids:
+                inputs = encode_nodes[node_id].get("inputs", {})
+                if "text" in inputs:
+                    inputs["text"] = prompt
+                    log.debug(f"[ComfyUI] Patched negative prompt into node {node_id}")
+        elif len(encode_nodes) >= 2:
             keys = list(encode_nodes.keys())
             second_node_id = keys[1]
             inputs = encode_nodes[second_node_id].get("inputs", {})

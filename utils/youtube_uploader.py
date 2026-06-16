@@ -9,6 +9,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_pla
 
 log = logging.getLogger(__name__)
 
+# Max time to wait for YouTube's post-upload processing/checks screen before
+# giving up and attempting to publish anyway (seconds).
+PROCESSING_WAIT_TIMEOUT_S = 1200
+
 
 def upload_to_youtube(
     video_path: str | Path,
@@ -121,6 +125,9 @@ def upload_to_youtube(
             log.info(
                 "[YouTube] Waiting for video processing checks to complete... (this may take a few minutes)"
             )
+            # Bound the wait so a stuck/slow processing screen can't hang the
+            # upload forever. After the deadline, proceed to publish anyway.
+            processing_deadline = time.time() + PROCESSING_WAIT_TIMEOUT_S
             while True:
                 progress = (
                     page.locator("span.progress-label").inner_text()
@@ -133,11 +140,17 @@ def upload_to_youtube(
                     or "Processing up to" in progress
                 ):
                     break
-                if page.locator(
-                    "ytcp-button#done-button"
-                ).is_visible() and "disabled" not in page.locator(
-                    "ytcp-button#done-button"
-                ).get_attribute("class"):
+                done_button = page.locator("ytcp-button#done-button")
+                if done_button.is_visible():
+                    # get_attribute() can return None; guard before membership test.
+                    done_class = done_button.get_attribute("class") or ""
+                    if "disabled" not in done_class:
+                        break
+                if time.time() > processing_deadline:
+                    log.warning(
+                        "[YouTube] Processing checks did not complete within "
+                        f"{PROCESSING_WAIT_TIMEOUT_S}s; proceeding to publish anyway."
+                    )
                     break
                 time.sleep(5)
 

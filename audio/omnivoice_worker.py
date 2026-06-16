@@ -214,7 +214,7 @@ def _synthesize(
     load the Whisper ASR model (which otherwise loads a 2nd model and OOMs on 6GB
     GPUs — issue #41). Strongly recommended on low-VRAM cards.
     sentence_gap_ms: crossfade duration in ms between synthesized chunks (P4-9 fix).
-                     When None, defaults to 50ms. Sourced from
+                     When None, defaults to 200ms. Sourced from
                      tts.voice_profile.sentence_gap_ms in config (default 200ms).
     """
     _set_seed(seed)
@@ -387,7 +387,7 @@ def main():
         help="Transcript of the reference clip — supply to skip the Whisper ASR load (VRAM fix, issue #41)",
     )
     parser.add_argument("--speed", type=float, default=0.85)
-    parser.add_argument("--num-step", type=int, default=24)
+    parser.add_argument("--num-step", type=int, default=40)
     parser.add_argument("--guidance-scale", type=float, default=2.5)
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()
