@@ -24,6 +24,11 @@ build/
 .pytest_cache/
 .qwen_edit_cache/
 
+# ── Rust (worker) ─────────────────────────────────────────────────
+rust/target/
+rust/**/target/
+**/*.rs.bk
+
 # ── Generated / Runtime (large, per-run, not source) ──────────────
 studio_outputs/
 studio_checkpoints/
