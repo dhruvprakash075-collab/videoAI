@@ -225,7 +225,7 @@ class WorldState:
                     )
 
             if not _llm_used:
-                # ── Regex fallback (original behavior) ────────────────────
+                # ── Regex fallback (original behavior) ─────────────────
                 # -- 1. Extract character mentions -----------------------------
                 # Look for proper nouns (capitalized words) in the script.
                 # P3-22: Unicode-aware — also match Devanagari-initial words
@@ -269,17 +269,29 @@ class WorldState:
                     "By",
                     "With",
                 }
+                # P-aud #6: A single capitalized word is usually not a real
+                # recurring character (sentence-initial words, place names,
+                # exclamations, etc.). Require a candidate to appear at least
+                # twice before registering it as a *new* character. Characters
+                # already known are always updated so their moods stay current.
+                from collections import Counter
+
+                _candidate_counts = Counter(char_candidates)
                 for name in char_candidates:
-                    if name not in exclusions:
-                        if name not in self._data["characters"]:
-                            self._data["characters"][name] = {
-                                "first_seen_seg": seg_num,
-                                "moods_seen": [],
-                                "status": "active",
-                            }
-                        char_entry = self._data["characters"][name]
-                        if mood and mood not in char_entry.get("moods_seen", []):
-                            char_entry.setdefault("moods_seen", []).append(mood)
+                    if name in exclusions:
+                        continue
+                    known = name in self._data["characters"]
+                    if not known and _candidate_counts[name] < 2:
+                        continue
+                    if not known:
+                        self._data["characters"][name] = {
+                            "first_seen_seg": seg_num,
+                            "moods_seen": [],
+                            "status": "active",
+                        }
+                    char_entry = self._data["characters"][name]
+                    if mood and mood not in char_entry.get("moods_seen", []):
+                        char_entry.setdefault("moods_seen", []).append(mood)
 
                 # P3-22: also key continuity on full character names from the plan
                 plan_chars = plan.get("characters", [])
@@ -324,6 +336,10 @@ class WorldState:
                 entry = f"[Seg {seg_num} - {title}] {key_event}"
                 if entry not in self._data["world_facts"]:
                     self._data["world_facts"].append(entry)
+                    # P-aud #7: this branch runs on every segment (not just the
+                    # regex fallback), so cap here too or world_facts grows
+                    # without bound on long LLM-extraction runs.
+                    self._data["world_facts"] = self._data["world_facts"][-30:]
 
             if force_save:
                 self._save()
