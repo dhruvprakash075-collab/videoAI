@@ -838,7 +838,8 @@ async def save_ui_config(
             )
         ):
             comfy_cfg = image_cfg.setdefault("comfyui", {})
-            comfy_cfg["auto_start"] = _form_bool(comfyui_auto_start, True)
+            if comfyui_auto_start is not None:
+                comfy_cfg["auto_start"] = _form_bool(comfyui_auto_start, True)
             if comfyui_server is not None:
                 comfy_cfg["server"] = comfyui_server.strip()
             if comfyui_host is not None:
@@ -869,8 +870,10 @@ async def save_ui_config(
                 comfy_cfg["timeout_seconds"] = max(1, int(comfyui_timeout_seconds))
             if comfyui_poll_seconds is not None:
                 comfy_cfg["poll_seconds"] = max(0.1, float(comfyui_poll_seconds))
-            comfy_cfg["unload_after_batch"] = _form_bool(comfyui_unload_after_batch, True)
-            comfy_cfg["open_browser"] = _form_bool(comfyui_open_browser, False)
+            if comfyui_unload_after_batch is not None:
+                comfy_cfg["unload_after_batch"] = _form_bool(comfyui_unload_after_batch, True)
+            if comfyui_open_browser is not None:
+                comfy_cfg["open_browser"] = _form_bool(comfyui_open_browser, False)
 
         # Save to config.yaml atomically (H3 fix): write a temp file and
         # os.replace() it so a crash mid-write can never corrupt the only
