@@ -56,8 +56,10 @@ def test_retry_transient_uses_max_retries_not_bounded():
     with patch("utils.retry_manager.time.sleep") as sleep_mock:
         with pytest.raises(ConnectionError):
             flaker()
-    # All 4 attempts should sleep
-    assert sleep_mock.call_count == 4
+    # Transient errors use the full max_retries (4) attempt budget - proving they
+    # are not capped at BOUNDED_RETRIES - but the final attempt fails fast without
+    # a wasted backoff sleep (audit fix #4), so only max_retries - 1 == 3 sleeps occur.
+    assert sleep_mock.call_count == 3
 
 
 def test_retry_bounded_caps_at_bounded_retries():
@@ -110,7 +112,7 @@ def test_patch_retries_idempotent():
     patch_retries()
     from audio import audio_proxy
 
-    # Run again — should be no-op
+    # Run again - should be no-op
     patch_retries()
     assert hasattr(audio_proxy.tts_generate, "_is_retry_patched")
 
