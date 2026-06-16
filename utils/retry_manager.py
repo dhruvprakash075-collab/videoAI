@@ -67,6 +67,10 @@ def retry_with_backoff(
                     # (which are OSError subclasses and would also match
                     # BOUNDED_EXCEPTIONS) are never capped at BOUNDED_RETRIES.
                     if isinstance(e, TRANSIENT_EXCEPTIONS):
+                        # On the final attempt, don't waste a backoff sleep —
+                        # fall through to raise last_exc immediately.
+                        if attempt >= max_retries:
+                            break
                         delay = min(base_delay * (backoff ** (attempt - 1)), MAX_DELAY_S)
                         log.warning(
                             f"{func.__name__} attempt {attempt}/{max_retries} "
@@ -80,6 +84,10 @@ def retry_with_backoff(
                             f"{func.__name__} deterministic failure after {attempt} attempts: {e}"
                         )
                         raise
+                    # On the final attempt, don't waste a backoff sleep —
+                    # fall through to raise last_exc immediately.
+                    if attempt >= max_retries:
+                        break
                     delay = min(base_delay * (backoff ** (attempt - 1)), MAX_DELAY_S)
                     log.warning(
                         f"{func.__name__} attempt {attempt}/{max_retries} "
