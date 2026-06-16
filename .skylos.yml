@@ -11,6 +11,25 @@ exclude:
   - '**/hf_cache*'
   - '**/tests*'
 
+secret_exclude:
+  # npm SRI integrity hashes are high entropy by design, not credentials.
+  - 'dashboard/package-lock.json'
+  # ComfyUI blueprint model filenames and public Hugging Face URLs are not secrets.
+  - 'external/ComfyUI/blueprints/Image Edit (Qwen 2509).json'
+  - 'external/ComfyUI/blueprints/Text to Image (Qwen-Image 2512).json'
+
+# Known dependency exceptions — external/ is vendored and managed upstream.
+# These are NOT ignored; they are documented here for audit trail.
+# - external/ComfyUI/requirements.txt: torch==2.11.0+cu130, aiohttp>=3.12.14
+#   Reason: Vendored ComfyUI dependency; upgraded by ComfyUI upstream releases.
+#   Installed aiohttp is 3.13.5 (safe). torch is installed via separate CUDA index.
+# - external/ComfyUI/tests-unit/requirements.txt: pytest==7.8.0
+#   Reason: Vendored ComfyUI test dependency; managed by ComfyUI project.
+# - external/supertonic_embed/requirements.txt: torch==2.11.0+cu128
+#   Reason: Vendored Supertonic embedding dependency; managed by Supertonic project.
+# - dashboard/package.json: vite@8.0.12 (installed: 8.0.16 — safe)
+#   Reason: Vulnerable version pinned in scan but npm installs 8.0.16.
+
 checks:
   dead_code: true
   security: true

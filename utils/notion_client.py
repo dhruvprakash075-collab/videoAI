@@ -41,6 +41,7 @@ class NotionClient:
         }
 
     def request(self, method: str, endpoint: str, *, json: dict | None = None) -> dict:
+        # Classification: authenticated API endpoint (Notion — fixed trusted host)
         url = f"https://api.notion.com/v1{endpoint}"
         resp = requests.request(method, url, headers=self._headers(), json=json, timeout=30)
         if resp.status_code >= 400:

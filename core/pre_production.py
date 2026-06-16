@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from utils import _safe_filename
+from utils.url_security import build_validated_url, validate_service_base_url
 
 log = logging.getLogger(__name__)
 
@@ -238,8 +239,9 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
 
     # 3. Ollama
     try:
+        tags_url = build_validated_url(validate_service_base_url(ollama_host), "/api/tags")
         req = urllib.request.Request(
-            f"{ollama_host}/api/tags",
+            tags_url,
             headers={"User-Agent": "Video.AI Preflight"},
         )
         with urllib.request.urlopen(req, timeout=3) as response:

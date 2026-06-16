@@ -18,7 +18,9 @@ describe('useVoicePlayer', () => {
   let lastAudio;
   beforeEach(() => {
     lastAudio = makeAudio();
-    global.Audio = vi.fn(() => lastAudio);
+    global.Audio = vi.fn(function () {
+      return lastAudio;
+    });
   });
 
   it('starts with no playing voice', () => {
@@ -50,9 +52,10 @@ describe('useVoicePlayer', () => {
   it('stops the previous audio before starting a new one', () => {
     const first = makeAudio();
     const second = makeAudio();
-    global.Audio = vi.fn()
-      .mockReturnValueOnce(first)
-      .mockReturnValueOnce(second);
+    let callIndex = 0;
+    global.Audio = vi.fn(function () {
+      return callIndex++ === 0 ? first : second;
+    });
     const { result } = renderHook(() => useVoicePlayer());
     act(() => { result.current.play('a'); });
     act(() => { result.current.play('b'); });

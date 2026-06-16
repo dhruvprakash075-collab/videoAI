@@ -220,6 +220,8 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
             "trafilatura is required to load URLs. Install with: pip install trafilatura>=1.6"
         ) from e
 
+    from utils.url_security import validate_source_url
+
     cfg_source = (config or {}).get("source", {})
     user_agent = cfg_source.get("user_agent", "VideoAI/6.0 (+https://github.com/...)")
     timeout_s = int(cfg_source.get("url_timeout_s", 30))
@@ -229,12 +231,33 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     # size is re-checked after download (covers chunked responses).
     max_bytes = int(cfg_source.get("max_fetch_bytes", 10 * 1024 * 1024))
 
-    log.info(f"source_loader: fetching {url} (timeout={timeout_s}s)")
+    # SSRF: reject private/metadata/link-local IPs, localhost, file://, etc.
+    validated_url = validate_source_url(url)
+
+    log.info(f"source_loader: fetching {validated_url} (timeout={timeout_s}s)")
     try:
-        resp = requests.get(url, headers={"User-Agent": user_agent}, timeout=timeout_s)
+        resp = requests.get(validated_url, headers={"User-Agent": user_agent}, timeout=timeout_s, allow_redirects=False)
         resp.raise_for_status()
     except requests.RequestException as e:
         raise SourceLoaderError(f"URL fetch failed: {e}") from e
+
+    # Follow redirects manually, validating each hop
+    from urllib.parse import urljoin
+
+    max_redirects = 5
+    redirect_count = 0
+    current_url = validated_url
+    while resp.is_redirect and redirect_count < max_redirects:
+        next_url = resp.headers.get("Location", "")
+        if not next_url:
+            break
+        # Resolve relative redirects against the current URL
+        next_url = urljoin(current_url, next_url)
+        validated_next = validate_source_url(next_url)
+        current_url = validated_next
+        redirect_count += 1
+        resp = requests.get(validated_next, headers={"User-Agent": user_agent}, timeout=timeout_s, allow_redirects=False)
+        resp.raise_for_status()
 
     try:
         declared = int(resp.headers.get("Content-Length", 0))

@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from utils import get_audio_duration
+from utils.path_utils import is_safe_path
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +93,10 @@ def mix_sfx(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"voiceover_with_sfx_{segment_idx:02d}.wav"
+
+    if not is_safe_path(output_dir, str(output_path)):
+        log.warning(f"Output path escapes output directory: {output_path}")
+        return audio_path
 
     # Detect relevant SFX from script
     script_lower = script.lower()
@@ -313,6 +318,10 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"mastered_audio_{segment_idx:02d}.wav"
+
+    if not is_safe_path(output_dir, str(output_path)):
+        log.warning(f"Output path escapes output directory: {output_path}")
+        return audio_path
 
     # Try applying the premium python/numpy/scipy voice processing
     success = apply_premium_voice_processing(audio_path, output_path)

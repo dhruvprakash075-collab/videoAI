@@ -75,6 +75,12 @@ def test_create_writer_fallback_records_degradation(monkeypatch):
     assert "hermes-director" in UIState.degradations[0]["reason"]
 
 
+def test_ollama_model_available_rejects_metadata_host():
+    with patch("urllib.request.urlopen") as urlopen_mock:
+        assert cm._ollama_model_available("model", "http://169.254.169.254") is False
+    urlopen_mock.assert_not_called()
+
+
 def test_translate_node_fallback_records_degradation(monkeypatch):
     UIState.reset_run("test")
 

@@ -33,6 +33,7 @@ from pathlib import Path
 
 from utils import build_prompts
 from utils.emotion_control import inject_emotion
+from utils.url_security import build_validated_url, validate_service_base_url
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
         import json as _js
         import urllib.request as _ur
 
-        host = config.get("ollama", {}).get("host", "http://localhost:11434")
+        host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
         models_cfg = config.get("models", {})
         seen = set()
         for _key in ("director", "writer", "reviewer", "translator", "image_engineer"):
@@ -90,7 +91,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                 with contextlib.suppress(_ue.URLError, TimeoutError, OSError):
                     _ur.urlopen(
                         _ur.Request(
-                            f"{host}/api/generate",
+                            build_validated_url(host, "/api/generate"),
                             data=_js.dumps({"model": _mdl, "keep_alive": 0}).encode(),
                             headers={"Content-Type": "application/json"},
                         ),
@@ -141,8 +142,8 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                 import json as _js2
                 import urllib.request as _ur2
 
-                host2 = config.get("ollama", {}).get("host", "http://localhost:11434")
-                with _ur2.urlopen(f"{host2}/api/ps", timeout=3) as _r:
+                host2 = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
+                with _ur2.urlopen(build_validated_url(host2, "/api/ps"), timeout=3) as _r:
                     ps_data = _js2.loads(_r.read().decode())
                 for _m in ps_data.get("models", []):
                     _name = _m.get("name", "")
@@ -151,7 +152,7 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                         with contextlib.suppress(_ue2.URLError, TimeoutError, OSError):
                             _ur2.urlopen(
                                 _ur2.Request(
-                                    f"{host2}/api/generate",
+                                    build_validated_url(host2, "/api/generate"),
                                     data=_js2.dumps({"model": _name, "keep_alive": 0}).encode(),
                                     headers={"Content-Type": "application/json"},
                                 ),

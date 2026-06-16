@@ -113,7 +113,7 @@ class OllamaClient:
         except ValueError:
             return False
     def _post(self, url: str, payload: dict, timeout: int) -> dict:
-        """Raw POST with retry on transient errors. Raises on permanent failure."""
+        """Raw POST with retry on transient errors. Classification: local service URL (Ollama)."""
         # Validate URL before making the request to prevent SSRF
         import urllib.parse
         parsed = urllib.parse.urlparse(url)

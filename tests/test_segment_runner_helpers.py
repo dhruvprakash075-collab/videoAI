@@ -163,6 +163,19 @@ def test_evict_default_host():
     assert urlopen_mock.call_count == 1
 
 
+def test_evict_rejects_metadata_host():
+    cfg = {
+        "ollama": {"host": "http://169.254.169.254"},
+        "models": {"director": "x"},
+    }
+    with (
+        patch("urllib.request.urlopen") as urlopen_mock,
+        patch.dict(sys.modules, {"torch": _no_vram_poll_torch()}),
+    ):
+        evict_ollama_models(cfg)
+    urlopen_mock.assert_not_called()
+
+
 def test_evict_uses_configured_vram_threshold():
     """If vram threshold is met immediately, return quickly."""
     cfg = {

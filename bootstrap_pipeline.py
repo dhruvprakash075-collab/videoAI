@@ -186,8 +186,8 @@ def _load_and_split_source(source_arg: str, args, pf_config: dict) -> tuple:
     return chunks, topic_text, source_doc.text
 
 
-def run_pipeline_with_args():
-    """Run the pipeline with command line arguments."""
+def _build_parser():
+    """Build and return the argument parser (all add_argument calls)."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Video.AI Pipeline")
@@ -279,92 +279,230 @@ def run_pipeline_with_args():
         "document title becomes the video topic. Works with --words-per-segment "
         "and --segment-count overrides.",
     )
+    return parser
 
-    args = parser.parse_args()
 
-    _pf_config = None
+def _run_preflight(args):
+    """Run preflight config loading and readiness checks.
 
-    # ── Preflight ────────────────────────────────────────────────────────
-    # Run readiness checks (Ollama, VRAM, disk, ffmpeg) before doing anything
-    # expensive. Skippable via --skip-preflight for hot-iteration debugging.
+    Returns:
+        (pf_config, pf_result_or_None)
+    """
+    pf_config = None
+
     if not args.skip_preflight:
         try:
             from config import load_config
 
-            _pf_config = load_config()
+            pf_config = load_config()
         except Exception as e:
             print(f"Warning: Could not load config for preflight: {e}")
-            _pf_config = {}
+            pf_config = {}
         try:
             from utils.preflight import run_preflight
 
-            _pf_result = run_preflight(_pf_config, fail_fast=False)
+            pf_result = run_preflight(pf_config, fail_fast=False)
         except Exception as e:
             print(f"Warning: Preflight crashed ({e}) — continuing")
-            _pf_result = None
-        if _pf_result is not None and args.preflight_only:
-            sys.exit(0 if _pf_result.all_ok else 1)
-        if _pf_result is not None and not _pf_result.all_ok and not args.dry_run:
+            pf_result = None
+        if pf_result is not None and args.preflight_only:
+            sys.exit(0 if pf_result.all_ok else 1)
+        if pf_result is not None and not pf_result.all_ok and not args.dry_run:
             print("\nPreflight FAILED. Re-run with --skip-preflight to bypass (not recommended).")
             sys.exit(1)
+        return pf_config, pf_result
 
-    # ── Register Ollama-eviction shutdown hook ──────────────────────────
-    # Ensures any loaded LLM is force-evicted (keep_alive=0) when the user
-    # Ctrl-C's a long generation. Without this, an Ollama model can stay
-    # resident and starve Stable Diffusion of VRAM on the next run.
-    if not args.skip_preflight and not args.dry_run:
+    return pf_config, None
+
+
+def _register_shutdown_hook(config):
+    """Register the Ollama-eviction shutdown hook."""
+    try:
+        from utils.shutdown import register_cleanup_hook
+
+        def _shutdown_evict():
+            try:
+                from core.segment_runner import evict_ollama_models
+
+                evict_ollama_models(config, reason="graceful shutdown")
+            except Exception as e:
+                print(f"Warning: Ollama eviction on shutdown failed: {e}")
+
+        _shutdown_evict.__name__ = "evict_ollama_on_shutdown"
+        register_cleanup_hook(_shutdown_evict)
+    except Exception as e:
+        print(f"Warning: Could not register shutdown eviction hook: {e}")
+
+
+def _resolve_input(args, pf_config):
+    """Resolve input from --file, --topic, or --source.
+
+    Returns:
+        (topic_text, content_text, source_chunks)
+    """
+    if args.file:
+        file_path = Path(args.file)
+        content_text = file_path.read_text(encoding="utf-8").strip()
+        topic_text = file_path.stem.replace("_", " ").replace("-", " ")
+        print(
+            f"[FILE] Loaded: {file_path.name} ({len(content_text)} chars, ~{len(content_text.split())} words)"
+        )
+    else:
+        topic_text = args.topic
+        if topic_text and topic_text.lower() == "auto":
+            try:
+                from utils.topic_researcher import brainstorm_topic
+
+                topic_text = brainstorm_topic(pf_config if not args.skip_preflight else None)
+            except Exception as e:
+                print(f"Warning: Auto-topic researcher failed: {e}")
+                topic_text = "The Mysteries of the Deep Ocean"
+        content_text = None
+
+    source_chunks = None
+    if getattr(args, "source", None):
+        source_chunks, topic_text, content_text = _load_and_split_source(
+            args.source, args, pf_config
+        )
+
+    if not topic_text and not args.eval_models and not getattr(args, "topics_file", None):
+        print(
+            "error: You must provide either --topic, --file, or --source "
+            "(or --eval-models, or --topics-file)"
+        )
+        sys.exit(2)
+
+    return topic_text, content_text, source_chunks
+
+
+def _run_batch(args, run_long_pipeline, topics, source_chunks):
+    """Run batch mode with multiple topics sequentially. Returns the report list."""
+    import json as _bjson
+    import time as _btime
+
+    print(f"[BATCH] Running {len(topics)} topics")
+    _batch_report = []
+    _batch_out = Path("studio_outputs") / "batch_report.json"
+    for _bi, _btopic in enumerate(topics, 1):
+        print(f"\n[BATCH {_bi}/{len(topics)}] Topic: {_btopic}")
+        _bt_start = _btime.time()
         try:
-            from utils.shutdown import register_cleanup_hook
+            _bres = run_long_pipeline(
+                topic=_btopic,
+                project_name=args.project,
+                resume=not args.no_resume,
+                skip_rvc=args.skip_rvc,
+                dry_run=args.dry_run,
+                duration_min=args.duration,
+                director_mode=args.director_mode,
+                series_mode=args.series,
+                preview_mode=args.preview,
+                words_per_segment=args.words_per_segment,
+                images_per_segment=args.images_per_segment,
+                segment_count=args.segment_count,
+                source_chunks=source_chunks,
+            )
+            _bwall = round(_btime.time() - _bt_start, 1)
+            try:
+                from agents.director_agent import UIState as _BUIS
 
-            def _shutdown_evict():
-                try:
-                    from core.segment_runner import evict_ollama_models
+                _bdeg = len(_BUIS.degradations)
+            except Exception:
+                _bdeg = 0
+            _batch_report.append(
+                {
+                    "topic": _btopic,
+                    "status": _bres.get("status", "unknown"),
+                    "output": _bres.get("output"),
+                    "degradations": _bdeg,
+                    "wall_time_s": _bwall,
+                }
+            )
+            print(f"[BATCH {_bi}] Done: {_bres.get('status')} in {_bwall:.0f}s")
+        except Exception as _be:
+            _bwall = round(_btime.time() - _bt_start, 1)
+            _batch_report.append(
+                {
+                    "topic": _btopic,
+                    "status": "error",
+                    "error": str(_be)[:200],
+                    "wall_time_s": _bwall,
+                }
+            )
+            print(f"[BATCH {_bi}] FAILED: {_be}")
+    _batch_out.parent.mkdir(parents=True, exist_ok=True)
+    _batch_out.write_text(
+        _bjson.dumps(_batch_report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    print(f"\n[BATCH] Complete. Report: {_batch_out}")
+    _ok = sum(1 for r in _batch_report if r.get("status") in ("success", "dry_run"))
+    print(f"[BATCH] {_ok}/{len(topics)} succeeded")
+    return _batch_report, len(topics)
 
-                    evict_ollama_models(_pf_config, reason="graceful shutdown")
-                except Exception as e:
-                    print(f"Warning: Ollama eviction on shutdown failed: {e}")
 
-            _shutdown_evict.__name__ = "evict_ollama_on_shutdown"
-            register_cleanup_hook(_shutdown_evict)
-        except Exception as e:
-            print(f"Warning: Could not register shutdown eviction hook: {e}")
+def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks):
+    """Run the pipeline once. Returns an exit code (0 or 1)."""
+    try:
+        result = run_long_pipeline(
+            topic=topic_text,
+            project_name=args.project,
+            resume=not args.no_resume,
+            skip_rvc=args.skip_rvc,
+            dry_run=args.dry_run,
+            duration_min=args.duration,
+            director_mode=args.director_mode,
+            series_mode=args.series,
+            content_text=content_text,
+            preview_mode=args.preview,
+            words_per_segment=args.words_per_segment,
+            images_per_segment=args.images_per_segment,
+            segment_count=args.segment_count,
+            source_chunks=source_chunks,
+        )
+
+        print("PIPELINE COMPLETE")
+        print("=" * 60)
+        print(f"Status: {result.get('status', 'unknown').upper()}")
+
+        if result.get("status") == "success":
+            print(f"Output: {result.get('output')}")
+            print(f"Segments: {result.get('segments')}")
+            print(f"Duration: {result.get('duration_s'):.1f}s")
+        elif result.get("status") == "dry_run":
+            print(f"Would generate: {result.get('segments')} segments")
+            print(f"Output would be: {result.get('output')}")
+        else:
+            print(f"Error: {result.get('reason')}")
+
+        print("=" * 60 + "\n")
+        return 0 if result.get("status") in ["success", "dry_run"] else 1
+
+    except KeyboardInterrupt:
+        print("\n[FAILED] Pipeline interrupted by user")
+        return 1
+    except Exception as e:
+        print(f"\n[FAILED] Fatal error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return 1
+
+
+def run_pipeline_with_args():
+    """Run the pipeline with command line arguments."""
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    pf_config, _ = _run_preflight(args)
+
+    if not args.skip_preflight and not args.dry_run:
+        _register_shutdown_hook(pf_config)
 
     try:
         from core.pipeline_long import run_long_pipeline
 
-        # Handle file input
-        if args.file:
-            file_path = Path(args.file)
-            content_text = file_path.read_text(encoding="utf-8").strip()
-            topic_text = file_path.stem.replace("_", " ").replace("-", " ")
-            print(
-                f"[FILE] Loaded: {file_path.name} ({len(content_text)} chars, ~{len(content_text.split())} words)"
-            )
-        else:
-            topic_text = args.topic
-            if topic_text and topic_text.lower() == "auto":
-                try:
-                    from utils.topic_researcher import brainstorm_topic
+        topic_text, content_text, source_chunks = _resolve_input(args, pf_config)
 
-                    topic_text = brainstorm_topic(_pf_config if not args.skip_preflight else None)
-                except Exception as e:
-                    print(f"Warning: Auto-topic researcher failed: {e}")
-                    topic_text = "The Mysteries of the Deep Ocean"
-            content_text = None
-
-        # Handle --source (Phase 4: source-path ingestion)
-        source_chunks = None
-        if getattr(args, "source", None):
-            source_chunks, topic_text, content_text = _load_and_split_source(
-                args.source, args, _pf_config
-            )
-
-        if not topic_text and not args.eval_models and not getattr(args, "topics_file", None):
-            parser.error(
-                "You must provide either --topic, --file, or --source (or --eval-models, or --topics-file)"
-            )
-
-        # A6: wire --yes flag to UIState.auto_accept before pipeline starts
         if getattr(args, "yes", False):
             try:
                 from agents.director_agent import UIState
@@ -378,14 +516,12 @@ def run_pipeline_with_args():
 
         print("\n" + "=" * 60)
 
-        # Handle --eval-models (no full video, just sample generation)
         if args.eval_models:
             from utils.model_eval import run_eval
 
             run_eval()
             sys.exit(0)
 
-        # D4: Batch mode — run multiple topics from a file sequentially
         if getattr(args, "topics_file", None):
             _topics_path = Path(args.topics_file)
             if not _topics_path.exists():
@@ -397,111 +533,11 @@ def run_pipeline_with_args():
                 print("[BATCH] No topics found in file (blank lines and # comments are ignored)")
                 sys.exit(1)
             print(f"[BATCH] Running {len(_topics)} topics from {_topics_path.name}")
-            import json as _bjson
-            import time as _btime
-
-            _batch_report = []
-            _batch_out = Path("studio_outputs") / "batch_report.json"
-            for _bi, _btopic in enumerate(_topics, 1):
-                print(f"\n[BATCH {_bi}/{len(_topics)}] Topic: {_btopic}")
-                _bt_start = _btime.time()
-                try:
-                    _bres = run_long_pipeline(
-                        topic=_btopic,
-                        project_name=args.project,
-                        resume=not args.no_resume,
-                        skip_rvc=args.skip_rvc,
-                        dry_run=args.dry_run,
-                        duration_min=args.duration,
-                        director_mode=args.director_mode,
-                        series_mode=args.series,
-                        preview_mode=args.preview,
-                        words_per_segment=args.words_per_segment,
-                        images_per_segment=args.images_per_segment,
-                        segment_count=args.segment_count,
-                        source_chunks=source_chunks,
-                    )
-                    _bwall = round(_btime.time() - _bt_start, 1)
-                    try:
-                        from agents.director_agent import UIState as _BUIS
-
-                        _bdeg = len(_BUIS.degradations)
-                    except Exception:
-                        _bdeg = 0
-                    _batch_report.append(
-                        {
-                            "topic": _btopic,
-                            "status": _bres.get("status", "unknown"),
-                            "output": _bres.get("output"),
-                            "degradations": _bdeg,
-                            "wall_time_s": _bwall,
-                        }
-                    )
-                    print(f"[BATCH {_bi}] Done: {_bres.get('status')} in {_bwall:.0f}s")
-                except Exception as _be:
-                    _bwall = round(_btime.time() - _bt_start, 1)
-                    _batch_report.append(
-                        {
-                            "topic": _btopic,
-                            "status": "error",
-                            "error": str(_be)[:200],
-                            "wall_time_s": _bwall,
-                        }
-                    )
-                    print(f"[BATCH {_bi}] FAILED: {_be}")
-            _batch_out.parent.mkdir(parents=True, exist_ok=True)
-            _batch_out.write_text(
-                _bjson.dumps(_batch_report, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            print(f"\n[BATCH] Complete. Report: {_batch_out}")
+            _batch_report, _total = _run_batch(args, run_long_pipeline, _topics, source_chunks)
             _ok = sum(1 for r in _batch_report if r.get("status") in ("success", "dry_run"))
-            print(f"[BATCH] {_ok}/{len(_topics)} succeeded")
-            sys.exit(0 if _ok == len(_topics) else 1)
+            sys.exit(0 if _ok == _total else 1)
 
-        try:
-            result = run_long_pipeline(
-                topic=topic_text,
-                project_name=args.project,
-                resume=not args.no_resume,
-                skip_rvc=args.skip_rvc,
-                dry_run=args.dry_run,
-                duration_min=args.duration,
-                director_mode=args.director_mode,
-                series_mode=args.series,
-                content_text=content_text,
-                preview_mode=args.preview,
-                words_per_segment=args.words_per_segment,
-                images_per_segment=args.images_per_segment,
-                segment_count=args.segment_count,
-                source_chunks=source_chunks,
-            )
-
-            print("PIPELINE COMPLETE")
-            print("=" * 60)
-            print(f"Status: {result.get('status', 'unknown').upper()}")
-
-            if result.get("status") == "success":
-                print(f"Output: {result.get('output')}")
-                print(f"Segments: {result.get('segments')}")
-                print(f"Duration: {result.get('duration_s'):.1f}s")
-            elif result.get("status") == "dry_run":
-                print(f"Would generate: {result.get('segments')} segments")
-                print(f"Output would be: {result.get('output')}")
-            else:
-                print(f"Error: {result.get('reason')}")
-
-            print("=" * 60 + "\n")
-            sys.exit(0 if result.get("status") in ["success", "dry_run"] else 1)
-
-        except KeyboardInterrupt:
-            print("\n[FAILED] Pipeline interrupted by user")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\n[FAILED] Fatal error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            sys.exit(1)
+        sys.exit(_run_single(args, run_long_pipeline, topic_text, content_text, source_chunks))
 
     except ImportError as e:
         print(f"\n[FAILED] Could not import pipeline modules: {e}")

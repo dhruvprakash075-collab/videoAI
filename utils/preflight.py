@@ -93,8 +93,14 @@ def _check_ollama(config: dict) -> tuple[Status, str]:
     import urllib.error
     import urllib.request
 
+    from utils.url_security import validate_service_base_url
+
     host = config.get("ollama", {}).get("host", "http://localhost:11434")
-    url = f"{host.rstrip('/')}/api/tags"
+    try:
+        validated = validate_service_base_url(host)
+    except ValueError as e:
+        return "fail", f"Ollama host validation failed: {e}"
+    url = f"{validated.rstrip('/')}/api/tags"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Video.AI-Preflight"})
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -114,9 +120,15 @@ def _check_director_model(config: dict) -> tuple[Status, str]:
     import urllib.error
     import urllib.request
 
+    from utils.url_security import validate_service_base_url
+
     host = config.get("ollama", {}).get("host", "http://localhost:11434")
     director = config.get("models", {}).get("director", "hermes-director")
-    url = f"{host.rstrip('/')}/api/tags"
+    try:
+        validated = validate_service_base_url(host)
+    except ValueError as e:
+        return "warn", f"Ollama host validation failed: {e}"
+    url = f"{validated.rstrip('/')}/api/tags"
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
             import json
@@ -204,7 +216,10 @@ def _check_layered_v3(config: dict) -> tuple[Status, str]:
         import urllib.error
         import urllib.request
 
-        url = f"http://{host}:{port}/system_stats"
+        from utils.url_security import validate_service_base_url
+
+        comfy_url = validate_service_base_url(f"http://{host}:{port}")
+        url = f"{comfy_url}/system_stats"
         with urllib.request.urlopen(url, timeout=5) as resp:
             if resp.status >= 400:
                 errors.append(f"ComfyUI returned status {resp.status}")

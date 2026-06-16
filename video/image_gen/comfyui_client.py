@@ -15,18 +15,23 @@ log = logging.getLogger(__name__)
 
 class ComfyUIClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8188", timeout: int = 300):
-        self.base_url = base_url.rstrip("/")
+        # SSRF: validate local service URL at init time
+        from utils.url_security import validate_service_base_url
+
+        self.base_url = validate_service_base_url(base_url).rstrip("/")
         self.timeout = timeout
         self._session_id: str | None = None
 
     def _request(self, endpoint: str, method: str = "GET", data: dict | None = None) -> dict:
-        """Make a request to the ComfyUI API."""
+        """Make a request to the ComfyUI API — local service URL."""
         cb = CircuitBreakerRegistry.get("comfyui", fails=3, cooldown=30.0)
         if not cb.allow_request():
             log.warning("[ComfyUIClient] Circuit breaker OPEN for ComfyUI — failing fast")
             raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
 
-        url = f"{self.base_url}{endpoint}"
+        from utils.url_security import build_validated_url
+
+        url = build_validated_url(self.base_url, endpoint)
         headers = {"Content-Type": "application/json"}
 
         req = urllib.request.Request(
@@ -85,18 +90,17 @@ class ComfyUIClient:
         raise NotImplementedError("upload_image requires multipart form encoding")
 
     def get_view(self, filename: str, subfolder: str = "", image_type: str = "output") -> bytes:
-        """Get an image from ComfyUI."""
+        """Get an image from ComfyUI — local service URL."""
         cb = CircuitBreakerRegistry.get("comfyui", fails=3, cooldown=30.0)
         if not cb.allow_request():
             log.warning("[ComfyUIClient] Circuit breaker OPEN for ComfyUI — failing fast")
             raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
 
-        url = f"{self.base_url}/view"
-        params = f"?filename={filename}&type={image_type}"
-        if subfolder:
-            params += f"&subfolder={subfolder}"
+        from urllib.parse import urlencode
+        from utils.url_security import build_validated_url
 
-        req = urllib.request.Request(url + params)
+        params = urlencode({"filename": filename, "type": image_type, **({"subfolder": subfolder} if subfolder else {})})
+        url = build_validated_url(self.base_url, f"/view?{params}")
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 content = response.read()

@@ -132,6 +132,10 @@ class DirectorLlmClient:
             if isinstance(self.llm_config, dict)
             else "http://localhost:11434"
         )
+        # SSRF: validate local service URL before constructing request
+        from utils.url_security import validate_service_base_url, build_validated_url
+
+        validated_host = validate_service_base_url(host)
         model = self._resolve_model()
 
         full: list[str] = []
@@ -149,7 +153,7 @@ class DirectorLlmClient:
                 }
             ).encode("utf-8")
             request = urllib.request.Request(
-                f"{host.rstrip('/')}/api/generate",
+                build_validated_url(validated_host, "/api/generate"),
                 data=payload,
                 headers={"Content-Type": "application/json"},
             )

@@ -32,6 +32,10 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
     """Write a structured JSON run manifest for this pipeline run."""
     manifest_dir = Path("studio_outputs") / _safe_filename(topic)
     manifest_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        manifest_dir.resolve().relative_to(Path("studio_outputs").resolve())
+    except ValueError as exc:
+        raise ValueError(f"Path escapes studio_outputs: {manifest_dir}") from exc
     manifest_path = manifest_dir / "run_manifest.json"
 
     from agents.ui_state import UIState as _UIS
@@ -108,6 +112,10 @@ def _write_chapters(outline: list, mp4s: list, final_out: Path, topic: str) -> N
         chapters_content = "\n".join(chapters_lines)
         chapters_dir = Path("studio_outputs") / _safe_filename(topic)
         chapters_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            chapters_dir.resolve().relative_to(Path("studio_outputs").resolve())
+        except ValueError as exc:
+            raise ValueError(f"Path escapes studio_outputs: {chapters_dir}") from exc
         chapters_path = chapters_dir / "chapters.txt"
         chapters_path.write_text(chapters_content, encoding="utf-8")
         log.info(f"[CHAPTERS] YouTube chapters written: {chapters_path}")
@@ -135,6 +143,10 @@ def _write_dry_run_chapters(outline: list, final_out: Path, topic: str) -> list:
         chapters_content = "\n".join(chapters_lines)
         chapters_dir = Path("studio_outputs") / _safe_filename(topic)
         chapters_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            chapters_dir.resolve().relative_to(Path("studio_outputs").resolve())
+        except ValueError as exc:
+            raise ValueError(f"Path escapes studio_outputs: {chapters_dir}") from exc
         chapters_path = chapters_dir / "chapters.txt"
         chapters_path.write_text(chapters_content, encoding="utf-8")
 
@@ -155,6 +167,10 @@ def _generate_thumbnail(final_video: Path, topic: str) -> str:
 
         _thumb_out = Path("studio_outputs") / _safe_filename(topic) / "thumbnail.png"
         _thumb_out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _thumb_out.resolve().relative_to(Path("studio_outputs").resolve())
+        except ValueError as exc:
+            raise ValueError(f"Path escapes studio_outputs: {_thumb_out}") from exc
         _sp.run(
             [
                 "ffmpeg",

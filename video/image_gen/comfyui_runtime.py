@@ -72,7 +72,10 @@ class ComfyUIRuntime:
     def is_running(self, timeout: float = 2.0) -> bool:
         """Check if ComfyUI is running and responding."""
         try:
-            req = urllib.request.Request(f"{self._base_url}/system_stats")
+            from utils.url_security import validate_service_base_url, build_validated_url
+
+            validated = validate_service_base_url(self._base_url)
+            req = urllib.request.Request(build_validated_url(validated, "/system_stats"))
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 return response.status == 200
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):

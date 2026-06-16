@@ -212,6 +212,221 @@ def _encoder_args(config: dict) -> list:
     return _get_video_codec()
 
 
+def _resolve_subtitle_style(config: dict) -> tuple[str, str, str]:
+    """Resolve subtitle font, ASS style string, and SRT format style from config."""
+    sub_cfg = config.get("subtitles", {})
+    format_style = sub_cfg.get("format", "classic")
+    _lang = config.get("tts", {}).get("lang", "en")
+    if "font" in sub_cfg:
+        font = sub_cfg["font"]
+    elif format_style == "tiktok":
+        font = "Impact"
+    elif _lang == "hi":
+        font = "Nirmala UI"
+    else:
+        font = "Arial"
+    size = sub_cfg.get("size", 38 if format_style == "tiktok" else 24)
+    color = sub_cfg.get("color", "&H00FFFF&" if format_style == "tiktok" else "&HFFFFFF&")
+    color_val = color.strip("&")
+
+    if format_style == "tiktok":
+        ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=3,Shadow=0,Alignment=10"
+    elif format_style == "classic":
+        ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=2,Shadow=1,Alignment=2,MarginV=30"
+    else:
+        ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=2,Shadow=1,Alignment=2"
+
+    return font, ass_style, format_style
+
+
+def _build_image_slideshow_cmd(
+    images: list,
+    audio: Path,
+    w: str,
+    h: str,
+    fps: int,
+    duration: float,
+    srt_path_str: str,
+    ass_style: str,
+    config: dict,
+    seg_num: int,
+) -> list[str]:
+    """Build the full ffmpeg command for the image slideshow path (Ken Burns, crossfade, audio fade)."""
+    total_frames = round(duration * fps)
+    n_images = len(images)
+    frames_per_image = total_frames // n_images
+    rem = total_frames % n_images
+
+    cmd = ["ffmpeg", "-y"]
+
+    for idx, img in enumerate(images):
+        img_frames = frames_per_image + (1 if idx < rem else 0)
+        img_dur = img_frames / fps
+        cmd.extend(
+            ["-loop", "1", "-framerate", str(fps), "-t", f"{img_dur:.6f}", "-i", str(img)]
+        )
+
+    audio_idx = len(images)
+    cmd.extend(["-i", str(audio)])
+
+    filter_parts = []
+    concat_inputs = ""
+
+    kb_mode = config.get("video", {}).get("ken_burns", "light")
+
+    for idx in range(len(images)):
+        img_frames_for_kb = frames_per_image + (1 if idx < rem else 0)
+        img_dur_for_kb = img_frames_for_kb / fps
+
+        if kb_mode == "full":
+            kb_fps = min(12, fps)
+            kb_frames = max(1, int(img_dur_for_kb * kb_fps))
+            vf = (
+                f"[{idx}:v]scale={int(int(w) * 1.25)}:{int(int(h) * 1.25)},"
+                f"zoompan=z='min(zoom+0.0005,1.2)'"
+                f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f":d={kb_frames}:s={w}x{h}:fps={kb_fps},"
+                f"fps={fps},setsar=1[v{idx}]"
+            )
+        elif kb_mode == "off":
+            vf = (
+                f"[{idx}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
+                f"setsar=1[v{idx}]"
+            )
+        else:
+            vf = (
+                f"[{idx}:v]scale={int(int(w) * 1.1)}:-1,"
+                f"crop={w}:{h}:(iw-ow)/2:(ih-oh)/2,"
+                f"setsar=1[v{idx}]"
+            )
+        filter_parts.append(vf)
+        concat_inputs += f"[v{idx}]"
+
+    crossfade_dur = config.get("video", {}).get("crossfade_duration", 0.3)
+
+    if len(images) >= 2 and crossfade_dur > 0:
+        _prev_label = "[v0]"
+        for xf_idx in range(1, len(images)):
+            _prev_frames = sum(
+                frames_per_image + (1 if j < rem else 0) for j in range(xf_idx)
+            )
+            _prev_dur = _prev_frames / fps
+            _offset = _prev_dur - (crossfade_dur * xf_idx)
+            _offset = max(0.1, _offset)
+            _out_label = f"[xf{xf_idx}]" if xf_idx < len(images) - 1 else "[v_concat]"
+            filter_parts.append(
+                f"{_prev_label}[v{xf_idx}]xfade=transition=fade"
+                f":duration={crossfade_dur}:offset={_offset:.3f}{_out_label}"
+            )
+            _prev_label = _out_label
+    else:
+        filter_parts.append(f"{concat_inputs}concat=n={len(images)}:v=1:a=0[v_concat]")
+
+    n_xfades = max(0, len(images) - 1) if (len(images) >= 2 and crossfade_dur > 0) else 0
+    _total_overlap = n_xfades * crossfade_dur
+    if _total_overlap > 0:
+        _last_t_idx = None
+        _audio_i_idx = None
+        for _ci in range(len(cmd) - 1, -1, -1):
+            if cmd[_ci] == "-i" and _audio_i_idx is None:
+                _audio_i_idx = _ci
+            elif cmd[_ci] == "-t" and _audio_i_idx is not None and _last_t_idx is None:
+                _last_t_idx = _ci
+                break
+        if _last_t_idx is not None:
+            try:
+                _old_dur = float(cmd[_last_t_idx + 1])
+                _new_dur = _old_dur + _total_overlap
+                cmd[_last_t_idx + 1] = f"{_new_dur:.6f}"
+                log.debug(
+                    f"P3-5: extended last image clip {_old_dur:.3f}s → {_new_dur:.3f}s "
+                    f"(+{_total_overlap:.3f}s overlap from {n_xfades} xfades)"
+                )
+            except (ValueError, IndexError):
+                pass
+
+    _real_video_dur = duration
+    fade_out_start = max(0.0, _real_video_dur - 0.5)
+    filter_parts.append(
+        f"[v_concat]fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start:.2f}:d=0.5[v_faded]"
+    )
+
+    filter_parts.append(
+        f"[v_faded]subtitles='{srt_path_str}':force_style='{ass_style}'[v_final]"
+    )
+
+    filter_complex = ";".join(filter_parts)
+
+    filter_threads = config.get("performance", {}).get("ffmpeg_threads", 0)
+    cmd.extend(
+        [
+            "-filter_threads",
+            str(filter_threads),
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[v_final]",
+            "-map",
+            f"{audio_idx}:a",
+        ]
+    )
+
+    cmd.extend(_encoder_args(config))
+    _xfade_ms = config.get("video", {}).get("audio_crossfade_ms", 0)
+    _xfade_s = _xfade_ms / 1000.0
+    if _xfade_s > 0:
+        _fade_start = max(0.0, duration - _xfade_s)
+        cmd.extend(
+            [
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-af",
+                f"afade=t=out:st={_fade_start:.3f}:d={_xfade_s:.3f},"
+                f"afade=t=in:st=0:d={_xfade_s:.3f}",
+                "-movflags",
+                "+faststart",
+            ]
+        )
+    else:
+        cmd.extend(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"])
+
+    return cmd
+
+
+def _build_black_frame_cmd(
+    audio: Path,
+    res: str,
+    fps: int,
+    duration: float,
+    srt_path_str: str,
+    ass_style: str,
+    config: dict,
+) -> list[str]:
+    """Build the black-frame fallback ffmpeg command."""
+    return [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=black:s={res}:d={duration}",
+        "-r",
+        str(fps),
+        "-i",
+        str(audio),
+        *_encoder_args(config),
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-vf",
+        f"subtitles='{srt_path_str}':force_style='{ass_style}'",
+    ]
+
+
 def create_segment_mp4(
     seg_num: int,
     audio: Path,
@@ -237,33 +452,8 @@ def create_segment_mp4(
     temp_srt = temp_srt_dir / f"segment_{seg_num:02d}.srt"
 
     try:
+        _font, ass_style, format_style = _resolve_subtitle_style(config)
         sub_cfg = config.get("subtitles", {})
-        format_style = sub_cfg.get("format", "classic")
-        # P1-2: choose a Devanagari-capable default font when lang=hi and the user
-        # has not explicitly set subtitles.font in config.
-        # "Nirmala UI" ships with Windows 10/11 and has full Devanagari coverage.
-        # "Noto Sans Devanagari" is the cross-platform fallback.
-        _lang = config.get("tts", {}).get("lang", "en")
-        if "font" in sub_cfg:
-            # User explicitly set a font — always honour it.
-            font = sub_cfg["font"]
-        elif format_style == "tiktok":
-            font = "Impact"
-        elif _lang == "hi":
-            font = "Nirmala UI"
-        else:
-            font = "Arial"
-        size = sub_cfg.get("size", 38 if format_style == "tiktok" else 24)
-        color = sub_cfg.get("color", "&H00FFFF&" if format_style == "tiktok" else "&HFFFFFF&")
-        color_val = color.strip("&")
-
-        if format_style == "tiktok":
-            ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=3,Shadow=0,Alignment=10"
-        elif format_style == "classic":
-            ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=2,Shadow=1,Alignment=2,MarginV=30"
-        else:
-            ass_style = f"Fontname={font},FontSize={size},PrimaryColour=\\&{color_val}\\&,OutlineColour=\\&H000000\\&,Outline=2,Shadow=1,Alignment=2"
-
         _sub_lang = sub_cfg.get("language", "en")
         _write_srt(
             script,
@@ -284,186 +474,12 @@ def create_segment_mp4(
 
         if images:
             w, h = res.split("x")
-            total_frames = round(duration * fps)
-            n_images = len(images)
-            frames_per_image = total_frames // n_images
-            rem = total_frames % n_images
-
-            cmd = ["ffmpeg", "-y"]
-
-            # Add all image inputs with explicit framerate to prevent 25fps default desync
-            for idx, img in enumerate(images):
-                img_frames = frames_per_image + (1 if idx < rem else 0)
-                img_dur = img_frames / fps
-                cmd.extend(
-                    ["-loop", "1", "-framerate", str(fps), "-t", f"{img_dur:.6f}", "-i", str(img)]
-                )
-
-            # Add audio input
-            audio_idx = len(images)
-            cmd.extend(["-i", str(audio)])
-
-            # Build filter_complex
-            filter_parts = []
-            concat_inputs = ""
-
-            # Ken Burns mode: read from config (default "light")
-            # "light" — fast scale+crop, near-instant on CPU (no per-frame zoompan)
-            # "full"  — original zoompan (CPU-heavy, ~2s/frame; use only when time allows)
-            # "off"   — plain scale to target size, no motion
             kb_mode = config.get("video", {}).get("ken_burns", "light")
-
-            for idx in range(len(images)):
-                img_frames_for_kb = frames_per_image + (1 if idx < rem else 0)
-                img_dur_for_kb = img_frames_for_kb / fps
-
-                if kb_mode == "full":
-                    # Original zoompan — CPU-heavy (~2s/frame), kept for quality runs
-                    kb_fps = min(12, fps)
-                    kb_frames = max(1, int(img_dur_for_kb * kb_fps))
-                    vf = (
-                        f"[{idx}:v]scale={int(int(w) * 1.25)}:{int(int(h) * 1.25)},"
-                        f"zoompan=z='min(zoom+0.0005,1.2)'"
-                        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                        f":d={kb_frames}:s={w}x{h}:fps={kb_fps},"
-                        f"fps={fps},setsar=1[v{idx}]"
-                    )
-                elif kb_mode == "off":
-                    # Static: plain scale to target size, no motion
-                    vf = (
-                        f"[{idx}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
-                        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
-                        f"setsar=1[v{idx}]"
-                    )
-                else:
-                    # "light" (default): upscale 10% then center-crop — fast, no per-frame work
-                    # Produces a gentle "zoomed-in" look without any CPU zoompan computation.
-                    vf = (
-                        f"[{idx}:v]scale={int(int(w) * 1.1)}:-1,"
-                        f"crop={w}:{h}:(iw-ow)/2:(ih-oh)/2,"
-                        f"setsar=1[v{idx}]"
-                    )
-                filter_parts.append(vf)
-                concat_inputs += f"[v{idx}]"
-
-            # Concat the visual streams with crossfade transitions between images
-            # xfade produces smooth 0.3s dissolves between consecutive clips
-            crossfade_dur = config.get("video", {}).get("crossfade_duration", 0.3)
-
-            if len(images) >= 2 and crossfade_dur > 0:
-                # Chain xfade filters: [v0][v1]xfade→[xf0]; [xf0][v2]xfade→[xf1]; ...
-                # Each xfade needs the offset (time where transition starts)
-                _prev_label = "[v0]"
-                for xf_idx in range(1, len(images)):
-                    # Offset = cumulative duration of all previous clips minus crossfade overlaps
-                    _prev_frames = sum(
-                        frames_per_image + (1 if j < rem else 0) for j in range(xf_idx)
-                    )
-                    _prev_dur = _prev_frames / fps
-                    # Subtract accumulated crossfade overlaps from previous transitions
-                    _offset = _prev_dur - (crossfade_dur * xf_idx)
-                    _offset = max(0.1, _offset)  # safety floor
-                    _out_label = f"[xf{xf_idx}]" if xf_idx < len(images) - 1 else "[v_concat]"
-                    filter_parts.append(
-                        f"{_prev_label}[v{xf_idx}]xfade=transition=fade"
-                        f":duration={crossfade_dur}:offset={_offset:.3f}{_out_label}"
-                    )
-                    _prev_label = _out_label
-            else:
-                # Single image or crossfade disabled — simple concat
-                filter_parts.append(f"{concat_inputs}concat=n={len(images)}:v=1:a=0[v_concat]")
-
-            # P3-5 fix: each xfade consumes crossfade_dur of overlap, so the raw
-            # concatenated video is shorter than the audio by (N-1)*crossfade_dur.
-            # Compute the real post-xfade video duration and use it for fade_out_start.
-            # The last image clip was already given the correct per-image duration above;
-            # the xfade overlap is "consumed" from the tail of each preceding clip.
-            # To make video == audio, we extend the last clip's input duration by the
-            # total accumulated overlap before the filtergraph runs.
-            # We do this by adjusting the last image's -t value in the input list.
-            # Since we already built the cmd list, we patch the last image's duration arg.
-            n_xfades = max(0, len(images) - 1) if (len(images) >= 2 and crossfade_dur > 0) else 0
-            _total_overlap = n_xfades * crossfade_dur
-            if _total_overlap > 0:
-                # Find the -t argument for the last image input and extend it.
-                # The last image input is at index (len(images)-1)*3+2 in the cmd list
-                # (each image: ["-loop","1","-framerate",fps,"-t",dur,"-i",path] = 8 args).
-                # Simpler: search backwards for the last "-t" before the audio "-i".
-                _last_t_idx = None
-                _audio_i_idx = None
-                for _ci in range(len(cmd) - 1, -1, -1):
-                    if cmd[_ci] == "-i" and _audio_i_idx is None:
-                        _audio_i_idx = _ci
-                    elif cmd[_ci] == "-t" and _audio_i_idx is not None and _last_t_idx is None:
-                        _last_t_idx = _ci
-                        break
-                if _last_t_idx is not None:
-                    try:
-                        _old_dur = float(cmd[_last_t_idx + 1])
-                        _new_dur = _old_dur + _total_overlap
-                        cmd[_last_t_idx + 1] = f"{_new_dur:.6f}"
-                        log.debug(
-                            f"P3-5: extended last image clip {_old_dur:.3f}s → {_new_dur:.3f}s "
-                            f"(+{_total_overlap:.3f}s overlap from {n_xfades} xfades)"
-                        )
-                    except (ValueError, IndexError):
-                        pass
-
-            # Real post-xfade video duration = audio duration (after the extension above)
-            _real_video_dur = duration  # video now matches audio
-            # Feature: Cinematic Fade-in / Fade-out per segment
-            fade_out_start = max(0.0, _real_video_dur - 0.5)
-            filter_parts.append(
-                f"[v_concat]fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start:.2f}:d=0.5[v_faded]"
+            cmd = _build_image_slideshow_cmd(
+                images, audio, w, h, fps, duration, srt_path_str, ass_style, config, seg_num,
             )
-
-            filter_parts.append(
-                f"[v_faded]subtitles='{srt_path_str}':force_style='{ass_style}'[v_final]"
-            )
-
-            filter_complex = ";".join(filter_parts)
-
-            filter_threads = config.get("performance", {}).get("ffmpeg_threads", 0)
-            cmd.extend(
-                [
-                    "-filter_threads",
-                    str(filter_threads),
-                    "-filter_complex",
-                    filter_complex,
-                    "-map",
-                    "[v_final]",
-                    "-map",
-                    f"{audio_idx}:a",
-                ]
-            )
-
-            cmd.extend(_encoder_args(config))
-            # D2: audio fade-out at segment end to smooth joins (fade-in handled by next segment)
-            _xfade_ms = config.get("video", {}).get("audio_crossfade_ms", 0)
-            _xfade_s = _xfade_ms / 1000.0
-            if _xfade_s > 0:
-                _fade_start = max(0.0, duration - _xfade_s)
-                cmd.extend(
-                    [
-                        "-c:a",
-                        "aac",
-                        "-b:a",
-                        "128k",
-                        "-af",
-                        f"afade=t=out:st={_fade_start:.3f}:d={_xfade_s:.3f},"
-                        f"afade=t=in:st=0:d={_xfade_s:.3f}",
-                        "-movflags",
-                        "+faststart",
-                        str(mp4),
-                    ]
-                )
-            else:
-                cmd.extend(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(mp4)])
-
+            cmd.append(str(mp4))
             log.info("Executing single-pass complex filtergraph for Ken Burns assembly...")
-            # Scale timeout to video length and Ken Burns mode:
-            # "full" (zoompan) is CPU-heavy (~2s/frame); keep the large formula.
-            # "light"/"off" use scale+crop which is near-instant — much smaller timeout.
             if kb_mode == "full":
                 _assembly_timeout = max(900, int(duration * 12) + 300)
             else:
@@ -471,29 +487,11 @@ def create_segment_mp4(
             _run(cmd, timeout=_assembly_timeout)
 
         else:
-            _run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    f"color=c=black:s={res}:d={duration}",
-                    "-r",
-                    str(fps),
-                    "-i",
-                    str(audio),
-                    *_encoder_args(config),
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
-                    "-vf",
-                    f"subtitles='{srt_path_str}':force_style='{ass_style}'",
-                    str(mp4),
-                ],
-                timeout=300,
+            cmd = _build_black_frame_cmd(
+                audio, res, fps, duration, srt_path_str, ass_style, config,
             )
+            cmd.append(str(mp4))
+            _run(cmd, timeout=300)
 
         # Copy temporary SRT back to its destination directory and clean up
         if temp_srt.exists():

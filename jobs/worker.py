@@ -71,12 +71,15 @@ class Worker:
                 cp = Path(checkpoint)
                 if not cp.exists():
                     raise RuntimeError(f"ComfyUI checkpoint not found: {cp}")
-        # Check ComfyUI server URL from config
+        # Check ComfyUI server URL from config — local service URL
         comfyui_url = self._get_comfyui_url()
         try:
             import urllib.request
 
-            with urllib.request.urlopen(comfyui_url, timeout=5) as resp:  # type: ignore
+            from utils.url_security import validate_service_base_url
+
+            validated_url = validate_service_base_url(comfyui_url)
+            with urllib.request.urlopen(validated_url, timeout=5) as resp:  # type: ignore
                 if resp.status >= 400:
                     raise RuntimeError("ComfyUI server returned error")
         except Exception as exc:

@@ -844,10 +844,13 @@ def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     except ImportError as e:
         raise ImportError("pip install replicate") from e
 
+    from utils.url_security import validate_source_url
+
     model = cfg.get(
         "replicate_model",
         "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
     )
+    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
     images = []
     with tqdm(total=len(prompts), desc="  Replicate", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
@@ -862,12 +865,20 @@ def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
                 },
             )
             url = output[0] if isinstance(output, list) else output
+            # SSRF: validate returned image URL before download
+            validated_url = validate_source_url(url)
             p = out / f"scene_{i + 1:02d}.png"
-            with (
-                urllib.request.urlopen(url, timeout=30) as response,
-                open(str(p), "wb") as out_file,
-            ):
-                out_file.write(response.read())
+            req = urllib.request.Request(validated_url, headers={"User-Agent": "Video.AI"})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                # Content-type check when header is present
+                ct = response.headers.get("Content-Type", "")
+                if ct and not ct.startswith("image/"):
+                    raise ValueError(f"Replicate returned non-image content-type: {ct}")
+                data = response.read(max_download_bytes + 1)
+                if len(data) > max_download_bytes:
+                    raise ValueError(f"Replicate image too large: {len(data)} bytes")
+            with open(str(p), "wb") as out_file:
+                out_file.write(data)
             images.append(p)
             pbar.update(1)
 
@@ -880,6 +891,9 @@ def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     if not api_key:
         raise ValueError("pexels_api_key missing from config or PEXELS_API_KEY env var")
 
+    from utils.url_security import validate_source_url
+
+    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
     images = []
     with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
@@ -899,12 +913,20 @@ def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
                 continue
 
             img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["original"]
+            # SSRF: validate returned image URL before download
+            validated_img_url = validate_source_url(img_url)
             p = out / f"scene_{i + 1:02d}.png"
-            with (
-                urllib.request.urlopen(img_url, timeout=30) as response,
-                open(str(p), "wb") as out_file,
-            ):
-                out_file.write(response.read())
+            img_req = urllib.request.Request(validated_img_url, headers={"User-Agent": "Video.AI"})
+            with urllib.request.urlopen(img_req, timeout=30) as response:
+                # Content-type check when header is present
+                ct = response.headers.get("Content-Type", "")
+                if ct and not ct.startswith("image/"):
+                    raise ValueError(f"Pexels returned non-image content-type: {ct}")
+                data = response.read(max_download_bytes + 1)
+                if len(data) > max_download_bytes:
+                    raise ValueError(f"Pexels image too large: {len(data)} bytes")
+            with open(str(p), "wb") as out_file:
+                out_file.write(data)
             images.append(p)
             pbar.update(1)
 

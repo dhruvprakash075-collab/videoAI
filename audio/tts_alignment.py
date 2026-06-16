@@ -52,6 +52,12 @@ def align_audio(
 
     json_path = wav_path.with_suffix(".words.json")
     try:
+        json_path.resolve().relative_to(wav_path.resolve().parent)
+    except ValueError:
+        log.warning(f"tts_alignment: output path escapes parent directory: {json_path}")
+        return None
+
+    try:
         model = _get_alignment_model(
             model_name=model_name, device=device, compute_type=compute_type
         )

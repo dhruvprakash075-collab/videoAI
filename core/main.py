@@ -110,9 +110,11 @@ def _ollama_model_available(model_name: str, host: str) -> bool:
     import urllib.request
 
     from utils.errors import RecoverableError
+    from utils.url_security import build_validated_url, validate_service_base_url
 
     try:
-        with urllib.request.urlopen(f"{host.rstrip('/')}/api/tags", timeout=4) as r:
+        tags_url = build_validated_url(validate_service_base_url(host), "/api/tags")
+        with urllib.request.urlopen(tags_url, timeout=4) as r:
             tags = [t.get("name", "") for t in _json.loads(r.read()).get("models", [])]
         return any(model_name == t or t.startswith(model_name) or model_name in t for t in tags)
     except (urllib.error.URLError, OSError) as e:

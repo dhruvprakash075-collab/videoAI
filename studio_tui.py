@@ -6,6 +6,7 @@ Multi-view Textual terminal control panel for the Video.AI pipeline.
 Tabs: Run | Stats | Help  +  Screens: Checkpoints | Artifacts | Preflight
 """
 
+import logging
 import os
 import sys
 import threading
@@ -14,6 +15,8 @@ import traceback
 from datetime import datetime
 from pathlib import Path as _Path
 from typing import Any, cast
+
+log = logging.getLogger(__name__)
 
 _CRASH_LOG = str(_Path(__file__).resolve().parent / "studio_tui_crash.log")
 _PROJECT_ROOT = _Path(__file__).resolve().parent
@@ -37,6 +40,7 @@ try:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Horizontal, Vertical, VerticalScroll
+    from textual.css.query import NoMatches
     from textual.screen import ModalScreen
     from textual.theme import Theme
     from textual.widgets import (
@@ -432,7 +436,7 @@ class PreflightScreen(ModalScreen):
                     Text(result.get("info", ""), style="#7d8590"),
                 )
 
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(RuntimeError):
             self.app.call_from_thread(_update)
 
 
@@ -441,6 +445,8 @@ def _collect_preflight(config: dict) -> dict:
     import json as _j
     import shutil
     import urllib.request
+
+    from utils.url_security import build_validated_url, validate_service_base_url
 
     checks = {}
     ollama_host = config.get("ollama", {}).get("host", "http://localhost:11434")
@@ -473,8 +479,9 @@ def _collect_preflight(config: dict) -> dict:
     }
     # Ollama
     try:
+        tags_url = build_validated_url(validate_service_base_url(ollama_host), "/api/tags")
         req = urllib.request.Request(
-            f"{ollama_host}/api/tags", headers={"User-Agent": "Video.AI TUI"}
+            tags_url, headers={"User-Agent": "Video.AI TUI"}
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = _j.loads(resp.read().decode())
@@ -613,12 +620,12 @@ class StudioTUI(App):
         UIState.status = "idle"
         UIState.is_ui_mode = True
         self.set_interval(self.POLL_INTERVAL_S, self._poll)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#log_container", RichLog).write(
                 Text("● Studio Console ready — enter a topic to start", style=self._STYLE_AGENT)
             )
         # Focus the composer so typed input lands in it (TabbedContent steals focus otherwise)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.set_focus(self.query_one("#composer", Input))
 
     # ── Poll ──────────────────────────────────────────────────────────────────
@@ -632,7 +639,7 @@ class StudioTUI(App):
             self._poll_question()
             self._poll_bell()
         except Exception as e:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(NoMatches):
                 self.query_one("#log_container", RichLog).write(
                     Text(f"  [poll error] {e}", style=self._STYLE_ERROR)
                 )
@@ -693,7 +700,7 @@ class StudioTUI(App):
             badge = f"✗ ERROR  •  {topic}" if topic else "✗ ERROR"
         else:
             badge = "● IDLE — enter a topic to start"
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#status_badge", Static).update(badge)
         elapsed = _format_elapsed(ts)
         etc = _format_etc(ts, seg_c, seg_t)
@@ -705,7 +712,7 @@ class StudioTUI(App):
             meta = f"  ⏱ {elapsed}  │  seg {seg_str}  │  VRAM {vram_str}  │  ✗ error{_deg_badge}"
         else:
             meta = f"  ⏱ {elapsed}  │  seg {seg_str}  │  ETC {etc}  │  VRAM {vram_str}{_deg_badge}{_resumable}"
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#status_meta", Static).update(meta)
 
     def _poll_progress(self) -> None:
@@ -742,11 +749,11 @@ class StudioTUI(App):
             if len(self._throughput_samples) > 20:
                 self._throughput_samples = self._throughput_samples[-20:]
         self._last_seg_current = seg_c
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#card_elapsed", Static).update(
                 f"[bold #4a90d9]Elapsed[/]\n\n  {elapsed}\n  ETC: {etc}"
             )
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#card_segments", Static).update(
                 f"[bold #4a90d9]Segments[/]\n\n  {seg_c} / {seg_t if seg_t else '—'}\n  {pct}"
             )
@@ -757,7 +764,7 @@ class StudioTUI(App):
         except Exception:
             pass
         vram_color = "#e05252" if vram and _vram_high(vram) else "#5a9e6f"
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#card_engines", Static).update(
                 f"[bold #4a90d9]Engines / VRAM[/]\n\n"
                 f"  [{vram_color}]{vram if vram else '—'}[/]\n"
@@ -809,7 +816,7 @@ class StudioTUI(App):
         event.input.value = ""
 
         if getattr(UIState, "status", "idle") == "paused":
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(NoMatches):
                 self.query_one("#log_container", RichLog).write(
                     Text(f"▸ {text}", style=self._STYLE_USER)
                 )
@@ -862,7 +869,7 @@ class StudioTUI(App):
                 self.notify(f"Cannot read file: {e}", severity="error")
                 return
 
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#log_container", RichLog).write(
                 Text(f"▸ Starting: {topic}  {kwargs if kwargs else ''}", style=self._STYLE_USER)
             )
@@ -996,7 +1003,7 @@ class StudioTUI(App):
             pass
 
     def action_scroll_end(self) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.query_one("#log_container", RichLog).scroll_end(animate=False)
 
     def action_show_help(self) -> None:
@@ -1062,7 +1069,7 @@ class StudioTUI(App):
 
     def _restore_composer_focus(self) -> None:
         """Return focus to the composer after a modal/screen closes."""
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(NoMatches):
             self.set_focus(self.query_one("#composer", Input))
 
     def action_open_output(self) -> None:

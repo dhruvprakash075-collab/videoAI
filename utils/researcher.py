@@ -99,6 +99,7 @@ def _fetch_wikipedia_rest(query: str, config: dict) -> list[ResearchItem]:
     limit = _per_source_limit(config)
 
     try:
+        # Classification: fixed trusted public API (Wikipedia)
         search_resp = requests.get(
             WIKIMEDIA_API_BASE,
             params={
@@ -127,6 +128,7 @@ def _fetch_wikipedia_rest(query: str, config: dict) -> list[ResearchItem]:
         url = urls[i] if i < len(urls) else ""
         summary_url = f"{WIKIPEDIA_REST_BASE}/page/summary/{_quote_title(title)}"
         try:
+            # Classification: fixed trusted public API (Wikipedia REST)
             r = requests.get(summary_url, headers=headers, timeout=timeout)
             r.raise_for_status()
             data = r.json()
@@ -170,6 +172,7 @@ def _fetch_wikimedia_rest(query: str, config: dict) -> list[ResearchItem]:
     limit = _per_source_limit(config)
 
     try:
+        # Classification: fixed trusted public API (Wikipedia)
         resp = requests.get(
             WIKIMEDIA_API_BASE,
             params={

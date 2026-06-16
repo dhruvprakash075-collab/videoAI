@@ -159,7 +159,7 @@ def _filter_sections(text: str, topic: str = "") -> str:
 
 
 def _wiki_api_request(params: dict) -> dict:
-    """Make a Wikipedia API request."""
+    """Make a Wikipedia API request. Classification: fixed trusted public API."""
     resp = requests.get(_WIKI_API, params=params, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
@@ -244,6 +244,7 @@ def _search_duckduckgo(query: str) -> list[dict]:
         )
         # P3-17 fix: urlopen RAISES urllib.error.HTTPError on 403 — it never returns
         # a response with status 403.  Catch the exception and retry on 403.
+        # Classification: fixed trusted public API (DuckDuckGo HTML endpoint)
         try:
             resp_ctx = urllib.request.urlopen(req, timeout=10)
         except urllib.error.HTTPError as e:

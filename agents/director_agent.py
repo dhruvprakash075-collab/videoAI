@@ -566,6 +566,12 @@ class DirectorAgent:
             return {"decision": "approve", "reason": "file_not_found", "locked": False}
 
         try:
+            img_file.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            log.warning(f"[DIRECTOR] Image path escapes project root: {image_path}")
+            return {"decision": "approve", "reason": "path_escape", "locked": False}
+
+        try:
             from PIL import Image as _PILImage
             with _PILImage.open(img_file) as pil_img:
                 width, height = pil_img.size
@@ -615,12 +621,15 @@ class DirectorAgent:
         self, image_b64: str, prompt: str, char_presence: dict | None,
         width: int, height: int, fmt: str
     ) -> dict:
-        """Call the Ollama chat API with an embedded base64 image."""
+        """Call the Ollama chat API with an embedded base64 image. Classification: local service URL."""
         import json
         import urllib.request as _ur
         host, timeout, _ = self.llm._ollama_opts()
+        # SSRF: validate local service URL before constructing request
+        from utils.url_security import validate_service_base_url, build_validated_url
+        validated_host = validate_service_base_url(host)
         model = self._resolve_model("director")
-        url = f"{host}/api/chat"
+        url = build_validated_url(validated_host, "/api/chat")
         payload = json.dumps({
             "model": model,
             "messages": [
@@ -2061,7 +2070,12 @@ class DirectorAgent:
             )
             _cache_dir.mkdir(parents=True, exist_ok=True)
             _cache_path = _cache_dir / f"story_{_topic_hash}.json"
-            if _cache_path.exists():
+            try:
+                _cache_path.resolve().relative_to(_cache_dir.resolve())
+            except ValueError:
+                log.warning(f"[DIRECTOR] A5: cache path escapes cache dir: {_cache_path}")
+                _cache_path = None
+            if _cache_path and _cache_path.exists():
                 try:
                     _cached = _js.loads(_cache_path.read_text(encoding="utf-8"))
                     _story = _cached.get("story", "")
@@ -2093,6 +2107,11 @@ class DirectorAgent:
                 )
                 _cache_dir.mkdir(parents=True, exist_ok=True)
                 _cache_path = _cache_dir / f"story_{_topic_hash}.json"
+                try:
+                    _cache_path.resolve().relative_to(_cache_dir.resolve())
+                except ValueError:
+                    log.warning(f"[DIRECTOR] A5: cache write path escapes cache dir: {_cache_path}")
+                    raise
                 _cache_path.write_text(
                     _js.dumps({"topic": topic, "story": res}, indent=2, ensure_ascii=False),
                     encoding="utf-8",

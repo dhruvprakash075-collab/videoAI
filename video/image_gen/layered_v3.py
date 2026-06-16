@@ -62,7 +62,10 @@ def preflight_layered_v3(config: dict) -> list[str]:
         import urllib.error
         import urllib.request
 
-        with urllib.request.urlopen(f"http://{host}:{port}/system_stats", timeout=5) as resp:
+        from utils.url_security import validate_service_base_url
+
+        comfy_url = validate_service_base_url(f"http://{host}:{port}")
+        with urllib.request.urlopen(f"{comfy_url}/system_stats", timeout=5) as resp:
             if resp.status >= 400:
                 errors.append(f"ComfyUI returned HTTP {resp.status}")
     except (urllib.error.URLError, TimeoutError):
@@ -125,6 +128,15 @@ def _run_workflow(
 ) -> list[Path]:
     """Load a workflow JSON and run it via ComfyUIClient. Returns output image paths."""
     import json
+
+    from utils.path_utils import is_safe_path
+
+    wf_path = Path(workflow_path)
+    # Path traversal: ensure workflow is within project directory
+    if not is_safe_path(Path.cwd(), workflow_path) and not wf_path.is_absolute():
+        raise ValueError(f"Workflow path escapes project directory: {workflow_path}")
+    if wf_path.is_absolute() and not is_safe_path(Path(__file__).parent.parent, workflow_path):
+        raise ValueError(f"Workflow path escapes project directory: {workflow_path}")
 
     with open(workflow_path, encoding="utf-8") as f:
         workflow = json.load(f)

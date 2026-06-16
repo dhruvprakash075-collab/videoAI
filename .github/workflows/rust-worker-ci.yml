@@ -1,4 +1,5 @@
 name: rust-worker-ci
+
 on:
   push:
     paths:
@@ -8,15 +9,24 @@ on:
     paths:
       - 'rust/**'
       - '.github/workflows/rust-worker-ci.yml'
+
+permissions: {}
+
 defaults:
   run:
     working-directory: rust
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.81.0
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      # dtolnay/rust-toolchain uses branches for version tags; 1.81.0 branch SHA.
+      - uses: dtolnay/rust-toolchain@1286434836c885251bdb8ef3bbb693bec6749247 # 1.81.0
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all --check

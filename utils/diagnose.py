@@ -139,6 +139,14 @@ def diagnose_ollama():
     )
     ollama_host = ollama_host.rstrip("/")
 
+    # Validate Ollama host before making requests
+    try:
+        from utils.url_security import validate_service_base_url
+        ollama_host = validate_service_base_url(ollama_host)
+    except ValueError as e:
+        log_error(f"Ollama host validation failed: {e}")
+        return
+
     # Check connection
     try:
         req = urllib.request.Request(f"{ollama_host}/api/tags")
