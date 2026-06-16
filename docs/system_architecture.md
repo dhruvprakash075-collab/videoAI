@@ -64,8 +64,11 @@ c:\Video.AI
 │   ├── ollama_client.py        # OllamaClient + B1 per-model circuit breaker
 │   └── compatibility.py        # Win32 UTF-8 console patches
 └── video/                  # Image generation + video rendering
-    ├── image_gen/image_gen.py  # Bonsai 4B ternary (gemlite 2-bit) + IP-Adapter v2 + 2-tier OOM ladder
+    ├── image_gen/image_gen.py  # ComfyUI primary + Bonsai 4B ternary fallback + IP-Adapter v2 + 2-tier OOM
     ├── image_gen/ip_adapter.py # IPAdapterManager singleton (per-character master portraits)
+    ├── image_gen/comfyui_client.py   # ComfyUI HTTP client
+    ├── image_gen/comfyui_runtime.py  # ComfyUI process management
+    ├── image_gen/comfyui_workflow.py # ComfyUI workflow patching
     └── renderer/assembler.py   # Ken Burns pan/zoom + Devanagari subtitle overlay + FFmpeg
 ```
 
@@ -105,33 +108,29 @@ See `docs/voice_cloning.md` for the full pipeline. In short: any
 
 ---
 
-## 4b. Image Generation Subsystem Detail (2026-06-04)
+## 4b. Image Generation Subsystem Detail (2026-06-16)
 
-### Model
-**Bonsai Image 4B (ternary, gemlite 2-bit)**
-`prism-ml/bonsai-image-ternary-4B-gemlite-2bit` — a FLUX-style distilled model
-quantized to ternary weights with the gemlite kernel. Default settings:
-`steps=4`, `guidance_scale=3.5`, `width=height=1024`. No negative prompt
-(FLUX-style models do not use them). Sequential VRAM — peak **~3.5 GB** on
-RTX 4050 6 GB (no `enable_model_cpu_offload()` needed).
+### Primary Backend: ComfyUI
+**ComfyUI** (auto-started local instance) is the primary image generation backend.
+Runs `DreamShaper_8.safetensors` checkpoint via custom workflows.
+Supports multiple composition modes:
+- `one_pass` (default) — single T2I workflow
+- `layered_v3` — character sheet + background + character pose + composite passes
+- `qwen_edit` — two-pass: background → Qwen-Image-Edit character insertion
+
+ComfyUI config in `image_gen.comfyui` block: server, root, python venv, workflow path, checkpoint, steps, CFG.
+
+### Fallback Backend: Bonsai Image 4B (ternary, gemlite 2-bit)
+`prism-ml/bonsai-image-ternary-4B-gemlite-2bit` — FLUX-style distilled model.
+Used when ComfyUI is unavailable or fails. Default settings: `steps=4`, `guidance_scale=3.5`, `width=height=1024`.
+No negative prompt (FLUX-style models do not use them). Sequential VRAM — peak **~3.5 GB** on RTX 4050 6 GB.
 
 ### Character face consistency — IP-Adapter FLUX v2
-**`XLabs-AI/flux-ip-adapter-v2`** references a per-character **master
-portrait** to keep faces consistent across frames and across future
-videos in the same project. Scale defaults to `0.8` (configurable via
-`image_gen.ip_adapter_scale`).
+**`XLabs-AI/flux-ip-adapter-v2`** references a per-character **master portrait** to keep faces consistent across frames and across future videos in the same project. Scale defaults to `0.8` (configurable via `image_gen.ip_adapter_scale`). Works with both ComfyUI and Bonsai backends.
 
-**Lazy portrait generation**: on the first frame in a project where a
-character has `char_presence ≥ 0.3` and no existing `master_portrait_path`,
-the pipeline generates 3 candidates using `portrait_prompt` (or
-`visual_description` as fallback) and picks the best via CLIP image-text
-scoring. Stored at
-`studio_projects/{project_id}/characters/{char_key}/master.png` with
-SHA256 hash recorded in `project_store`.
+**Lazy portrait generation**: on the first frame in a project where a character has `char_presence ≥ 0.3` and no existing `master_portrait_path`, the pipeline generates 3 candidates using `portrait_prompt` (or `visual_description` as fallback) and picks the best via CLIP image-text scoring. Stored at `studio_projects/{project_id}/characters/{char_key}/master.png` with SHA256 hash recorded in `project_store`.
 
-**Dominant character per frame**: if multiple characters are present,
-only the one with the highest weight (≥ 0.3) gets the IP-Adapter
-reference; secondary characters get prompt description only.
+**Dominant character per frame**: if multiple characters are present, only the one with the highest weight (≥ 0.3) gets the IP-Adapter reference; secondary characters get prompt description only.
 
 ### OOM recovery (2-tier)
 | Tier | When | Action |
@@ -140,18 +139,22 @@ reference; secondary characters get prompt description only.
 | 2 (fallback) | Tier 1 OOM | retry with `max(2, steps * 0.5)` steps |
 | skip + log | Tier 2 OOM | record OOM event in `oom_report.json`, frame placeholder |
 
-The OOM report is accessible via `image_gen.get_oom_report()`.
-See `runtime_safety_guide.md` §4 for the full ladder.
+The OOM report is accessible via `image_gen.get_oom_report()`. See `runtime_safety_guide.md` §4 for the full ladder.
 
 ### File layout
 ```
 video/image_gen/
-├── image_gen.py        # Bonsai + IP-Adapter wiring, _bonsai(), generate_images(..., project_id=...)
-└── ip_adapter.py       # IPAdapterManager singleton (module-level get_ip_adapter, unload_ip_adapter)
-core/pre_production.py  # generate_master_portrait(char_key, project_id, char_data, config, dry_run)
-                        # _score_with_clip(prompt, image) — best-of-3 selection
-                        # _record_portrait_to_store(char_key, project_id, png_path)
+├── image_gen.py              # ComfyUI + Bonsai + IP-Adapter wiring, generate_images(..., project_id=...)
+├── ip_adapter.py             # IPAdapterManager singleton (get_ip_adapter, unload_ip_adapter)
+├── comfyui_client.py         # ComfyUIClient (HTTP API)
+├── comfyui_runtime.py        # ComfyUI process lifecycle (start/stop/health)
+└── comfyui_workflow.py       # WorkflowPatcher + default workflow creation
+core/pre_production.py        # generate_master_portrait(char_key, project_id, char_data, config, dry_run)
+                              # _score_with_clip(prompt, image) — best-of-3 selection
+                              # _record_portrait_to_store(char_key, project_id, png_path)
 ```
+
+---
 
 ---
 
@@ -176,7 +179,7 @@ core/pipeline_long.py      ← thin orchestrator (never run directly)
   │     ├─► utils/critic.py          (5-dim rubric: Hook/Arc/Pacing/Retention/TTS ≥ 60/100)
   │     ├─► audio/audio_proxy.py     (TTS dispatch: supertonic → omnivoice)
   │     │     └─► supertonic_worker.py  (default, CPU ONNX, ~5x realtime, has danda fix for Hindi)
-  │     └─► video/image_gen/image_gen.py  (Bonsai 4B ternary + IP-Adapter v2, 2-tier OOM, 2026-06-04)
+  │     └─► video/image_gen/image_gen.py  (ComfyUI primary + Bonsai fallback + IP-Adapter v2, 2-tier OOM)
   │
   └─► core/post_production.py
         ├─► audio/audio_fx.py        (Loudnorm two-pass, music ducking, SFX mix)

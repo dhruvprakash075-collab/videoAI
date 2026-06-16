@@ -102,25 +102,45 @@ styles:
 
 ---
 
-## 4. Image Generation (`image_gen` block, 2026-06-04)
+## 4. Image Generation (`image_gen` block, 2026-06-16)
 
-Bonsai 4B ternary + IP-Adapter FLUX v2 is the only image backend. No
-Stable Diffusion, no LoRA — character face consistency is via
-IP-Adapter referencing per-character master portraits.
+**Primary backend: ComfyUI** (with Bonsai 4B ternary as fallback).
+ComfyUI runs locally (auto-started) and supports multiple composition modes:
+`one_pass` (default), `layered_v3` (character+background passes), `qwen_edit` (two-pass character insertion).
+
+Bonsai 4B ternary + IP-Adapter FLUX v2 is the **fallback backend** used when ComfyUI is unavailable or fails.
+Character face consistency via IP-Adapter referencing per-character master portraits works in both backends.
 
 ```yaml
 image_gen:
-  backend: "bonsai"                              # always "bonsai" — no other backends
+  backend: "comfyui"                        # "comfyui" | "bonsai" — ComfyUI primary
+  fallback_backend: "bonsai"                # fallback when ComfyUI unavailable
   bonsai_model: "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
   height: 1024
   width: 1024
-  steps: 4                                       # Bonsai is distilled; more steps is slower, not better
-  guidance_scale: 3.5                            # 3.0–4.0 sweet spot; <3 loose, >4 oversaturated
-  ip_adapter_scale: 0.8                         # 0.0–1.0; balance between prompt adherence and face lock
-  lock_seed: true                                # same seed + same prompt = same image
-  preview_steps: 4                              # preview renders use this step count
-  oom_recovery: true                             # 2-tier ladder (see runtime_safety_guide.md §4)
-  upscaler: { model: "none", model_path: "", scale: 4 }  # opt into Real-ESRGAN if needed
+  steps: 12                                  # ComfyUI default steps (Bonsai uses 4)
+  guidance_scale: 3.5
+  ip_adapter_scale: 0.8                     # 0.0–1.0; balance between prompt adherence and face lock
+  lock_seed: true
+  preview_steps: 12
+  oom_recovery: true                         # 2-tier ladder (see runtime_safety_guide.md §4)
+  upscaler: { model: "none", model_path: "", scale: 4 }
+
+  # ComfyUI-specific
+  comfyui:
+    server: "127.0.0.1"
+    host: "127.0.0.1"
+    port: 8188
+    root: "external/ComfyUI"
+    python: "external/ComfyUI/.venv/Scripts/python.exe"
+    auto_start: true
+    open_browser: false
+    workflow_path: "config/comfyui/workflows/text_to_image_api.json"
+    checkpoint: "DreamShaper_8.safetensors"
+    width: 1024
+    height: 1024
+    steps: 20
+    cfg: 7.0
 
   # Character portrait generation (lazy, on first frame with char_presence ≥ 0.3)
   # No "negative_prompt" — FLUX-style models do not use them

@@ -23,13 +23,13 @@ After eviction, the system polls `torch.cuda.mem_get_info()` in a loop, waiting 
 
 | Slot Type | Limit | Timeout | Used For |
 |---|---|---|---|
-| `"heavy"` | **1 active** | **1800s** (30 min) | SD image gen, OmniVoice TTS |
+| `"heavy"` | **1 active** | **1800s** (30 min) | ComfyUI/Bonsai image gen, OmniVoice TTS |
 | `"light"` | **16 active** | **60s** | Video rendering, assembler |
 
 * **GPU Task Slots**: `global_scheduler.task("heavy", ...)` restricts concurrent heavy GPU processes to **1**. A task that hangs past 1800s surfaces a `TimeoutError`.
 * **Agent Lock**: `utils.concurrency.crewai_lock` is an **`RLock`** (not a plain Lock — P3-14 fix) that serializes all CrewAI `crew.kickoff()` executions to prevent litellm executor corruption from concurrent calls.
 
-> **Rule**: Any SD image generation or heavy TTS must go through `global_scheduler.task("heavy", ...)`. Any render/assemble task uses `global_scheduler.task("light", ...)`.
+> **Rule**: Any ComfyUI/Bonsai image generation or heavy TTS must go through `global_scheduler.task("heavy", ...)`. Any render/assemble task uses `global_scheduler.task("light", ...)`.
 
 ---
 

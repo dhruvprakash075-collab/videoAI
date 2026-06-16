@@ -131,7 +131,7 @@ pip check
 ```
 CLI/UI → bootstrap → pipeline_long → Director (plan) → Writer (script) → Reviewer
        → translate → TTS (audio/supertonic_worker.py, default; omnivoice/edge fallback) → SFX (audio/)
-       → Bonsai 4B + IP-Adapter (video/image_gen) → render segments → concatenate (video/renderer) → final MP4
+       → ComfyUI primary + Bonsai fallback + IP-Adapter (video/image_gen) → render segments → concatenate (video/renderer) → final MP4
        ↕ StoryMemory (memory/) for continuity, Checkpoints for resume
        ↕ DIY voice clone (character_voices/*.json) extracted via external/supertonic_embed
 ```
