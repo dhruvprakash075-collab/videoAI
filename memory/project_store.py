@@ -29,6 +29,39 @@ log = logging.getLogger(__name__)
 
 PROJECTS_ROOT = Path("studio_projects")
 
+# P-aud #8: Continuity attribute vocabulary used by check_continuity to detect
+# contradictory character descriptions (e.g. "blue eyes" in memory but
+# "red eyes" in a new prompt). Extend these lists to cover more attributes
+# without touching the audit logic itself.
+_CONTINUITY_ATTRIBUTES = {
+    "eyes": [
+        "blue", "red", "green", "brown", "hazel", "grey", "gray",
+        "amber", "violet", "black",
+    ],
+    "hair": [
+        "black", "blonde", "blond", "brown", "red", "white", "grey",
+        "gray", "silver", "auburn", "ginger",
+    ],
+}
+# Normalize spelling variants so e.g. "blond" and "blonde" don't read as a conflict.
+_CONTINUITY_SYNONYMS = {"blond": "blonde", "gray": "grey"}
+
+
+def _continuity_attributes(text: str) -> dict[str, set[str]]:
+    """Extract continuity attributes (e.g. eye/hair color) from free text.
+
+    Returns a mapping of noun -> set of normalized attribute values found,
+    e.g. {"eyes": {"blue"}, "hair": {"black"}}.
+    """
+    found: dict[str, set[str]] = {}
+    lowered = text.lower()
+    for noun, values in _CONTINUITY_ATTRIBUTES.items():
+        for value in values:
+            if re.search(rf"\b{re.escape(value)}\s+{re.escape(noun)}\b", lowered):
+                normalized = _CONTINUITY_SYNONYMS.get(value, value)
+                found.setdefault(noun, set()).add(normalized)
+    return found
+
 
 def _validate_memory_item(item: dict) -> dict | None:
     """Validate and normalize a memory item. Returns cleaned item or None if invalid."""
@@ -111,9 +144,7 @@ def _load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # ProjectStore — shared continuity across stories in a project
-# ══════════════════════════════════════════════════════════════════════════════
 
 
 class ProjectStore:
@@ -148,7 +179,7 @@ class ProjectStore:
         with self._lock:
             _atomic_write(self._path, self._data)
 
-    # ── Characters ────────────────────────────────────────────────────────
+    # Characters
 
     def log_character(
         self,
@@ -180,7 +211,7 @@ class ProjectStore:
                 return None
             return dict(entry)
 
-    # ── Master portrait (Bonsai IP-Adapter reference) ────────────────────
+    # Master portrait (Bonsai IP-Adapter reference)
 
     def set_master_portrait(
         self,
@@ -235,7 +266,7 @@ class ProjectStore:
             char["updated_at"] = time.time()
             self._save()
 
-    # ── Motifs ────────────────────────────────────────────────────────────
+    # Motifs
 
     def log_recurring_motif(self, motif_name: str, details: str) -> None:
         with self._lock:
@@ -243,7 +274,7 @@ class ProjectStore:
             self._data["motifs"][key] = {"name": motif_name, "details": details}
             self._save()
 
-    # ── Visual locks (per-character appearance lock) ──────────────────────
+    # Visual locks (per-character appearance lock)
 
     def set_visual_lock(
         self,
@@ -300,12 +331,10 @@ class ProjectStore:
         with self._lock:
             return dict(self._data.get("memory_items", {}))
 
-    # ══════════════════════════════════════════════════════════════════════════════
     # Layered v3 character assets
     # Stores character identity assets (character sheets, face/body refs, pose variants)
     # in per-character directories outside project.json to avoid bloating it.
     # Short path references live in project.json character dict.
-    # ══════════════════════════════════════════════════════════════════════════════
 
     def _char_assets_dir(self, char_key: str) -> Path:
         """Return the assets directory for a character: {project_dir}/characters/{char_key}/"""
@@ -505,7 +534,7 @@ class ProjectStore:
             self._save_char_assets(char_key, assets)
             log.info(f"[ProjectStore] Asset review recorded for {char_key}: {decision}")
 
-    # ── World lore ────────────────────────────────────────────────────────
+    # World lore
 
     def add_world_lore(self, key: str, value: str) -> None:
         with self._lock:
@@ -517,9 +546,7 @@ class ProjectStore:
             return dict(self._data.get("world_lore", {}))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # StoryStore — per-story state (segments, arc, audit)
-# ══════════════════════════════════════════════════════════════════════════════
 
 
 class StoryStore:
@@ -576,7 +603,7 @@ class StoryStore:
                 self._data["segments"] = self._data["segments"][-100:]
             _atomic_write(self._story_path, self._data)
 
-    # ── Segments ──────────────────────────────────────────────────────────
+    # Segments
 
     def save_segment(self, segment: int, script: str, summary: str) -> None:
         with self._lock:
@@ -615,7 +642,7 @@ class StoryStore:
         with self._lock:
             return dict(self._data.get("memory_items", {}))
 
-    # ── Continuity audit ──────────────────────────────────────────────────
+    # Continuity audit
 
     def check_continuity(
         self, segment_assets: dict, project_store: ProjectStore | None = None
@@ -635,14 +662,20 @@ class StoryStore:
                 first = name.split()[0] if name else ""
                 if first and re.search(rf"\b{re.escape(first)}\b", target):
                     desc = info.get("visual_description", "").lower()
-                    if "blue eyes" in desc and "red eyes" in target:
-                        violations.append(
-                            f"{info['name']}: blue eyes in memory but red eyes in prompt"
-                        )
-                    if "black hair" in desc and "blonde hair" in target:
-                        violations.append(
-                            f"{info['name']}: black hair in memory but blonde hair in prompt"
-                        )
+                    # P-aud #8: compare every known eye/hair attribute rather
+                    # than only the two previously hardcoded color pairs.
+                    desc_attrs = _continuity_attributes(desc)
+                    target_attrs = _continuity_attributes(target)
+                    for noun in desc_attrs.keys() & target_attrs.keys():
+                        desc_values = desc_attrs.get(noun, set())
+                        target_values = target_attrs.get(noun, set())
+                        conflicting = target_values - desc_values
+                        if conflicting and desc_values:
+                            violations.append(
+                                f"{info['name']}: {noun} "
+                                f"{'/'.join(sorted(desc_values))} in memory but "
+                                f"{'/'.join(sorted(conflicting))} in prompt"
+                            )
 
             audit = {
                 "segment": seg_num,
@@ -664,9 +697,7 @@ class StoryStore:
             return True
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # PermanentMemoryLog compatibility shim
-# ══════════════════════════════════════════════════════════════════════════════
 
 
 class PermanentMemoryLog:
@@ -830,7 +861,7 @@ class PermanentMemoryLog:
                     self._project._data["motifs"][key] = motif
                     self._project._save()
 
-    # ── Public API (unchanged from original PermanentMemoryLog) ───────────
+    # Public API (unchanged from original PermanentMemoryLog)
 
     def log_character(
         self,
