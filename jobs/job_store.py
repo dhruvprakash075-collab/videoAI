@@ -20,6 +20,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_iso(value: str) -> datetime:
+    """Parse an ISO-8601 timestamp, tolerating a trailing 'Z'.
+
+    The worker writes heartbeats as "...%H:%M:%SZ" while _now_iso() writes
+    "...+00:00". datetime.fromisoformat() rejects the 'Z' suffix on Python
+    < 3.11, which previously made mark_stale_running_failed() treat every
+    Z-stamped heartbeat as unparseable and wrongly fail healthy running jobs.
+    Normalize 'Z' to '+00:00' so both formats parse on all supported versions.
+    """
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
+
 class JobStore:
     def __init__(self, db_path: Path | None = None):
         self.db_path = Path(db_path) if db_path else DB_PATH
@@ -243,7 +257,7 @@ class JobStore:
                 if hb is None:
                     to_fail.append(r[0])
                 else:
-                    ts = datetime.fromisoformat(hb).timestamp()
+                    ts = _parse_iso(hb).timestamp()
                     if ts < cutoff:
                         to_fail.append(r[0])
             except Exception:
