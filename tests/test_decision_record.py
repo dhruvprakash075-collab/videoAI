@@ -122,10 +122,19 @@ def test_conflict_locked_segments_recomputes_total():
 def test_both_locked_conflict_raises():
     r = DecisionRecord()
     r.set("segment_count", 9, "user", lock=True)
-    r.set("segment_duration_min", 2, "default")
+    r.set("segment_duration_min", 2, "user", lock=True)
     r.set("total_duration_min", 30, "user", lock=True)
     with pytest.raises(DecisionConflict):
         r.resolve_conflicts()
+
+
+def test_both_locked_recomputes_segment_duration():
+    r = DecisionRecord()
+    r.set("segment_count", 9, "user", lock=True)
+    r.set("segment_duration_min", 2, "default")
+    r.set("total_duration_min", 30, "user", lock=True)
+    r.resolve_conflicts()
+    assert r.segment_duration_min.value == 3.333  # 30 / 9 rounded to 3 decimal places
 
 
 def test_consistent_values_no_change():

@@ -577,6 +577,7 @@ def test_make_process_segment_creates_closure(tmp_path):
 
         resume=False,
         dry_run=True,
+        fast_dry_run=True,
         director_mode=False,
         preview_mode=False,
         skip_rvc=True,
@@ -689,7 +690,16 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
         run_start_ts=time.time(),
     )
 
-    with patch("crewai.Crew"), patch("crewai.Task"):
+    with (
+        patch("crewai.Crew"),
+        patch("crewai.Task"),
+        patch(
+            "utils.crewai_breaker.guarded_ollama_call",
+            return_value='{"narration": "Short dry run narration."}',
+        ),
+        patch("core.segment_runner.log_vram_usage"),
+        patch("core.segment_runner.aggressive_vram_cleanup"),
+    ):
         result = process_seg(1)
     assert result is None
 

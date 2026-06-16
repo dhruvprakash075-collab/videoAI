@@ -198,7 +198,7 @@ subtitles:
   font: Nirmala UI
   size: 22
   color: "&H00FFFFFF&"
-  language: auto
+  language: en
 narrator:
   include_character_descriptions: false
 cache:
