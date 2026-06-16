@@ -119,3 +119,7 @@ Video_AI_Source_Code.zip
 files_to_zip.csv
 diagnostics/
 skylos_*.json
+
+# ── Local agent tooling ───────────────────────────────────────────
+.agents/
+skills-lock.json
