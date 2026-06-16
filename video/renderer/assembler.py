@@ -4,15 +4,17 @@ import logging
 import math
 import re
 import subprocess
-import sys
 import threading
 import uuid
 from pathlib import Path
 
-# Whisper model cache to avoid reloading per segment
-_whisper_model = None
+# Whisper model cache to avoid reloading per segment.
+# B5: cache one model per (model_name, device, compute) key so the final-render
+# model choice (whisper_model_final) and the preview model choice (whisper_model)
+# never clobber each other.
+_whisper_models: dict = {}
 _whisper_model_lock = threading.Lock()
-_whisper_backend = None  # "faster" or "openai"
+_whisper_backend = None  # backend of the most recently returned model ("faster"/"openai")
 
 # Thread lock to serialize access to the shared cleanup manifest JSON file
 _manifest_lock = threading.Lock()
@@ -24,54 +26,66 @@ def _get_whisper_model(is_final: bool = False):
     B5: For final (non-preview/non-dry) renders, use performance.whisper_model_final
     (default "base") pinned to CPU int8 so it never competes with SD for VRAM.
     For preview/dry runs, use performance.whisper_model (default "tiny").
+
+    Models are cached per (model_name, device, compute) key so the preview and
+    final model choices keep independent cached instances instead of the first
+    loaded model being reused for every later call regardless of is_final.
     """
-    global _whisper_model, _whisper_backend
-    if _whisper_model is not None:
-        return _whisper_model
+    global _whisper_backend
+    try:
+        from config import load_config
+
+        cfg = load_config()
+        perf = cfg.get("performance", {})
+        if is_final:
+            model_name = perf.get("whisper_model_final", "base")
+            # B5: pin to CPU int8 so it never sits in VRAM during SD
+            _device = "cpu"
+            _compute = "int8"
+        else:
+            model_name = perf.get("whisper_model", "tiny")
+            import torch as _torch
+
+            _device = "cuda" if _torch.cuda.is_available() else "cpu"
+            _compute = "float16" if _device == "cuda" else "int8"
+    except Exception:
+        model_name = "tiny"
+        _device = "cpu"
+        _compute = "int8"
+
+    cache_key = (model_name, _device, _compute)
+
     with _whisper_model_lock:
-        if _whisper_model is None:
+        cached = _whisper_models.get(cache_key)
+        if cached is not None:
+            model, backend = cached
+            _whisper_backend = backend
+            return model
+
+        # Try faster-whisper first (CTranslate2 — 4-8x faster, GPU FP16)
+        try:
+            from faster_whisper import WhisperModel as FasterWhisperModel
+
+            model = FasterWhisperModel(
+                model_name, device=_device, compute_type=_compute
+            )
+            backend = "faster"
+            log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
+        except Exception as e:
+            log.warning(f"faster-whisper failed ({e}), falling back to openai-whisper")
             try:
-                from config import load_config
+                import whisper
 
-                cfg = load_config()
-                perf = cfg.get("performance", {})
-                if is_final:
-                    model_name = perf.get("whisper_model_final", "base")
-                    # B5: pin to CPU int8 so it never sits in VRAM during SD
-                    _device = "cpu"
-                    _compute = "int8"
-                else:
-                    model_name = perf.get("whisper_model", "tiny")
-                    import torch as _torch
+                model = whisper.load_model(model_name)
+                backend = "openai"
+                log.info(f"Whisper: openai-whisper ({model_name})")
+            except Exception as e2:
+                log.exception(f"Both whisper backends failed: {e2}")
+                return None
 
-                    _device = "cuda" if _torch.cuda.is_available() else "cpu"
-                    _compute = "float16" if _device == "cuda" else "int8"
-            except Exception:
-                model_name = "tiny"
-                _device = "cpu"
-                _compute = "int8"
-
-            # Try faster-whisper first (CTranslate2 — 4-8x faster, GPU FP16)
-            try:
-                from faster_whisper import WhisperModel as FasterWhisperModel
-
-                _whisper_model = FasterWhisperModel(
-                    model_name, device=_device, compute_type=_compute
-                )
-                _whisper_backend = "faster"
-                log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
-            except Exception as e:
-                log.warning(f"faster-whisper failed ({e}), falling back to openai-whisper")
-                try:
-                    import whisper
-
-                    _whisper_model = whisper.load_model(model_name)
-                    _whisper_backend = "openai"
-                    log.info(f"Whisper: openai-whisper ({model_name})")
-                except Exception as e2:
-                    log.exception(f"Both whisper backends failed: {e2}")
-                    return None
-    return _whisper_model
+        _whisper_models[cache_key] = (model, backend)
+        _whisper_backend = backend
+        return model
 
 
 import contextlib
@@ -85,6 +99,31 @@ _whisper_lock = threading.Lock()
 
 
 _cached_codec = None
+_encoder_support_cache: dict = {}
+
+
+def _ffmpeg_supports_encoder(name: str) -> bool:
+    """Return True if the local ffmpeg build advertises the named encoder.
+
+    The result is cached per encoder name so we only shell out to ffmpeg once.
+    """
+    cached = _encoder_support_cache.get(name)
+    if cached is not None:
+        return cached
+    supported = False
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        supported = name in result.stdout
+    except Exception:
+        log.warning(f"FFmpeg encoder probe failed for {name} -- assuming unavailable")
+        supported = False
+    _encoder_support_cache[name] = supported
+    return supported
 
 
 def _get_video_codec() -> list:
@@ -92,34 +131,29 @@ def _get_video_codec() -> list:
     global _cached_codec
     if _cached_codec is not None:
         return _cached_codec
-    if sys.platform == "win32":
-        try:
-            # Check for NVIDIA NVENC
-            result = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=5
-            )
-            if "h264_nvenc" in result.stdout:
-                log.debug("Hardware acceleration: h264_nvenc detected")
-                _cached_codec = [
-                    "-c:v",
-                    "h264_nvenc",
-                    "-preset",
-                    "p5",
-                    "-rc",
-                    "vbr",
-                    "-cq",
-                    "19",
-                    "-spatial-aq",
-                    "1",
-                    "-temporal-aq",
-                    "1",
-                    "-pix_fmt",
-                    "yuv420p",
-                ]
-                return _cached_codec
-            log.warning("h264_nvenc not found -- falling back to libx264")
-        except Exception:
-            log.warning("FFmpeg check failed -- falling back to libx264")
+    # Probe for NVENC on ALL platforms (not just Windows) so Linux/WSL hosts with
+    # an NVIDIA GPU still get hardware acceleration, while hosts without it fall
+    # back cleanly to libx264.
+    if _ffmpeg_supports_encoder("h264_nvenc"):
+        log.debug("Hardware acceleration: h264_nvenc detected")
+        _cached_codec = [
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p5",
+            "-rc",
+            "vbr",
+            "-cq",
+            "19",
+            "-spatial-aq",
+            "1",
+            "-temporal-aq",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+        return _cached_codec
+    log.warning("h264_nvenc not available -- falling back to libx264")
     _cached_codec = [
         "-threads",
         "0",
@@ -148,6 +182,12 @@ def _encoder_args(config: dict) -> list:
     preset = config.get("video", {}).get("encoder_preset", "p5")
     bitrate = config.get("video", {}).get("video_bitrate", "8M")
     if enc == "h264_nvenc":
+        if not _ffmpeg_supports_encoder("h264_nvenc"):
+            log.warning(
+                "Configured encoder h264_nvenc is not available in this ffmpeg "
+                "build -- falling back to libx264"
+            )
+            return _get_video_codec()
         args = [
             "-c:v",
             "h264_nvenc",
@@ -515,6 +555,17 @@ def create_segment_mp4(
     return mp4
 
 
+def _ffconcat_quote(path: Path) -> str:
+    """Return a properly escaped 'file ...' line for an ffmpeg concat list.
+
+    ffmpeg's concat demuxer treats single quotes specially, so a path containing
+    a single quote must close the quote, emit an escaped quote, and reopen it.
+    Without this, paths with apostrophes break concat-list parsing.
+    """
+    escaped = path.absolute().as_posix().replace("'", "'\\''")
+    return f"file '{escaped}'"
+
+
 def concatenate_segments(
     segments: list[Path], output: Path, music: Path | None = None, config: dict | None = None
 ) -> Path:
@@ -534,7 +585,7 @@ def concatenate_segments(
 
     concat = output.parent / f"concat_list_{uuid.uuid4().hex[:8]}.txt"
     concat.write_text(
-        "\n".join(f"file '{p.absolute().as_posix()}'" for p in segments), encoding="utf-8"
+        "\n".join(_ffconcat_quote(p) for p in segments), encoding="utf-8"
     )
     log.info(f"Concatenating {len(segments)} segments -> {output}")
 
