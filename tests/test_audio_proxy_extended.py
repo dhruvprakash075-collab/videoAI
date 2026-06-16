@@ -272,3 +272,47 @@ class TestWorkerStartupExceptions:
         ):
             res = w._start()
             assert res is False
+
+
+class TestOmnivoiceSynthesizeSentenceGap:
+    def test_synthesize_sentence_gap_ms_handling(self, tmp_path):
+        from audio.omnivoice_worker import _synthesize
+        import numpy as np
+        import soundfile as sf
+
+        # Mock the OmniVoice model
+        mock_model = MagicMock()
+        mock_model.sample_rate = 24000
+        
+        # model.generate returns a 1D numpy array of size 24000 (1 second)
+        mock_model.generate.return_value = [np.ones(24000, dtype=np.float32)]
+
+        # We synthesize a text with 2 sentences so it splits into 2 chunks
+        text = "Hello. World."
+        
+        # Case 1: sentence_gap_ms=0 (no crossfade, output should be 48000 samples)
+        out_path_0 = tmp_path / "out_0.wav"
+        _synthesize(mock_model, text, str(out_path_0), sentence_gap_ms=0)
+        audio_0, sr_0 = sf.read(str(out_path_0))
+        assert sr_0 == 24000
+        assert len(audio_0) == 48000
+
+        # Case 2: sentence_gap_ms=200 (default, 200ms at 24000Hz is 4800 samples)
+        # 48000 - 4800 = 43200 samples
+        out_path_200 = tmp_path / "out_200.wav"
+        _synthesize(mock_model, text, str(out_path_200), sentence_gap_ms=200)
+        audio_200, sr_200 = sf.read(str(out_path_200))
+        assert len(audio_200) == 43200
+
+        # Case 3: sentence_gap_ms=None (default to 200, so 43200 samples)
+        out_path_none = tmp_path / "out_none.wav"
+        _synthesize(mock_model, text, str(out_path_none), sentence_gap_ms=None)
+        audio_none, sr_none = sf.read(str(out_path_none))
+        assert len(audio_none) == 43200
+
+        # Case 4: sentence_gap_ms=-50 (negative, should clamp to 0, so 48000 samples)
+        out_path_neg = tmp_path / "out_neg.wav"
+        _synthesize(mock_model, text, str(out_path_neg), sentence_gap_ms=-50)
+        audio_neg, sr_neg = sf.read(str(out_path_neg))
+        assert len(audio_neg) == 48000
+

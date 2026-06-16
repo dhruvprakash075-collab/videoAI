@@ -243,7 +243,10 @@ def _synthesize(
     # value.  The crossfade blends the tail of one chunk into the head of
     # the next, masking the timbre discontinuity at the boundary.
     # Default 200ms matches tts.voice_profile.sentence_gap_ms in config.yaml.
-    _gap_ms = sentence_gap_ms if (sentence_gap_ms is not None and sentence_gap_ms > 0) else 200
+    if sentence_gap_ms is None:
+        _gap_ms = 200
+    else:
+        _gap_ms = max(0, sentence_gap_ms)
     _xfade_samples = int((_gap_ms / 1000.0) * sample_rate)
 
     pieces = []

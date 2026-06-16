@@ -295,6 +295,88 @@ class TestWorkflowPatcher:
         assert patcher.workflow["5"]["inputs"]["cfg"] == 8.0
         assert patcher.workflow["7"]["inputs"]["filename_prefix"] == "scene_01"
 
+    def test_resolve_prompt_nodes_direct(self):
+        patcher = WorkflowPatcher()
+        patcher.workflow = {
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["1", 0],
+                    "negative": ["2", 0]
+                }
+            },
+            "1": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}
+        }
+        patcher._build_node_cache()
+        pos, neg = patcher._resolve_prompt_nodes()
+        assert pos == {"1"}
+        assert neg == {"2"}
+
+    def test_resolve_prompt_nodes_intermediate_nodes(self):
+        # Even if declaration order is misleading (negative CLIPTextEncode first),
+        # it should resolve correctly by traversing the intermediate nodes.
+        patcher = WorkflowPatcher()
+        patcher.workflow = {
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},  # First in declaration, negative
+            "1": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},  # Second in declaration, positive
+            "5": {
+                "class_type": "ConditioningConcat",
+                "inputs": {
+                    "conditioning_to": ["1", 0],
+                    "conditioning_from": ["6", 0]
+                }
+            },
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},  # Also positive
+            "7": {
+                "class_type": "ConditioningSetArea",
+                "inputs": {
+                    "conditioning": ["2", 0]
+                }
+            },
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["5", 0],
+                    "negative": ["7", 0]
+                }
+            }
+        }
+        patcher._build_node_cache()
+        pos, neg = patcher._resolve_prompt_nodes()
+        # "1" and "6" should be positive, "2" should be negative
+        assert pos == {"1", "6"}
+        assert neg == {"2"}
+
+    def test_resolve_prompt_nodes_fallback_minimal(self):
+        patcher = WorkflowPatcher()
+        # No KSampler, just CLIPTextEncode nodes
+        patcher.workflow = {
+            "10": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}, "_meta": {"title": "negative text"}},
+            "11": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}, "_meta": {"title": "positive text"}},
+            "12": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}} # fallback by order
+        }
+        patcher._build_node_cache()
+        pos, neg = patcher._resolve_prompt_nodes()
+        # "11" resolved as positive via title
+        # "10" resolved as negative via title
+        # "12" is unclassified and not matched by title
+        assert "11" in pos
+        assert "10" in neg
+        
+        # Order fallback only triggers if BOTH positive and negative are completely empty
+        # If title matches resolved one of them, the order fallback doesn't run.
+        # Let's test order fallback when no titles match and no KSampler exists:
+        patcher2 = WorkflowPatcher()
+        patcher2.workflow = {
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}
+        }
+        patcher2._build_node_cache()
+        pos2, neg2 = patcher2._resolve_prompt_nodes()
+        assert pos2 == {"3"}
+        assert neg2 == {"4"}
+
 
 class TestCreateDefaultWorkflow:
     def test_creates_valid_workflow(self):

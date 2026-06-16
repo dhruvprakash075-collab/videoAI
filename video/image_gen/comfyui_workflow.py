@@ -69,14 +69,36 @@ class WorkflowPatcher:
         encode_nodes = self.find_nodes("CLIPTextEncode")
 
         # 1) Follow KSampler conditioning links (most reliable).
+        def find_clip_text_encodes(node_id: str, visited: set[str]) -> set[str]:
+            if node_id in visited:
+                return set()
+            visited.add(node_id)
+
+            node = self.workflow.get(node_id)
+            if not node or not isinstance(node, dict):
+                return set()
+
+            class_type = node.get("class_type", "")
+            if class_type == "CLIPTextEncode":
+                return {node_id}
+
+            results = set()
+            inputs = node.get("inputs", {})
+            if isinstance(inputs, dict):
+                for val in inputs.values():
+                    if isinstance(val, list) and len(val) >= 2:
+                        source_id = str(val[0])
+                        results.update(find_clip_text_encodes(source_id, visited))
+            return results
+
         for _ks_id, ks_node in self.find_nodes("KSampler").items():
             ks_inputs = ks_node.get("inputs", {})
             pos_link = ks_inputs.get("positive")
             neg_link = ks_inputs.get("negative")
-            if isinstance(pos_link, list) and pos_link and str(pos_link[0]) in encode_nodes:
-                positive_ids.add(str(pos_link[0]))
-            if isinstance(neg_link, list) and neg_link and str(neg_link[0]) in encode_nodes:
-                negative_ids.add(str(neg_link[0]))
+            if isinstance(pos_link, list) and pos_link:
+                positive_ids.update(find_clip_text_encodes(str(pos_link[0]), set()))
+            if isinstance(neg_link, list) and neg_link:
+                negative_ids.update(find_clip_text_encodes(str(neg_link[0]), set()))
 
         # 2) Title hints for any still-unclassified encode nodes.
         for node_id, node in encode_nodes.items():
