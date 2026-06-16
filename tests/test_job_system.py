@@ -358,6 +358,7 @@ class TestWorker:
         assert updated["heartbeat_at"] != old_hb
 
 
+@pytest.mark.smoke
 class TestJobAPIIntegration:
     """Test Job API endpoints integration (requires running FastAPI server)."""
 
@@ -373,12 +374,13 @@ class TestJobAPIIntegration:
                 json={"topic": "API Test", "dry_run": True},
                 timeout=2,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                assert "job_id" in data
-                assert data["status"] == "queued"
         except requests.ConnectionError:
             pytest.skip("FastAPI server not running")
+
+        assert resp.status_code == 200, f"Expected 200 OK, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+        assert "job_id" in data
+        assert data["status"] == "queued"
 
     @pytest.mark.skipif(not _requests_available, reason="requests library not available")
     def test_api_list_jobs(self):
@@ -386,8 +388,10 @@ class TestJobAPIIntegration:
         import requests
         try:
             resp = requests.get("http://127.0.0.1:8000/api/jobs", timeout=2)
-            if resp.status_code == 200:
-                data = resp.json()
-                assert "jobs" in data
         except requests.ConnectionError:
             pytest.skip("FastAPI server not running")
+
+        assert resp.status_code == 200, f"Expected 200 OK, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+        assert "jobs" in data
+

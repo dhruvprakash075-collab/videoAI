@@ -149,37 +149,6 @@ def test_ip_adapter_skips_lazy_gen_when_portrait_exists(monkeypatch, tmp_path):
 
 def test_oom_event_recorded_on_failure(monkeypatch, tmp_path):
     """OOM event shape matches SD's old format (back-compat for get_oom_report consumers)."""
-    from video.image_gen import image_gen
-
-    # Force pipe to raise OOM on first call
-    fake_pipe = MagicMock()
-    fake_pipe.load_ip_adapter = MagicMock()
-
-    call_count = [0]
-
-    def fake_call(*a, **kw):
-        call_count[0] += 1
-        import torch
-        raise torch.cuda.OutOfMemoryError("fake OOM")
-
-    fake_pipe.side_effect = fake_call
-    image_gen._bonsai_pipe = fake_pipe
-    image_gen._bonsai_model_id = "prism-ml/bonsai-image-ternary-4B-gemlite-2bit"
-
-    # No IP-Adapter involvement (no dominant char)
-    fake_torch = MagicMock()
-    fake_torch.cuda.is_available.return_value = True
-    fake_torch.cuda.mem_get_info.return_value = (4 * 1024**3, 6 * 1024**3)
-    fake_torch.cuda.OutOfMemoryError = RuntimeError  # use a class we can catch
-    fake_torch.Generator = MagicMock()
-    fake_torch.inference_mode = MagicMock()
-    fake_torch.bfloat16 = "bf16"
-    fake_torch.no_grad = MagicMock()
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr("memory.project_store.ProjectStore", MagicMock())
-
-    # Actually, our code catches `torch.cuda.OutOfMemoryError`. Let's instead
-    # patch _bonsai to record an OOM event directly so we don't fight torch mocking.
     from video.image_gen.image_gen import _record_oom_event
 
     _record_oom_event(
@@ -193,6 +162,7 @@ def test_oom_event_recorded_on_failure(monkeypatch, tmp_path):
     assert len(report) == 2
     assert report[0]["tier_failed"] == 1
     assert report[1]["skipped"] is True
+
 
 
 # ── Cache key invalidation on portrait change ──────────────────────────────

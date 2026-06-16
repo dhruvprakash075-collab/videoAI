@@ -10,14 +10,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from utils.circuit_breaker import CircuitBreakerRegistry
 from utils.ollama_client import OllamaClient, _BreakerState, reset_ollama_client
 
 
 @pytest.fixture(autouse=True)
 def reset_client():
     reset_ollama_client()
+    CircuitBreakerRegistry._breakers.clear()
     yield
     reset_ollama_client()
+    CircuitBreakerRegistry._breakers.clear()
 
 
 def _make_client(fails=3, cooldown=30):
@@ -42,6 +45,13 @@ def _fake_response(text: str) -> MagicMock:
     return resp
 
 
+def _force_breaker_open(client: OllamaClient, model: str) -> None:
+    """Force a model breaker open without exercising retry/backoff paths."""
+    breaker = client._breaker(model)
+    breaker._state = breaker.OPEN
+    breaker._open_until = 10**12
+
+
 # ── Breaker state machine ──────────────────────────────────────────────────
 
 
@@ -59,38 +69,47 @@ def test_breaker_opens_after_n_failures():
     assert b.allow_request() is False
 
 
-def test_breaker_half_open_after_cooldown():
+def test_breaker_half_open_after_cooldown(monkeypatch):
     import time
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=0.01)
+    _time = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: _time[0])
+
+    b = _BreakerState(fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
     assert b.state == "open"
-    time.sleep(0.05)
+    _time[0] += 31.0
     # After cooldown, allow_request should transition to half-open
     assert b.allow_request() is True
     assert b.state == "half_open"
 
 
-def test_breaker_closes_on_probe_success():
+def test_breaker_closes_on_probe_success(monkeypatch):
     import time
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=0.01)
+    _time = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: _time[0])
+
+    b = _BreakerState(fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
-    time.sleep(0.05)
+    _time[0] += 31.0
     b.allow_request()  # → half-open
     b.record_success()
     assert b.state == "closed"
 
 
-def test_breaker_reopens_on_probe_failure():
+def test_breaker_reopens_on_probe_failure(monkeypatch):
     import time
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=0.01)
+    _time = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: _time[0])
+
+    b = _BreakerState(fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
-    time.sleep(0.05)
+    _time[0] += 31.0
     b.allow_request()  # → half-open
     b.record_failure()
     assert b.state == "open"
@@ -108,10 +127,8 @@ def test_generate_returns_text_on_success():
 
 def test_generate_returns_empty_when_breaker_open():
     client = _make_client(fails=1, cooldown=60)
-    # Trip the breaker
-    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
-        client.generate("Hi", model="test-model")
-    # Breaker should now be open
+    _force_breaker_open(client, "test-model")
+
     result = client.generate("Hi", model="test-model")
     assert result == ""
 
@@ -203,6 +220,7 @@ def test_director_call_ollama_returns_empty_on_breaker_open():
     """When the breaker is open for the model, _call_ollama returns '' (never None)."""
     reset_ollama_client()
     from agents.director_agent import DirectorAgent
+    from utils.ollama_client import get_ollama_client
 
     agent = DirectorAgent(
         llm_config={
@@ -215,10 +233,8 @@ def test_director_call_ollama_returns_empty_on_breaker_open():
             "models": {"director": "test-director"},
         }
     )
-    # Trip the breaker (1 failure opens it)
-    with patch("urllib.request.urlopen", side_effect=OSError("down")):
-        agent._call_ollama("Hello", model_type="director")
-    # Next call should fail fast and return ""
+    _force_breaker_open(get_ollama_client(agent.llm_config), "test-director")
+
     result = agent._call_ollama("Hello", model_type="director")
     assert result == ""
     reset_ollama_client()
@@ -488,17 +504,15 @@ def test_chat_with_system_message():
 
 def test_chat_breaker_open():
     client = _make_client(fails=1)
-    # Trip the breaker
-    with patch("urllib.request.urlopen", side_effect=OSError("down")):
-        client.chat([{"role": "user", "content": "Hi"}], model="test-model")
-    # Next call fails fast
+    _force_breaker_open(client, "test-model")
+
     res = client.chat([{"role": "user", "content": "Hi"}], model="test-model")
     assert res == ""
 
 
 def test_chat_exception_handling():
     client = _make_client()
-    with patch("urllib.request.urlopen", side_effect=OSError("down")):
+    with patch.object(client, "_post", side_effect=RuntimeError("down")):
         res = client.chat([{"role": "user", "content": "Hi"}], model="test-model")
     assert res == ""
 
@@ -521,8 +535,8 @@ def test_stream_success():
 
 def test_stream_breaker_open():
     client = _make_client(fails=1)
-    with patch("urllib.request.urlopen", side_effect=OSError("down")):
-        client.stream("prompt", "test-model")
+    _force_breaker_open(client, "test-model")
+
     res = client.stream("prompt", "test-model")
     assert res == ""
 

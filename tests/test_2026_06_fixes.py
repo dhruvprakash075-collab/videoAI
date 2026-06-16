@@ -56,24 +56,31 @@ class TestP51CooldownRemaining:
         remaining = b.cooldown_remaining_s()
         assert 0.0 < remaining <= 30.0, f"expected (0, 30], got {remaining}"
 
-    def test_returns_zero_again_in_half_open(self):
+    def test_returns_zero_again_in_half_open(self, monkeypatch):
         from utils.ollama_client import _BreakerState
 
-        b = _BreakerState(fails_threshold=1, cooldown_s=0.01)
+        _time = [1000.0]
+        monkeypatch.setattr(time, "time", lambda: _time[0])
+
+        b = _BreakerState(fails_threshold=1, cooldown_s=30)
         b.record_failure()
-        time.sleep(0.05)
+        _time[0] += 31.0
         b.allow_request()  # transitions OPEN → HALF_OPEN
         assert b.cooldown_remaining_s() == 0.0
 
-    def test_decreases_monotonically(self):
+    def test_decreases_monotonically(self, monkeypatch):
         from utils.ollama_client import _BreakerState
+
+        _time = [1000.0]
+        monkeypatch.setattr(time, "time", lambda: _time[0])
 
         b = _BreakerState(fails_threshold=1, cooldown_s=5)
         b.record_failure()
         r1 = b.cooldown_remaining_s()
-        time.sleep(0.05)
+        _time[0] += 1.0
         r2 = b.cooldown_remaining_s()
         assert r1 > r2 >= 0.0
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════

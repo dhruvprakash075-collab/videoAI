@@ -1,7 +1,5 @@
 """Tests for utils/circuit_breaker.py — generalized 3-state circuit breaker."""
 
-import time
-
 from utils.circuit_breaker import BreakerOpen, CircuitBreaker, CircuitBreakerRegistry
 
 
@@ -22,21 +20,22 @@ class TestCircuitBreaker:
         assert cb.allow_request() is False
 
     def test_half_open_probe(self):
-        cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=0.01)
+        cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=60)
         cb.record_failure()  # → OPEN
         assert cb.allow_request() is False
-        time.sleep(0.02)
+        cb._open_until = 0.0
         # After cooldown, allow_request transitions to HALF_OPEN and returns True
         assert cb.allow_request() is True
         assert cb.state == CircuitBreaker.HALF_OPEN
 
     def test_half_open_success_closes(self):
-        cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=0.01)
+        cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=60)
         cb.record_failure()  # → OPEN
-        time.sleep(0.02)
+        cb._open_until = 0.0
         cb.allow_request()  # → HALF_OPEN
         cb.record_success()  # → CLOSED
         assert cb.state == CircuitBreaker.CLOSED
+
 
     def test_half_open_failure_reopens(self):
         cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=60)

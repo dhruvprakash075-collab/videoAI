@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from unittest.mock import patch
@@ -84,8 +86,8 @@ def test_world_state_update_falls_back_to_regex_on_llm_failure(tmp_path):
     plan = {"seg": 1, "mood": "mysterious", "title": "Test", "key_event": ""}
 
     with patch("utils.specialized_models.extract_world_state", return_value=None):
-        # Should not raise; regex fallback should run
-        ws.update("Arjun discovered the ancient secret.", plan, config=config)
+        # Should not raise; regex fallback should run. Mention Arjun twice to pass candidate count filter.
+        ws.update("Arjun discovered the ancient secret. Arjun was happy.", plan, config=config)
 
     # Regex should have found "Arjun" as a capitalized word
     assert "Arjun" in ws._data["characters"]
@@ -99,10 +101,13 @@ def test_world_state_update_regex_only_when_disabled(tmp_path):
     config = {"memory": {"llm_world_state": False}}
     plan = {"seg": 1, "mood": "calm", "title": "Test", "key_event": ""}
 
-    ws.update("Meera walked through the ancient forest.", plan, config=config)
+    # Mention Meera twice to pass candidate count filter.
+    ws.update("Meera walked through the ancient forest. Meera saw a tree.", plan, config=config)
     assert "Meera" in ws._data["characters"]
 
 
+
+@pytest.mark.smoke
 def test_script_reviewer_model_is_installed():
     """SCRIPT_REVIEWER_MODEL must point to an installed Ollama model.
 

@@ -130,24 +130,31 @@ def test_guarded_crewai_kickoff_failure_tripping():
 
 def test_guarded_crewai_kickoff_timeout():
     """Test guarded_crewai_kickoff raises TimeoutError if execution times out."""
+    import threading
     model_name = "slow-model"
     crew_mock = MagicMock()
 
-    # Simulate a slow process that sleeps longer than the timeout
+    release_event = threading.Event()
+
+    # Simulate a slow process that blocks until release_event is set
     def slow_kickoff():
-        time.sleep(2.0)
+        release_event.wait(5.0)
         return "too late"
 
     crew_mock.kickoff.side_effect = slow_kickoff
 
     local_breaker = CircuitBreaker("slow-model", 3, 30.0)
-    with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
-        with pytest.raises(TimeoutError) as exc_info:
-            breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name, timeout_s=0.2)
+    try:
+        with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
+            with pytest.raises(TimeoutError) as exc_info:
+                breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name, timeout_s=0.1)
 
-        assert "exceeded" in str(exc_info.value)
-        # Verify the failure was recorded on the breaker
-        assert local_breaker._fail_count == 1
+            assert "exceeded" in str(exc_info.value)
+            # Verify the failure was recorded on the breaker
+            assert local_breaker._fail_count == 1
+    finally:
+        release_event.set()
+
 
 
 def test_guarded_crewai_kickoff_with_lock():
