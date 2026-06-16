@@ -161,7 +161,8 @@ def test_world_state_update_regex_extraction(tmp_path):
 
     script = (
         "राम enters the ancient temple, seeking answers. "
-        "Suddenly, Lakshmana stops and warns him. "
+        "राम hears footsteps as Lakshmana stops and warns him. "
+        "Lakshmana points toward the sealed doorway. "
         "The ancient relic cannot be destroyed by ordinary weapons. "
         "Who is watching them from behind the columns? "
         "They must be cautious."
@@ -265,7 +266,7 @@ def test_world_state_update_llm_fallback_to_regex(tmp_path, caplog):
         ),
         caplog.at_level(logging.WARNING),
     ):
-        script = "Rama walked. The forest is cursed and forbidden to mortals."
+        script = "Rama walked. Rama paused. The forest is cursed and forbidden to mortals."
         state.update(script, plan, force_save=True, config=config)
 
         assert any("LLM world-state extraction failed" in msg for msg in caplog.messages)

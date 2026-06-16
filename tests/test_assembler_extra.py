@@ -21,9 +21,10 @@ log = logging.getLogger("video.renderer.assembler")
 @pytest.fixture(autouse=True)
 def reset_whisper_cache():
     """Reset global whisper caching variables between tests to avoid bleed."""
-    assembler._whisper_model = None
+    assembler._whisper_models.clear()
     assembler._whisper_backend = None
     assembler._cached_codec = None
+    assembler._encoder_support_cache.clear()
 
 
 def test_ts_boundaries():
@@ -98,8 +99,8 @@ def test_get_whisper_model_fallbacks():
         mock_openai.assert_called_once_with("tiny")
         assert assembler._whisper_backend == "openai"
 
-    # Reset cache
-    assembler._whisper_model = None
+    # Reset cache before Case 2
+    assembler._whisper_models.clear()
     assembler._whisper_backend = None
 
     # Case 2: Both fail
@@ -133,12 +134,9 @@ def test_get_video_codec_win32_nvenc():
 
 def test_get_video_codec_fallback_to_libx264():
     """Test video codec fallback to libx264 when nvenc check fails or is missing."""
-    # Case 1: win32 but nvenc missing
-    with patch("sys.platform", "win32"), patch("subprocess.run") as mock_run:
-        mock_res = MagicMock()
-        mock_res.stdout = "encoders:\n V..... libx264              libx264 H.264 / AVC"
-        mock_run.return_value = mock_res
-
+    # Case 1: nvenc missing in ffmpeg encoders
+    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
+        assembler._cached_codec = None
         codec = assembler._get_video_codec()
         assert "libx264" in codec
         assert "h264_nvenc" not in codec
@@ -146,9 +144,9 @@ def test_get_video_codec_fallback_to_libx264():
     # Reset cache
     assembler._cached_codec = None
 
-    # Case 2: subprocess exception (ffmpeg missing)
+    # Case 2: ffmpeg subprocess exception (probe fails)
     with (
-        patch("sys.platform", "win32"),
+        patch.object(assembler, "_encoder_support_cache", {}),
         patch("subprocess.run", side_effect=FileNotFoundError("ffmpeg not found")),
     ):
         codec = assembler._get_video_codec()
@@ -615,45 +613,35 @@ def test_assembler_run_general_exception():
 def test_assembler_get_video_codec_nvidia_h264_nvenc(monkeypatch):
     # Reset cached codec to force execution of the platform detection
     monkeypatch.setattr(assembler, "_cached_codec", None)
-    monkeypatch.setattr(sys, "platform", "win32")
 
-    mock_res = MagicMock()
-    mock_res.stdout = "encoders: ... h264_nvenc ..."
-    mock_res.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_res):
+    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": True}):
         codec = assembler._get_video_codec()
         assert "h264_nvenc" in codec
 
 
 def test_assembler_get_video_codec_nvenc_missing(monkeypatch):
     monkeypatch.setattr(assembler, "_cached_codec", None)
-    monkeypatch.setattr(sys, "platform", "win32")
 
-    mock_res = MagicMock()
-    mock_res.stdout = "encoders: ... only standard encoders ..."
-    mock_res.returncode = 0
-
-    with patch("subprocess.run", return_value=mock_res):
+    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
         codec = assembler._get_video_codec()
         assert "libx264" in codec
 
 
 def test_assembler_get_video_codec_exception(monkeypatch):
     monkeypatch.setattr(assembler, "_cached_codec", None)
-    monkeypatch.setattr(sys, "platform", "win32")
 
     with patch("subprocess.run", side_effect=Exception("command failed")):
+        assembler._encoder_support_cache.clear()
         codec = assembler._get_video_codec()
         assert "libx264" in codec
 
 
 def test_assembler_get_video_codec_not_windows(monkeypatch):
     monkeypatch.setattr(assembler, "_cached_codec", None)
-    monkeypatch.setattr(sys, "platform", "darwin")
 
-    codec = assembler._get_video_codec()
-    assert "libx264" in codec
+    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
+        codec = assembler._get_video_codec()
+        assert "libx264" in codec
 
 
 def test_assembler_get_whisper_model_exception_fallback():
