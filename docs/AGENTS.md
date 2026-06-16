@@ -128,13 +128,11 @@ These are the live values; if a doc disagrees, **the live values win**:
 3. **`../.kiro/steering/product.md`** — what the product is and who it serves.
 4. **`../.kiro/steering/ai-tools-guide.md`** — how AI tools should be used here.
 5. **`system_architecture.md`** — main system structure, modules map, and execution flow.
-6. **`supertonic_pipeline.md`** — **Supertonic 3 TTS subsystem** (default engine, DIY voice clone, production speed math).
-7. **`voice_cloning.md`** — **DIY voice JSON extraction** (recipes, switch command, re-extraction guide).
-8. **`runtime_safety_guide.md`** — safety measures, VRAM/GPU evictions, circuit breakers, Bonsai OOM recovery ladder (2-tier, 2026-06-04), TTS worker subprocess safety.
-9. **`testing_and_linting.md`** — pytest guidelines, coverage configuration, and Ruff setups.
-10. **`configuration_reference.md`** — parameter details, prompting layouts, and visual presets.
-11. **`bug_resolution_history.md`** — summary of historical fixes (B1–B40, P-series including P6-1..3 and P7-1..4 from 2026-06-04).
-12. **`../config/config.yaml`** (292 lines) — actual ground truth for all config parameters. Always trust this file over doc claims.
+6. **`runtime_safety_guide.md`** — safety measures, VRAM/GPU evictions, circuit breakers, Bonsai OOM recovery ladder (2-tier, 2026-06-04), TTS worker subprocess safety.
+7. **`testing_and_linting.md`** — pytest guidelines, coverage configuration, and Ruff setups.
+8. **`configuration_reference.md`** — parameter details, prompting layouts, and visual presets.
+9. **`bug_resolution_history.md`** — canonical bug ID reference (B1–B40, P-series including P6-1..3, P7-1..4, P8-1..15).
+10. **`../config/config.yaml`** (292 lines) — actual ground truth for all config parameters. Always trust this file over doc claims.
 
 ## Recent changes (2026-06-03)
 
@@ -368,60 +366,6 @@ These are the live values; if a doc disagrees, **the live values win**:
 - **License caveat**: DIY extraction is MIT (no IP issue). The
   Supertonic 3 ONNX weights are OpenRAIL-M (responsible use only — no
   impersonation without consent, attribution required, no harm).
-
-### Recent changes (2026-06-08)
-
-- **Hermes-director HTTP 500 fix**: Reduced `num_ctx` from 4096 → 2048 in
-  `Modelfile.hermes-director`; recreated model via `ollama create`. 17GB RAM
-  at 4096 ctx exceeded 16GB hardware limit.
-- **Duration override fix**: `--duration` CLI flag now correctly wins in
-  `decision_engine.py` (flag applied AFTER user locks, not before).
-- **TTS engine normalization**: Added `normalize_tts_engine()` in
-  `audio/audio_proxy.py` — maps free-text LLM outputs (`chattts`, `xtts`,
-  `coqui`) to valid engine IDs (`edge`, `f5`). `chattts` → `edge` alias
-  ensures config default `supertonic` CPU / `omnivoice` GPU fallback safety.
-- **Director defaults**: Fallback `tts_recommendation` changed from `chattts`
-  → `omnivoice` in both `analyze_with_research` prompt and
-  `_validate_vision_doc` defaults. xtts/coqui keyword mapping removed from
-  `produce_runtime_config`.
-- **Director TTS validation**: `_validate_vision_doc` calls
-  `normalize_tts_engine()` on `tts_recommendation`; `produce_runtime_config`
-  normalizes final engine before writing overlay.
-- **Supertonic voice preflight**: Added `_check_supertonic_voice()` in
-  `utils/preflight.py` — validates configured voice JSON exists on disk;
-  displayed in summary as `supertonic_voice`.
-- **`venv` guard**: `bootstrap_pipeline.py` detects non-venv Python via
-  `sys.prefix != sys.base_prefix` and exits with
-  `ERROR: This pipeline must run inside the project virtual environment.`
-- **`pip check` clean**: Patched `cached-path-1.8.10` METADATA (removed
-  `rich<14.0` upper bound) and `wandb-0.27.0` METADATA (`click>=8.2.0` →
-  `>=8.1.7`). `pip check` now reports "No broken requirements found".
-- **Python atexit crashes (Windows)**: Set `PYARROW_IGNORE_CPP_SHUTDOWN=1`
-  in `conftest.py`; stubbed `pyarrow` module to prevent native DLL loading;
-  monkeypatched `_pytest.pathlib.cleanup_numbered_dir` to suppress
-  `PermissionError`. 1682 tests exit cleanly.
-- **Dashboard ESLint**: 0 errors, 0 warnings — fixed dead `testConfigLoad`,
-  undefined `onClose`, `useVoices.js` set-state-in-effect.
-- **Dashboard `act()` warnings**: Wrapped `fireEvent` in `act()`, added
-  `await act(async () => {})` flush to synchronous-start hook tests.
-- **Dashboard controlled/uncontrolled input**: `ControlPanel.jsx` uses
-  functional `setState(prev => ({...prev, ...data}))` so slider `value`
-  never becomes `undefined`.
-- **Dashboard empty image `src`**: `VariantPanel.jsx` conditionally renders
-  `<img>` only when source is truthy.
-- **Dashboard build deprecation**: Upgraded vitest `2.1.9` → `3.2.6` with
-  `@vitest/coverage-v8`; added `cross-env NODE_OPTIONS=--no-deprecation` to
-  test and build scripts; conditional `esbuild` config (dev/test only).
-- **Dashboard stderr noise**: `vi.spyOn(console, 'error').mockImplementation()`
-  in network-error tests — expected error messages suppressed.
-- **Dry-run estimate**: Separate `fast_dry_run` vs `dry_run` display;
-  formula `n_segs * 20` for fast, `n_segs * 25` for regular.
-- **`get_tts_capabilities` alias**: Added in `audio_proxy.py`
-  (`get_tts_capabilities = tts_capabilities`).
-- **Ruff**: All checks pass (0 errors). Fixed import order, used
-  `contextlib.suppress` in `conftest.py`.
-- **Tests**: 1682 Python pass (clean exit), 165 Dashboard pass (silent stderr),
-  41 director `produce_runtime_config` pass.
 
 ## Critical rules (DO NOT BREAK)
 

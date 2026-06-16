@@ -8,31 +8,26 @@
 
 **READ THIS FIRST before following any plan, bug list, or roadmap in this repo.**
 
-## Current State (VERIFIED 2026-06-08)
+## Current State (VERIFIED 2026-06-16)
 
-- **All bugs from the 2026-06-04 audit and the 2026-06-08 pipeline hardening are FIXED.** 1,644 backend tests pass (clean exit). 165 dashboard tests pass (silent stderr). `ruff check .` clean. `pip check` clean.
+- **All bugs from the 2026-06-04 audit and the 2026-06-08 pipeline hardening are FIXED.** 1,682 backend tests pass (clean exit). 165 dashboard tests pass (silent stderr). `ruff check .` clean. `pip check` clean.
 - **Image backend migrated to Bonsai 4B** (was Stable Diffusion 1.5 + LoRA). Character consistency now via IP-Adapter FLUX v2 + master portraits. See `docs/system_architecture.md`.
-- **TTS promoted to Supertonic 3** as default (was OmniVoice). 4.5x faster, zero VRAM. See `docs/supertonic_pipeline.md`.
-- **Next major initiative: Director System V2** — chat-based AI orchestrator with 3 modes (production / build / off), 2-tier model (qwen2.5:0.5b collector + hermes-director reasoner), sqlite-vec RAG, permission system, builder with revert. See `docs/director_system.md`.
+- **TTS promoted to Supertonic 3** as default (was OmniVoice). 4.5x faster, zero VRAM.
 
-## DO NOT follow these (outdated)
+## DO NOT follow these (outdated — deleted)
 
-- `docs/bug-fix-plan.md` — historical, 204 items all resolved. Kept for archive only.
-- `docs/implementation_plan.md` — old 73 KB pipeline-fix plan. **Replaced** by Director V2 plan.
-- `docs/RESEARCH_WHAT_TO_ADD.md` — old backlog. **Rewritten** with current Tier 1/2/3.
-- `AUDIT_REPORT.md`, `ISSUES.md` (root) — old audit material. **Moved to `docs/archive/`**.
+- `docs/implementation_plan.md` — old 73 KB pipeline-fix plan.
+- `docs/RESEARCH_WHAT_TO_ADD.md` — old backlog.
+- `AUDIT_REPORT.md`, `ISSUES.md` (root) — old audit material.
 
 ## Authoritative current docs
 
 - `docs/AGENTS.md` — orientation (read first)
-- `docs/director_system.md` — **NEW** Director V2 architecture
-- `docs/director_modes.md` — **NEW** 3-mode behavior
-- `docs/director_builder.md` — **NEW** builder + revert
-- `docs/director_api_reference.md` — **NEW** SSE endpoints
 - `docs/system_architecture.md` — current pipeline
 - `docs/configuration_reference.md` — current config
 - `docs/runtime_safety_guide.md` — VRAM/cleanup contracts
 - `docs/testing_and_linting.md` — test conventions
+- `docs/bug_resolution_history.md` — canonical bug ID reference
 
 If a doc and code disagree, **code wins**. Verified ground truth lives in `docs/AGENTS.md` "Verified ground truth" table.
 
@@ -40,7 +35,7 @@ If a doc and code disagree, **code wins**. Verified ground truth lives in `docs/
 
 ## Project Overview
 
-A local video-generation pipeline. Single operator, Windows 11, RTX 4050 6GB VRAM, Python 3.12.13. Takes a topic → plans a story → writes per-segment scripts → generates Hindi/Devanagari voice-over with **Supertonic 3 TTS** (DIY Hindi voice clone, 4.5x faster than OmniVoice, CPU ONNX) → Stable Diffusion images with character/LoRA face-lock → Ken Burns MP4 with Devanagari subtitles. All local. No cloud.
+A local video-generation pipeline. Single operator, Windows 11, RTX 4050 6GB VRAM, Python 3.12.13. Takes a topic → plans a story → writes per-segment scripts → generates Hindi/Devanagari voice-over with **Supertonic 3 TTS** (DIY Hindi voice clone, 4.5x faster than OmniVoice, CPU ONNX) → **Bonsai 4B images with IP-Adapter FLUX v2 character consistency** → Ken Burns MP4 with Devanagari subtitles. All local. No cloud.
 
 ## ECC Core Principles (adapted for Video.AI)
 
@@ -136,12 +131,12 @@ pip check
 ```
 CLI/UI → bootstrap → pipeline_long → Director (plan) → Writer (script) → Reviewer
        → translate → TTS (audio/supertonic_worker.py, default; omnivoice/edge fallback) → SFX (audio/)
-       → Stable Diffusion (video/image_gen) → render segments → concatenate (video/renderer) → final MP4
+       → Bonsai 4B + IP-Adapter (video/image_gen) → render segments → concatenate (video/renderer) → final MP4
        ↕ StoryMemory (memory/) for continuity, Checkpoints for resume
        ↕ DIY voice clone (character_voices/*.json) extracted via external/supertonic_embed
 ```
 
-See `system_architecture.md` for the full diagram and `supertonic_pipeline.md` for TTS subsystem detail.
+See `system_architecture.md` for the full diagram and `bug_resolution_history.md` for TTS subsystem detail.
 
 ## File Organization Rules
 
