@@ -27,7 +27,7 @@ fn analyze_audio_wave(
 }
 
 #[pyfunction]
-#[pyo3(signature = (input, output, ffmpeg_bin="ffmpeg"))]
+#[pyo3(signature = (input, output, ffmpeg_bin="ffmpeg".to_string()))]
 fn master_audio(input: String, output: String, ffmpeg_bin: String) -> PyResult<String> {
     let report = master_path(&AudioMasterArgs {
         input: PathBuf::from(input),
