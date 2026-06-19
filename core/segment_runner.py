@@ -61,6 +61,33 @@ def get_director_abort() -> bool:
         return _director_abort
 
 
+# ── TTS length budgeting ──────────────────────────────────────────────
+
+def _tts_word_budget(config: dict, target_seconds: float, lang: str) -> int:
+    """Max words a segment may contain to fit its spoken-duration target.
+
+    Ties script length to the director's per-segment TIME budget instead of a
+    fixed word count. Uses a configurable speaking rate (words/min); Hindi is
+    slower AND expands vs English, so its default rate is lower. Returns 0 when
+    no usable target is available (caller then keeps its existing word logic).
+
+    The defaults below are CONSERVATIVE starting estimates. Tune them from a real
+    run by comparing the '[DIRECTOR] ... N chars' / word-count logs against the
+    final segment audio duration, via config keys:
+        script.tts_words_per_minute_hi   (default 100)
+        script.tts_words_per_minute_en   (default 150)
+    """
+    if not target_seconds or target_seconds <= 0:
+        return 0
+    _cfg = config.get("script", {}) if isinstance(config, dict) else {}
+    wpm = float(
+        _cfg.get(
+            "tts_words_per_minute_hi" if lang == "hi" else "tts_words_per_minute_en",
+            100.0 if lang == "hi" else 150.0,
+        )
+    )
+    return max(20, int((target_seconds / 60.0) * wpm))
+
 # ── VRAM management (shared with orchestrator) ────────────────────────
 
 
@@ -500,6 +527,20 @@ def make_process_segment(
         lo = int(words_per_seg * (1 - tolerance))
         hi = int(words_per_seg * (1 + tolerance))
         seg_words = max(lo, min(hi, seg_words))
+        # Cap the writer's word target by the segment's spoken-duration budget so
+        # a segment is never asked for more words than its time allows. This is
+        # director-driven: the cap comes from the per-segment time target, and
+        # Hindi gets fewer words for the same seconds (slower speech).
+        from config.config import get_language as _get_lang_ws
+
+        _seg_target_s = (
+            _requested_duration_per_seg_s
+            if _requested_duration_per_seg_s is not None
+            else seg_min * 60
+        )
+        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_ws(config))
+        if _dur_budget:
+            seg_words = max(lo, min(seg_words, _dur_budget))
         persona = config.get("narrator_persona", "")
 
         from utils.story_planner import build_segment_prompt
@@ -661,9 +702,27 @@ def make_process_segment(
                 log.warning(f"  Seg {i}: world_state.update (translate, dry-run) failed: {_ws_e}")
             return {"devanagari_script": None, "script_for_tts": script}
 
-        # Word count enforcement
-        seg_words = plan.get("target_word_count", words_per_seg)
+        # Word count enforcement.
+        # Clamp the planner's per-segment target to the writer's actual budget so
+        # an LLM overshoot gets trimmed instead of sailing past an inflated
+        # planner value (root cause of the multi-minute TTS over-length audio).
         _wc_tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
+        _wc_lo = int(words_per_seg * (1 - _wc_tolerance))
+        _wc_clamp_hi = int(words_per_seg * (1 + _wc_tolerance))
+        seg_words = plan.get("target_word_count", words_per_seg) or words_per_seg
+        seg_words = max(_wc_lo, min(_wc_clamp_hi, seg_words))
+        # Hard cap by the segment's spoken-duration budget (director-driven
+        # seconds -> words; Hindi speaks slower so fewer words per second).
+        from config.config import get_language as _get_lang_wc
+
+        _seg_target_s = (
+            _requested_duration_per_seg_s
+            if _requested_duration_per_seg_s is not None
+            else seg_min * 60
+        )
+        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_wc(config))
+        if _dur_budget:
+            seg_words = min(seg_words, _dur_budget)
         _actual_wc = len(script.split())
         _wc_hi = int(seg_words * (1 + _wc_tolerance))
 
