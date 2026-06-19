@@ -2162,87 +2162,40 @@ class DirectorAgent:
     def translate_to_devanagari(
         self, english_script: str, segment_plan: dict, context: str = ""
     ) -> str:
-        """Translate English narration script to Devanagari Hindi using Director model.
+        """Translate English narration to MODERN spoken Hindi (Devanagari).
 
-        Uses full story context (mood, characters, theme) to produce contextually
-        accurate Hindi translation that preserves dramatic intent.
+        IMPORTANT: the translator model (sarvam-translate) is a pure translation
+        model -- it translates EVERYTHING in the user message. So we send ONLY the
+        English script as the user content and put all steering in the system
+        message. Putting rules/examples/context in the user content makes the model
+        translate the instructions too (the old ~2700-char "blob" bug).
 
-        Args:
-            english_script: The approved English narration script
-            segment_plan: Segment plan dict with mood, title, key_event, etc.
-            context: Previous story context for continuity
-
-        Returns:
-            Devanagari Hindi script, or original English on failure.
+        Returns Devanagari Hindi, or the original English on failure.
         """
         mood = segment_plan.get("mood", "mysterious")
-        segment_plan.get("title", "")
-        key_event = segment_plan.get("key_event", "")
 
-        # Build character context from config
-        characters = (
-            self.llm_config.get("characters", {}) if isinstance(self.llm_config, dict) else {}
-        )
-        char_lines = []
-        for c_key, c_data in characters.items():
-            name = c_data.get("name", c_key)
-            desc = c_data.get("description", "")
-            if name:
-                char_lines.append(f"  - {name}: {desc[:100]}" if desc else f"  - {name}")
-        chars_block = "\n".join(char_lines) if char_lines else "No character details."
-
-        vision = (
-            self.llm_config.get("_director_vision", {}) if isinstance(self.llm_config, dict) else {}
-        )
-        theme = vision.get("theme", "") or segment_plan.get("theme", "")
-        emotions = vision.get("emotions", "") or mood
-
-        prompt = (
-            f"You are an expert literary translator specializing in Hindi narration for cinematic TTS.\n"
-            f"Translate the following English narration script into natural, spoken Hindi in Devanagari script.\n\n"
-            f"CONTEXT:\n"
-            f"  Story theme: {theme}\n"
-            f"  Segment mood: {mood}\n"
-            f"  Emotions to preserve: {emotions}\n"
-            f"  Key event: {key_event}\n"
-            f"  Characters:\n{chars_block}\n\n"
-            f"TRANSLATION RULES:\n"
-            f"1. Output ONLY in Devanagari script. No English/Latin characters anywhere.\n"
-            f"2. Transliterate ALL English loanwords phonetically into Devanagari — including common words\n"
-            f"   used in everyday Hindi speech. Examples:\n"
-            f"   phone → फोन, school → स्कूल, camera → कैमरा, car → कार, bus → बस,\n"
-            f"   doctor → डॉक्टर, police → पुलिस, video → वीडियो, cafe → कैफे,\n"
-            f"   light → लाइट, dark → डार्क, hero → हीरो, story → स्टोरी.\n"
-            f"3. Spell out ALL numbers in Hindi words (e.g., 100 → सौ, 3 → तीन, 1000 → हज़ार).\n"
-            f"4. Transliterate acronyms phonetically into Devanagari.\n"
-            f"5. Preserve ALL dramatic punctuation: ellipses (...), exclamation marks (!), question marks (?), dashes.\n"
-            f"6. Match the emotional intensity — if the English is dramatic, the Hindi must be equally dramatic.\n"
-            f"7. Use MODERN, everyday spoken Hindi — the kind used in daily conversation and modern YouTube narration.\n"
-            f"   Do NOT use literary, Sanskritized, or archaic Hindi. Avoid heavy tatsam/Sanskrit words.\n"
-            f"   Prefer common words people actually say:\n"
-            f"   - रोशनी (not प्रकाश-पुंज), कोशिश (not प्रयास), ज़िंदगी (not जीवन when conversational),\n"
-            f"   - शुरू (not आरंभ), ख़त्म (not समाप्त), बदलना (not परिवर्तन).\n"
-            f"   Imagine a friendly modern narrator speaking to a young audience on YouTube.\n"
-            f"8. Do NOT add any labels, prefixes, tags, or commentary. Output ONLY the translated narration.\n"
-            f"9. CRITICAL: Every single word must be in Devanagari. If you are unsure how to write an English\n"
-            f"   word in Devanagari, transliterate it phonetically. Never leave Latin letters in the output.\n\n"
-            f"ENGLISH SCRIPT TO TRANSLATE:\n"
-            f"<script>{english_script}</script>\n\n"
-            f"Hindi (Devanagari) translation:"
+        system_msg = (
+            "You are a translator who writes MODERN, casual, everyday spoken Hindi "
+            "for YouTube narration -- the way young people actually talk today. "
+            "Use simple common words, NOT literary, Sanskritized, or archaic Hindi. "
+            "Write everything in Devanagari script. Preserve dramatic punctuation "
+            "(... ! ? --). Output ONLY the translation, no commentary, no labels."
         )
 
         log.info(
-            f"[DIRECTOR] Translating segment to Devanagari (mood={mood}, {len(english_script)} chars)..."
+            f"[DIRECTOR] Translating segment to Devanagari "
+            f"(mood={mood}, {len(english_script)} chars)..."
         )
 
         try:
+            # User content is ONLY the script to translate.
             translated = self._call_ollama_chat(
-                prompt,
+                english_script,
                 model_type="translator",
-                system_msg="You are a translator who writes MODERN, casual, everyday spoken Hindi for YouTube narration — the way young people actually talk today. Use simple common words, NOT literary, Sanskritized, or archaic Hindi. Write everything in Devanagari script. Output only the translation, no commentary.",
+                system_msg=system_msg,
             )
             if not translated:
-                log.warning("[DIRECTOR] Translation returned empty \u2014 using original English")
+                log.warning("[DIRECTOR] Translation returned empty -- using original English")
                 return english_script
 
             # Clean any stray tags
@@ -2253,20 +2206,14 @@ class DirectorAgent:
             devanagari_chars = sum(1 for c in translated if "\u0900" <= c <= "\u097f")
             if devanagari_chars < 10:
                 log.warning(
-                    f"[DIRECTOR] Translation has only {devanagari_chars} Devanagari chars — may have failed. Using original."
+                    f"[DIRECTOR] Translation has only {devanagari_chars} Devanagari chars "
+                    "-- using original."
                 )
                 return english_script
 
-            # R2.7: Devanagari-ratio check with bounded re-translation (task 4.6).
-            # When the model leaves too many Latin letters (un-transliterated loanwords),
-            # retry with a stricter instruction up to max_retranslate_retries times.
-            # Keep the best (highest Devanagari ratio) result seen; warn only if still
-            # over threshold after all retries.
-            try:
-                _full_cfg = getattr(self, "llm_config", None) or {}
-                if not isinstance(_full_cfg, dict):
-                    _full_cfg = {}
-            except Exception:
+            # Devanagari-ratio check with bounded re-translation.
+            _full_cfg = getattr(self, "llm_config", None) or {}
+            if not isinstance(_full_cfg, dict):
                 _full_cfg = {}
             _deva_cfg = _full_cfg.get("tts", {}).get("devanagari", {})
             _max_latin = float(_deva_cfg.get("max_latin_ratio", 0.10))
@@ -2281,18 +2228,18 @@ class DirectorAgent:
                 attempt += 1
                 log.info(
                     f"[DIRECTOR] Devanagari ratio {best_ratio:.0%} below "
-                    f"{_min_deva_ratio:.0%} — re-translating (attempt {attempt}/{_max_retries})"
+                    f"{_min_deva_ratio:.0%} -- re-translating (attempt {attempt}/{_max_retries})"
                 )
-                _stricter = prompt + (
-                    "\n\nIMPORTANT: The previous attempt left English (Latin) letters in the "
-                    "output. Re-translate so that EVERY word is in Devanagari. Transliterate "
-                    "all English loanwords phonetically. Output ONLY Devanagari."
+                _stricter_sys = system_msg + (
+                    " The previous attempt left English (Latin) letters in the output. "
+                    "Transliterate EVERY English word phonetically into Devanagari. "
+                    "Output ONLY Devanagari."
                 )
                 try:
                     _candidate = self._call_ollama_chat(
-                        _stricter,
+                        english_script,
                         model_type="translator",
-                        system_msg="You are an expert literary translator. Output ONLY Devanagari Hindi.",
+                        system_msg=_stricter_sys,
                     )
                     if _candidate:
                         _candidate = re.sub(
@@ -2302,9 +2249,6 @@ class DirectorAgent:
                         _cand_ratio = _devanagari_ratio(_candidate)
                         if _cand_ratio > best_ratio:
                             best, best_ratio = _candidate, _cand_ratio
-                            log.debug(
-                                f"[DIRECTOR] Re-translation attempt {attempt}: ratio improved to {best_ratio:.0%}"
-                            )
                 except Exception as _re_err:
                     log.warning(f"[DIRECTOR] Re-translation attempt {attempt} failed ({_re_err})")
                     break
@@ -2313,13 +2257,11 @@ class DirectorAgent:
             if best_ratio < _min_deva_ratio:
                 log.warning(
                     f"[DIRECTOR] Devanagari ratio {best_ratio:.0%} after {attempt} retries "
-                    f"— accepting best result (some loanwords may remain as Latin)."
+                    "-- accepting best result."
                 )
-            else:
-                log.debug(f"[DIRECTOR] Devanagari ratio OK: {best_ratio:.0%}")
-
             log.info(
-                f"[DIRECTOR] Devanagari translation complete: {len(translated)} chars, {devanagari_chars} Devanagari chars"
+                f"[DIRECTOR] Devanagari translation complete: {len(translated)} chars, "
+                f"ratio {best_ratio:.0%}"
             )
             return translated
 

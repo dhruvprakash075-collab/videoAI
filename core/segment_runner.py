@@ -713,11 +713,15 @@ def make_process_segment(
                             script, plan, state["context"]
                         )
                 if devanagari_script:
-                    max_translation_chars = max(len(script) * 4, len(script) + 500)
-                    if len(devanagari_script) > max_translation_chars:
+                    en_words = max(1, len(script.split()))
+                    hi_words = len(devanagari_script.split())
+                    # Modern Hinglish is roughly word-for-word with English, so judge
+                    # by WORD count (what the Director controls via the script), not by
+                    # Devanagari character count (Devanagari uses more chars per word).
+                    if hi_words > en_words * 1.8:
                         log.warning(
-                            f"  Seg {i}: Director translation expanded from "
-                            f"{len(script)} to {len(devanagari_script)} chars; "
+                            f"  Seg {i}: Director translation bloated "
+                            f"({hi_words} Hindi words vs {en_words} English words); "
                             "using original script for TTS"
                         )
                         devanagari_script = None
