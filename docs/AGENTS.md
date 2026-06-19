@@ -117,7 +117,7 @@ These are the live values; if a doc disagrees, **the live values win**:
 | Git | **4 commits** (initial `3f7f4a3` + 3 fix commits) — `master` has v6 unified pipeline + CLI `--source` + latest 2026-06-08 fixes | `git log` |
 | Backend linter | **ruff 0.15.15** (see `LINTING.md`). All checks pass. | `ruff check .` |
 | Frontend linter | **ESLint 9 (flat config)** — see `dashboard/eslint.config.js`. All checks pass. | `cd dashboard && npm run lint` |
-| CI | None (no `.github/`) | `Test-Path .github` |
+| CI | GitHub Actions (ci.yml, pyo3-wheel-ci.yml, rust-worker-ci.yml) | `Test-Path .github` |
 | `tts.engine` aliases (removed) | `xtts`, `coqui` → f5; `chattts` → edge (no longer aliased) | `audio/audio_proxy.py` |
 | Reviewer model | **qwen2.5:0.5b** (was script-reviewer Qwen2.5-3B) | `utils/specialized_models.py` |
 
