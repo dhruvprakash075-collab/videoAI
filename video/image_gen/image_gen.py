@@ -218,7 +218,7 @@ def generate_images(
 # ── CACHE HELPERS ──────────────────────────────────────────────────────────
 
 
-def _master_portrait_hash_for_frame(char_key: str | None) -> str:
+def _master_portrait_hash_for_frame(char_key: str | None, ps=None) -> str:
     """Look up the master portrait content hash for a character.
 
     Returns the hash if the project store has one, else ''. Used in the
@@ -227,9 +227,9 @@ def _master_portrait_hash_for_frame(char_key: str | None) -> str:
     if not char_key:
         return ""
     try:
-        from memory.project_store import ProjectStore
-
-        ps = ProjectStore(_current_project_id or "_default")
+        if ps is None:
+            from memory.project_store import ProjectStore
+            ps = ProjectStore(_current_project_id or "_default")
         return ps.get_master_portrait_hash(char_key)
     except Exception:
         return ""
@@ -366,6 +366,9 @@ def _bonsai(
     cache_hits = 0
     fresh_gen = 0
 
+    from memory.project_store import ProjectStore
+    ps = ProjectStore(project_id or "_default")
+
     with tqdm(total=len(prompts), desc="  Bonsai", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
             cp = {}
@@ -383,9 +386,6 @@ def _bonsai(
             frame_prompt = prompt
             if dom_char:
                 try:
-                    from memory.project_store import ProjectStore
-
-                    ps = ProjectStore(project_id or "_default")
                     entry = ps.get_character(dom_char) or {}
                     desc = entry.get("visual_description", "")
                     if desc:
@@ -429,7 +429,7 @@ def _bonsai(
                 log.debug(f"[Bonsai] VRAM guard failed: {e}")
 
             # ── Cache key (includes master portrait hash for invalidation) ─
-            master_hash = _master_portrait_hash_for_frame(dom_char)
+            master_hash = _master_portrait_hash_for_frame(dom_char, ps=ps)
             cache_key = _prompt_cache_key(
                 f"{frame_prompt}|frame={i}",
                 cfg,
@@ -453,10 +453,8 @@ def _bonsai(
             ip_image_kwarg = None
             if dom_char:
                 try:
-                    from memory.project_store import ProjectStore
                     from video.image_gen.ip_adapter import get_ip_adapter
 
-                    ps = ProjectStore(project_id or "_default")
                     master_path = ps.get_master_portrait_path(dom_char)
                     if master_path:
                         mgr = get_ip_adapter()

@@ -186,6 +186,183 @@ class TestConfigExtension:
         assert lv3["character_threshold"] == 0.4
         assert lv3["closeup_threshold"] == 0.85
         assert lv3["max_characters"] == 2
+# -------------------- Chat Tests --------------------
+
+class TestChatEndpointExtended:
+    @patch("utils.local_ui.get_ollama_client")
+    @patch("utils.local_ui.load_config")
+    def test_chat_successful_reply(self, mock_load_config, mock_get_ollama):
+        mock_load_config.return_value = {"models": {"director": "llama3.1"}}
+        mock_ollama = MagicMock()
+        mock_ollama.chat.return_value = "Hello! I can help with that."
+        mock_get_ollama.return_value = mock_ollama
+
+        resp = client.post("/api/chat", json={"message": "hello", "session_id": ""})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reply"] == "Hello! I can help with that."
+        assert data["session_id"]
+        assert len(data["messages"]) == 2
+
+    def test_chat_empty_message_rejected(self):
+        resp = client.post("/api/chat", json={"message": "", "session_id": ""})
+        assert resp.status_code == 400
+        assert "message is required" in resp.json()["error"]
+
+    @patch("utils.local_ui.get_ollama_client")
+    @patch("utils.local_ui.load_config")
+    def test_chat_model_failure_returns_error(self, mock_load_config, mock_get_ollama):
+        mock_load_config.return_value = {"models": {"director": "llama3.1"}}
+        mock_ollama = MagicMock()
+        mock_ollama.chat.side_effect = RuntimeError("Ollama not reachable")
+        mock_get_ollama.return_value = mock_ollama
+
+        resp = client.post("/api/chat", json={"message": "test", "session_id": ""})
+        assert resp.status_code == 500
+        assert "Chat failed" in resp.json()["error"]
+
+    @patch("utils.local_ui.get_ollama_client")
+    @patch("utils.local_ui.load_config")
+    def test_chat_session_persists_in_memory(self, mock_load_config, mock_get_ollama):
+        mock_load_config.return_value = {"models": {"director": "llama3.1"}}
+        mock_ollama = MagicMock()
+        mock_ollama.chat.return_value = "ok"
+        mock_get_ollama.return_value = mock_ollama
+
+        resp1 = client.post("/api/chat", json={"message": "first", "session_id": ""})
+        sid = resp1.json()["session_id"]
+
+        resp2 = client.post("/api/chat", json={"message": "second", "session_id": sid})
+        assert resp2.status_code == 200
+        assert len(resp2.json()["messages"]) == 4  # 2 user + 2 assistant
+
+    def test_delete_chat_session(self):
+        with patch("utils.local_ui.get_ollama_client"), patch("utils.local_ui.load_config"):
+            resp = client.post("/api/chat", json={"message": "test", "session_id": ""})
+            sid = resp.json()["session_id"]
+
+        resp = client.delete(f"/api/chat/sessions/{sid}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "deleted"
+
+        resp = client.get(f"/api/chat/sessions/{sid}")
+        assert resp.status_code == 404
+
+    def test_delete_nonexistent_session(self):
+        resp = client.delete("/api/chat/sessions/nonexistent")
+        assert resp.status_code == 404
+
+
+# -------------------- Preflight Tests --------------------
+
+class TestPreflightEndpointExtended:
+    @patch("utils.preflight.run_preflight")
+    @patch("utils.local_ui.load_config")
+    def test_preflight_returns_structured_checks(self, mock_load_config, mock_run_preflight):
+        from utils.preflight import PreflightCheck
+        mock_load_config.return_value = {}
+        mock_result = MagicMock()
+        mock_result.all_ok = True
+        mock_result.checks = [
+            PreflightCheck(name="python_version", status="ok", message="Python 3.12"),
+            PreflightCheck(name="ollama", status="ok", message="Ollama reachable"),
+            PreflightCheck(name="disk", status="warn", message="Only 3 GB free"),
+        ]
+        mock_run_preflight.return_value = mock_result
+
+        resp = client.get("/api/preflight")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["all_ok"] is True
+        assert len(data["checks"]) == 3
+        assert data["checks"][0]["name"] == "python_version"
+        assert data["checks"][0]["status"] == "ok"
+        assert data["checks"][1]["name"] == "ollama"
+        assert data["checks"][2]["status"] == "warn"
+
+    @patch("utils.preflight.run_preflight")
+    @patch("utils.local_ui.load_config")
+    def test_preflight_error(self, mock_load_config, mock_run_preflight):
+        mock_load_config.return_value = {}
+        mock_run_preflight.side_effect = RuntimeError("Preflight crashed")
+        resp = client.get("/api/preflight")
+        assert resp.status_code == 500
+
+
+# -------------------- Config Extension Tests --------------------
+
+class TestConfigExtensionExtended:
+    @patch("utils.local_ui.load_config")
+    def test_get_config_returns_composition_mode_and_layered(self, mock_load_config):
+        mock_load_config.return_value = {
+            "image_gen": {
+                "composition_mode": "layered_v3",
+                "layered_v3": {
+                    "approval_mode": "manual",
+                    "character_threshold": 0.5,
+                    "closeup_threshold": 0.9,
+                    "max_characters": 3,
+                    "fallback_mode": "error",
+                    "workflows": {
+                        "character_sheet": "wf1.json",
+                        "background": "wf2.json",
+                    },
+                },
+            },
+            "tts": {"engine": "supertonic"},
+            "subtitles": {"format": "classic"},
+            "script": {},
+        }
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["compositionMode"] == "layered_v3"
+        assert data["layeredV3"]["approvalMode"] == "manual"
+        assert data["layeredV3"]["characterThreshold"] == 0.5
+        assert data["layeredV3"]["closeupThreshold"] == 0.9
+        assert data["layeredV3"]["maxCharacters"] == 3
+        assert data["layeredV3"]["fallbackMode"] == "error"
+        assert data["layeredV3"]["workflows"]["characterSheet"] == "wf1.json"
+        assert data["layeredV3"]["workflows"]["background"] == "wf2.json"
+
+    @patch("os.replace", MagicMock())
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("yaml.safe_dump")
+    @patch("utils.local_ui.load_config")
+    def test_post_config_persists_layered_v3_fields(self, mock_load_config, mock_safe_dump, mock_open_file):
+        mock_load_config.return_value = {
+            "image_gen": {},
+            "tts": {"engine": "omnivoice"},
+            "subtitles": {"format": "classic"},
+            "script": {},
+        }
+        mock_safe_dump.return_value = None
+
+        resp = client.post("/api/config", data={
+            "voice_engine": "omnivoice",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "composition_mode": "layered_v3",
+            "layered_v3_approval_mode": "hybrid",
+            "layered_v3_character_threshold": "0.4",
+            "layered_v3_closeup_threshold": "0.85",
+            "layered_v3_max_characters": "2",
+            "layered_v3_fallback_mode": "one_pass",
+            "layered_v3_wf_character_sheet": "cs.json",
+            "layered_v3_wf_background": "bg.json",
+            "layered_v3_wf_character_pose": "pose.json",
+            "layered_v3_wf_composite_refine": "refine.json",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "success"
+
+        saved_config = mock_safe_dump.call_args[0][0]
+        lv3 = saved_config["image_gen"]["layered_v3"]
+        assert lv3["approval_mode"] == "hybrid"
+        assert lv3["character_threshold"] == 0.4
+        assert lv3["closeup_threshold"] == 0.85
+        assert lv3["max_characters"] == 2
         assert lv3["fallback_mode"] == "one_pass"
         assert lv3["workflows"]["character_sheet"] == "cs.json"
         assert lv3["workflows"]["background"] == "bg.json"
@@ -202,7 +379,7 @@ class TestConfigExtension:
             "max_images_per_segment": 6,
             "layered_v3_approval_mode": "invalid",
         })
-        assert resp.status_code == 500
+        assert resp.status_code == 400
 
     @patch("utils.local_ui.load_config")
     def test_post_config_rejects_out_of_range_threshold(self, mock_load_config):
@@ -214,7 +391,105 @@ class TestConfigExtension:
             "max_images_per_segment": 6,
             "layered_v3_character_threshold": "2.5",
         })
-        assert resp.status_code == 500
+        assert resp.status_code == 400
+
+    @patch("utils.local_ui.load_config")
+    def test_post_config_validates_comfyui_paths(self, mock_load_config):
+        mock_load_config.return_value = {"image_gen": {}, "tts": {}, "subtitles": {}, "script": {}}
+
+        # Test root with .. traversal
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_root": "../invalid_dir",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_root must not contain '..' path parts" in resp.json()["message"]
+
+        # Test root non-existent
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_root": "C:\\nonexistent_directory_abcdef",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_root path must exist and be a directory" in resp.json()["message"]
+
+        # Test python file with .. traversal
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_python": "../invalid_py",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_python must not contain '..' path parts" in resp.json()["message"]
+
+        # Test python file non-existent
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_python": "C:\\nonexistent_py_file_abcdef.exe",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_python path must exist and be a file" in resp.json()["message"]
+
+        # Test workflow with .. traversal
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_workflow_path": "../invalid_wf.json",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_workflow_path must not contain '..' path parts" in resp.json()["message"]
+
+        # Test workflow non-existent
+        resp = client.post("/api/config", data={
+            "voice_engine": "supertonic",
+            "dynamic_subtitles": "false",
+            "uncapped_scaling": "false",
+            "max_images_per_segment": 6,
+            "comfyui_workflow_path": "C:\\nonexistent_wf_abcdef.json",
+        })
+        assert resp.status_code == 400
+        assert "comfyui_workflow_path must exist" in resp.json()["message"]
+
+    def test_upload_script_size_limit(self):
+        # Create a large script (11MB)
+        large_content = b"a" * (11 * 1024 * 1024)
+        resp = client.post(
+            "/api/upload_script",
+            data={"topic": "T"},
+            files={"file": ("story.txt", large_content, "text/plain")},
+        )
+        assert resp.status_code == 413
+        assert "File exceeds maximum allowed size" in resp.json()["message"]
+
+    def test_upload_voice_size_limit(self):
+        # Create a large voice (21MB)
+        large_content = b"a" * (21 * 1024 * 1024)
+        resp = client.post(
+            "/api/upload_voice",
+            data={"character_name": "testchar"},
+            files={"file": ("voice.wav", large_content, "audio/wav")},
+        )
+        assert resp.status_code == 413
+        assert "File exceeds maximum allowed size" in resp.json()["message"]
+
+    def test_security_headers(self):
+        resp = client.get("/")
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+        assert resp.headers.get("X-Frame-Options") == "DENY"
+        assert resp.headers.get("Referrer-Policy") == "no-referrer"
 
 
 # -------------------- Jobs Extension Tests --------------------

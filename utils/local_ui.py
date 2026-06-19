@@ -76,6 +76,30 @@ async def _restrict_static_to_localhost(request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Add secure headers to all HTTP responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+async def _read_upload_limited(file, max_bytes: int) -> bytes:
+    """Read file uploads in chunks to prevent memory bloat and enforce size limits."""
+    chunk_size = 256 * 1024  # 256KB chunks
+    data = bytearray()
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > max_bytes:
+            raise ValueError("File upload size exceeds the maximum limit.")
+    return bytes(data)
+
+
 # A/B Director's Chair — in-memory job store
 _ab_jobs_lock = threading.Lock()
 _ab_jobs: dict = {}  # {job_id: {"status": str, "images_a": [...], "images_b": [...], "error": str}}
@@ -347,12 +371,19 @@ async def upload_script(
     in the job store instead of starting the pipeline directly.
     """
     try:
-        content = await file.read()
+        content = await _read_upload_limited(file, 10 * 1024 * 1024)
         script_text = content.decode("utf-8")
-    except Exception as e:
+    except ValueError as e:
+        log.warning(f"Script upload failed limit check: {e}")
+        return JSONResponse(
+            status_code=413,
+            content={"status": "error", "message": "File exceeds maximum allowed size of 10MB."},
+        )
+    except Exception:
+        log.exception("Failed to read script file")
         return JSONResponse(
             status_code=400,
-            content={"status": "error", "message": f"Failed to read script file: {e}"},
+            content={"status": "error", "message": "Failed to read script file due to format or encoding errors."},
         )
 
     try:
@@ -455,9 +486,9 @@ async def create_job_endpoint(job_request: dict = Body(...)):
         })
     except ValueError as e:
         return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
-    except Exception as e:
+    except Exception:
         log.exception("Failed to create job")
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "message": "An internal error occurred while creating the job."})
 
 
 @app.post("/api/upload_voice")
@@ -481,7 +512,14 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
 
         # Write file content and optimize
         try:
-            content = await file.read()
+            try:
+                content = await _read_upload_limited(file, 20 * 1024 * 1024)
+            except ValueError as e:
+                log.warning(f"Voice upload failed limit check: {e}")
+                return JSONResponse(
+                    status_code=413,
+                    content={"status": "error", "message": "File exceeds maximum allowed size of 20MB."},
+                )
             with open(temp_path, "wb") as f:
                 f.write(content)
 
@@ -512,7 +550,7 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
             )
             return {
                 "status": "success",
-                "message": f"Successfully optimized {file.filename} as reference voice.",
+                "message": "Successfully optimized reference voice.",
             }
         finally:
             # Secure cleanup of temporary files under all branches
@@ -526,10 +564,10 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
                     temp_out.unlink()
             except Exception:
                 pass
-    except Exception as e:
-        log.error(f"Voice upload failed: {e}", exc_info=True)
+    except Exception:
+        log.error("Voice upload failed", exc_info=True)
         return JSONResponse(
-            status_code=500, content={"status": "error", "message": f"Failed to upload voice: {e}"}
+            status_code=500, content={"status": "error", "message": "Voice upload failed due to an internal error."}
         )
 
 
@@ -582,9 +620,9 @@ async def list_jobs(limit: int = 100, offset: int = 0):
     try:
         rows = job_store.list_jobs(limit=limit, offset=offset)
         return {"jobs": rows}
-    except Exception as e:
+    except Exception:
         log.exception("Failed to list jobs")
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "message": "An error occurred while listing jobs."})
 
 
 @app.get("/api/jobs/{job_id}")
@@ -600,9 +638,9 @@ async def get_job_events(job_id: int, limit: int | None = None):
     try:
         events = job_store.get_events(job_id, limit=limit)
         return {"events": events}
-    except Exception as e:
+    except Exception:
         log.exception("Failed to get job events")
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "message": "An error occurred while fetching job events."})
 
 
 @app.get("/api/jobs/{job_id}/artifacts")
@@ -610,9 +648,9 @@ async def get_job_artifacts(job_id: int):
     try:
         artifacts = job_store.get_artifacts(job_id)
         return {"artifacts": artifacts}
-    except Exception as e:
+    except Exception:
         log.exception("Failed to get job artifacts")
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "message": "An error occurred while fetching job artifacts."})
 
 
 @app.post("/api/jobs/{job_id}/cancel")
@@ -692,8 +730,9 @@ async def get_ui_config():
             },
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
         }
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+    except Exception:
+        log.exception("Failed to get UI config")
+        return JSONResponse(status_code=500, content={"status": "error", "message": "An error occurred while retrieving configuration."})
 
 
 @app.post("/api/config")
@@ -847,11 +886,32 @@ async def save_ui_config(
             if comfyui_port is not None:
                 comfy_cfg["port"] = max(1, int(comfyui_port))
             if comfyui_root is not None:
-                comfy_cfg["root"] = comfyui_root.strip()
+                root_val = comfyui_root.strip()
+                # ponytail: ComfyUI root path validation (no raw .. parts, exists, is directory)
+                if any(part == ".." for part in Path(root_val).parts):
+                    raise ValueError("comfyui_root must not contain '..' path parts")
+                root_path = Path(root_val)
+                if not root_path.exists() or not root_path.is_dir():
+                    raise ValueError("comfyui_root path must exist and be a directory")
+                comfy_cfg["root"] = root_val
             if comfyui_python is not None:
-                comfy_cfg["python"] = comfyui_python.strip()
+                py_val = comfyui_python.strip()
+                # ponytail: ComfyUI python path validation (no raw .. parts, exists, is file)
+                if any(part == ".." for part in Path(py_val).parts):
+                    raise ValueError("comfyui_python must not contain '..' path parts")
+                py_path = Path(py_val)
+                if not py_path.exists() or not py_path.is_file():
+                    raise ValueError("comfyui_python path must exist and be a file")
+                comfy_cfg["python"] = py_val
             if comfyui_workflow_path is not None:
-                comfy_cfg["workflow_path"] = comfyui_workflow_path.strip()
+                wf_val = comfyui_workflow_path.strip()
+                # ponytail: ComfyUI workflow path validation (no raw .. parts, exists, is file, suffix .json)
+                if any(part == ".." for part in Path(wf_val).parts):
+                    raise ValueError("comfyui_workflow_path must not contain '..' path parts")
+                wf_path = Path(wf_val)
+                if not wf_path.exists() or not wf_path.is_file() or wf_path.suffix.lower() != ".json":
+                    raise ValueError("comfyui_workflow_path must exist, be a file, and have a .json extension")
+                comfy_cfg["workflow_path"] = wf_val
             if comfyui_checkpoint is not None:
                 comfy_cfg["checkpoint"] = comfyui_checkpoint.strip()
             if comfyui_width is not None:
@@ -891,11 +951,17 @@ async def save_ui_config(
 
         UIState.add_log(f"Backend: UI configuration saved successfully (engine={voice_engine})")
         return {"status": "success", "message": "Configuration saved successfully."}
-    except Exception as e:
-        log.error(f"Failed to save UI config: {e}", exc_info=True)
+    except ValueError as e:
+        # P7: keep useful 400 validation messages
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(e)},
+        )
+    except Exception:
+        log.error("Failed to save UI config", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "message": f"Failed to save configuration: {e}"},
+            content={"status": "error", "message": "Failed to save configuration due to an internal error."},
         )
 
 
@@ -1187,10 +1253,10 @@ async def chat(body: dict = Body(...)):
             "reply": reply,
             "messages": messages_out,
         })
-    except Exception as e:
+    except Exception:
         log.exception("Chat error")
         return JSONResponse(status_code=500, content={
-            "error": f"Chat failed: {e}",
+            "error": "Chat failed due to an internal error.",
             "session_id": session_id,
             "reply": "Sorry, I encountered an error. Please check that Ollama is running and the director model is available.",
         })
@@ -1230,9 +1296,9 @@ async def run_preflight_endpoint():
                 "detail": c.message,
             })
         return {"all_ok": result.all_ok, "checks": checks}
-    except Exception as e:
+    except Exception:
         log.exception("Preflight error")
-        return JSONResponse(status_code=500, content={"error": f"Preflight failed: {e}"})
+        return JSONResponse(status_code=500, content={"error": "Preflight check encountered an unexpected error."})
 
 
 # -------------------- Artifacts Endpoints --------------------

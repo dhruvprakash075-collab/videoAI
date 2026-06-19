@@ -33,6 +33,17 @@ def cleanup_pipeline():
 
 
 @pytest.fixture(autouse=True)
+def mock_torch(monkeypatch):
+    """Mock torch globally in test_image_gen_extended to avoid slow driver loading."""
+    fake_torch = MagicMock()
+    fake_torch.bfloat16 = "bf16"
+    fake_torch.cuda.is_available.return_value = False
+    fake_torch.inference_mode = MagicMock()
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    yield fake_torch
+
+
+@pytest.fixture(autouse=True)
 def reset_ip_adapter_singleton():
     """Reset the IP-Adapter singleton so tests don't share state."""
     from video.image_gen import ip_adapter
