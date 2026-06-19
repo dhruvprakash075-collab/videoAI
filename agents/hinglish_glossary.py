@@ -178,7 +178,10 @@ HINGLISH_GLOSSARY: dict[str, str] = {
 }
 
 # @@N@@ token style verified to survive sarvam-translate (diagnostic Test B).
-_TOKEN_RE = re.compile(r"@@(\d+)@@")
+# Restore is tolerant: accept Devanagari digits (०-९) and stray spaces that a
+# translator might introduce inside a token, so a token can never silently leak.
+_TOKEN_RE = re.compile(r"@@\s*([0-9\u0966-\u096f]+)\s*@@")
+_TOKEN_ASCII_DIGITS = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
 # Match runs of latin letters (allow internal apostrophe/hyphen).
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 
@@ -220,12 +223,18 @@ def protect_hinglish(text: str) -> tuple[str, dict[str, str]]:
 
 
 def restore_hinglish(text: str, token_map: dict[str, str]) -> str:
-    """Swap @@N@@ tokens back to their Devanagari spellings."""
+    """Swap @@N@@ tokens back to their Devanagari spellings.
+
+    Tolerates Devanagari digits / inner spaces that a translator might inject;
+    the digits captured by _TOKEN_RE are normalized back to ASCII before lookup
+    so a token can never be left unrendered in the final narration.
+    """
     if not token_map:
         return text
 
     def _sub(m: re.Match) -> str:
-        return token_map.get(f"@@{m.group(1)}@@", m.group(0))
+        n = m.group(1).translate(_TOKEN_ASCII_DIGITS)
+        return token_map.get(f"@@{n}@@", m.group(0))
 
     return _TOKEN_RE.sub(_sub, text)
 

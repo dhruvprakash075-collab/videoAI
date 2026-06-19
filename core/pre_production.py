@@ -59,13 +59,18 @@ def _deep_merge(base: dict, override: dict) -> dict:
 def _normalize_hindi_for_tts(text: str) -> str:
     """Normalize unsupported Hindi characters before TTS synthesis.
 
-    Supertonic ONNX model may not support: ऋ, ॠ, ऌ.
-    Replace with common equivalents.
+    Supertonic ONNX model may not support: ऋ, ॠ, ऌ, and the English-loanword
+    "candra" vowels ॉ/ऑ (candra-O) and ॅ/ऍ (candra-E). Replace with the closest
+    standard, pronounceable equivalents so Hinglish words still speak correctly.
     """
     _map = {
         '\u090b': '\u0930\u093f',  # ऋ → रि
         '\u0960': '\u0930\u0940',  # ॠ → री
         '\u090c': '\u0932\u093f',  # ऌ → लि
+        '\u0949': '\u094b',        # ॉ (candra-O sign) → ो   (प्रॉब्लम → प्रोब्लम)
+        '\u0911': '\u0913',        # ऑ (candra-O independent) → ओ  (ऑफिस → ओफिस)
+        '\u0945': '\u0947',        # ॅ (candra-E sign) → े
+        '\u090d': '\u090f',        # ऍ (candra-E independent) → ए
     }
     for _old, _new in _map.items():
         text = text.replace(_old, _new)
