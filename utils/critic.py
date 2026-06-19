@@ -25,10 +25,10 @@ incorporates :attr:`SegmentState.critic_feedback` into its prompt.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
+
+from utils.utils import extract_json
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ def _score_from_dict(data: dict) -> CriticScore:
 
 
 def parse_critic_json(raw: str) -> CriticScore | None:
-    """Multi-strategy JSON extraction (mirrors story_planner / source_splitter).
+    """Extract CriticScore from JSON.
 
     Returns ``None`` on any failure. The returned :class:`CriticScore` has
     individual dimensions clamped to ``[0, 20]``.
@@ -166,37 +166,13 @@ def parse_critic_json(raw: str) -> CriticScore | None:
         return None
 
     try:
-        data = json.loads(raw)
+        data = extract_json(raw)
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+            data = data[0]
         if isinstance(data, dict):
             return _score_from_dict(data)
-    except json.JSONDecodeError:
+    except Exception:
         pass
-
-    depth = 0
-    start = -1
-    for i, ch in enumerate(raw):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidate = raw[start : i + 1]
-                try:
-                    data = json.loads(candidate)
-                    if isinstance(data, dict):
-                        return _score_from_dict(data)
-                except json.JSONDecodeError:
-                    start = -1
-
-    for match in re.finditer(r"\{[^{}]*\}", raw, re.DOTALL):
-        try:
-            data = json.loads(match.group())
-            if isinstance(data, dict) and "hook" in data:
-                return _score_from_dict(data)
-        except json.JSONDecodeError:
-            continue
 
     return None
 

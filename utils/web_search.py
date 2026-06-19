@@ -230,21 +230,13 @@ def _search_wikipedia(query: str) -> list[dict]:
 def _search_duckduckgo(query: str) -> list[dict]:
     """Search DuckDuckGo via HTML endpoint (API was deprecated in 2024)."""
     data = urllib.parse.urlencode({"q": query}).encode("utf-8")
+    headers = {**_HEADERS, "Content-Type": "application/x-www-form-urlencoded"}
 
     results = []
     try:
-        req = urllib.request.Request(
-            _DDG_HTML,
-            data=data,
-            headers={
-                **_HEADERS,
-                "Accept": "text/html",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
+        req = urllib.request.Request(_DDG_HTML, data=data, headers=headers)
         # P3-17 fix: urlopen RAISES urllib.error.HTTPError on 403 — it never returns
-        # a response with status 403.  Catch the exception and retry on 403.
-        # Classification: fixed trusted public API (DuckDuckGo HTML endpoint)
+        # a response object with .status == 403. Retry once after a short delay.
         try:
             resp_ctx = urllib.request.urlopen(req, timeout=10)
         except urllib.error.HTTPError as e:
@@ -253,23 +245,16 @@ def _search_duckduckgo(query: str) -> list[dict]:
                 import time
 
                 time.sleep(3)
-                req2 = urllib.request.Request(
-                    _DDG_HTML,
-                    data=data,
-                    headers={
-                        **_HEADERS,
-                        "Accept": "text/html",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                )
+                req2 = urllib.request.Request(_DDG_HTML, data=data, headers=headers)
                 resp_ctx = urllib.request.urlopen(req2, timeout=10)
             else:
                 raise
+
         with resp_ctx as resp:
-            html_text = resp.read().decode("utf-8", errors="replace")
-            if "captcha" in html_text.lower() or "g-recaptcha" in html_text.lower():
-                log.warning("DDG CAPTCHA detected — skipping DDG this run")
-                return results
+            html_text = resp.read().decode("utf-8", errors="ignore")
+        if "captcha" in html_text.lower() or "g-recaptcha" in html_text.lower():
+            log.warning("DDG CAPTCHA detected — skipping DDG this run")
+            return results
 
         soup = BeautifulSoup(html_text, "html.parser")
         result_divs = (

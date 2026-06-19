@@ -169,6 +169,18 @@ def enrich_prompts(
                 else:
                     memory_identity_map[owner] = desc_to_add
 
+    char_desc_patterns = [
+        re.compile(re.escape(desc), re.IGNORECASE) for desc in char_descriptions if desc
+    ]
+    char_name_patterns = [
+        re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE) for name in char_names if name
+    ]
+    char_key_patterns = {}
+    for c_key, c_data in chars.items():
+        name = c_data.get("name", "")
+        if name and name.lower() not in _STOP_WORDS and len(name) > 3:
+            char_key_patterns[c_key] = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
+
     enriched = []
     for i, prompt in enumerate(prompts):
         cp = {}
@@ -193,11 +205,9 @@ def enrich_prompts(
         if max_weight < 0.3:
             move = f"wide establishing shot of the environment, sweeping landscape, panoramic view, {camera}"
             # Strip ALL character details to ensure pure environmental focus
-            for desc in char_descriptions:
-                pattern = re.compile(re.escape(desc), re.IGNORECASE)
+            for pattern in char_desc_patterns:
                 prompt = pattern.sub("grand scenery", prompt)
-            for name in char_names:
-                pattern = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
+            for pattern in char_name_patterns:
                 prompt = pattern.sub("empty landscape", prompt)
         elif max_weight < 0.7:
             move = f"medium shot, character in environment, {camera}"
@@ -206,13 +216,11 @@ def enrich_prompts(
 
         # If a specific character's weight is < 0.3 but others are present, strip them so they don't appear
         if max_weight >= 0.3:
-            for c_key, c_data in chars.items():
+            for c_key in chars:
                 cw = cp.get(c_key, 0.0)
                 if cw < 0.3:
-                    name = c_data.get("name", "")
-                    # P1-12 fix: skip stop-words/articles; use full name with word-boundary regex only
-                    if name and name.lower() not in _STOP_WORDS and len(name) > 3:
-                        pattern = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
+                    pattern = char_key_patterns.get(c_key)
+                    if pattern:
                         prompt = pattern.sub("someone", prompt)
 
         # Vary camera slightly for first/last frames if no presence map was provided (backward compatibility)

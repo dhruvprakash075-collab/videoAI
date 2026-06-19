@@ -365,10 +365,28 @@ def get_audio_duration(audio_path: Path) -> float:
         return 30.0
 
 
+def extract_json(text: str) -> dict | list:
+    """Extract and parse the first JSON object or array found in text.
+
+    Uses json.JSONDecoder().raw_decode() scanning from each possible '{' or '['.
+    Supports both objects and arrays. Raises ValueError if no JSON can be decoded.
+    """
+    decoder = json.JSONDecoder()
+    for i, char in enumerate(text):
+        if char in ('{', '['):
+            try:
+                obj, _idx = decoder.raw_decode(text[i:])
+                return obj
+            except json.JSONDecodeError:
+                continue
+    raise ValueError("No valid JSON object or array could be decoded from the text.")
+
+
 # Re-export config functions for convenience
 __all__ = [
     "_safe_filename",
     "build_prompts",
+    "extract_json",
     "get_audio_duration",
     "get_character",
     "load_config",

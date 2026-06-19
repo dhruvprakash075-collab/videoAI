@@ -262,3 +262,23 @@ def test_get_audio_duration_bad_json(tmp_path: Path):
         dur = get_audio_duration(fake_audio)
     # Missing duration key falls back to 30
     assert dur == 30.0
+
+
+def test_extract_json_success():
+    from utils.utils import extract_json
+    # Test simple object
+    assert extract_json('some text {"key": "value"} other text') == {"key": "value"}
+    # Test simple array
+    assert extract_json('some text [1, 2, "three"] other text') == [1, 2, "three"]
+    # Test braces inside strings
+    assert extract_json('{"key": "value with } and { inside"}') == {"key": "value with } and { inside"}
+    # Test nested object
+    assert extract_json('{"nested": {"inner": [1, 2]}}') == {"nested": {"inner": [1, 2]}}
+
+
+def test_extract_json_failure():
+    from utils.utils import extract_json
+    with pytest.raises(ValueError, match="No valid JSON object or array could be decoded"):
+        extract_json("no json here")
+    with pytest.raises(ValueError, match="No valid JSON object or array could be decoded"):
+        extract_json('{"key": ')

@@ -30,10 +30,11 @@ which is mockable via :func:`split_source` injection (see tests).
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
+
+from utils.utils import extract_json
 
 log = logging.getLogger(__name__)
 
@@ -234,33 +235,16 @@ def _index(chunks: list[SegmentChunk]) -> list[SegmentChunk]:
 
 
 def _parse_llm_chunks(raw: str, expected: int) -> list[dict] | None:
-    """Multi-strategy JSON extraction (mirrors story_planner pattern)."""
+    """Extract list from JSON response.
+    """
     if not raw or not raw.strip():
         return None
     try:
-        data = json.loads(raw)
+        data = extract_json(raw)
         if isinstance(data, list):
             return data[:expected] if len(data) >= expected else None
-    except json.JSONDecodeError:
+    except Exception:
         pass
-
-    depth = 0
-    start = -1
-    for i, ch in enumerate(raw):
-        if ch == "[":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidate = raw[start : i + 1]
-                try:
-                    data = json.loads(candidate)
-                    if isinstance(data, list) and len(data) >= expected:
-                        return data[:expected]
-                except json.JSONDecodeError:
-                    start = -1
     return None
 
 

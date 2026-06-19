@@ -20,10 +20,11 @@ rendered and must not fail the upload.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import TypedDict
+
+from utils.utils import extract_json
 
 log = logging.getLogger(__name__)
 
@@ -234,35 +235,16 @@ def _fallback_metadata(
 
 
 def _parse_seo_response(raw: str) -> dict | None:
-    """Multi-strategy JSON extraction (mirrors story_planner / source_splitter /
-    critic). Returns the dict or ``None`` on any failure.
+    """Extract dict from JSON response.
     """
     if not raw or not raw.strip():
         return None
     try:
-        data = json.loads(raw)
+        data = extract_json(raw)
         if isinstance(data, dict):
             return data
-    except json.JSONDecodeError:
+    except Exception:
         pass
-
-    depth = 0
-    start = -1
-    for i, ch in enumerate(raw):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidate = raw[start : i + 1]
-                try:
-                    data = json.loads(candidate)
-                    if isinstance(data, dict):
-                        return data
-                except json.JSONDecodeError:
-                    start = -1
     return None
 
 

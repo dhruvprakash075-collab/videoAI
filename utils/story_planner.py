@@ -1,8 +1,8 @@
 """story_planner.py - Plan multi-segment story outline and build segment prompts."""
 
-import json
 import logging
-import re
+
+from utils.utils import extract_json
 
 # Module-level flag: set True when _default_outline() is called (degraded fallback).
 # Read by plan_outline() in pre_production.py to log degradation.
@@ -295,57 +295,11 @@ def build_segment_prompt(
 
 def _parse_outline(raw: str, expected: int) -> list[dict]:
     """Parse JSON outline from LLM response with fallback.
-
-    Uses bracket depth tracking to find the outermost JSON array,
-    which correctly handles nested arrays like char_presence.
-    Accepts outlines within 2 of expected length to be lenient.
     """
     try:
-        # Clean markdown code blocks if present
-        clean_raw = raw.strip()
-        if clean_raw.startswith("```"):
-            lines = clean_raw.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            clean_raw = "\n".join(lines).strip()
-
-        # Try direct JSON parsing
-        try:
-            data = json.loads(clean_raw)
-            if isinstance(data, list) and abs(len(data) - expected) <= 2:
-                return data[:expected] if len(data) > expected else data
-        except json.JSONDecodeError:
-            pass
-
-        # Use bracket depth tracking to find outermost JSON array
-        depth = 0
-        start = -1
-        for i, ch in enumerate(raw):
-            if ch == "[":
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == "]":
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    candidate = raw[start : i + 1]
-                    try:
-                        data = json.loads(candidate)
-                        if isinstance(data, list) and abs(len(data) - expected) <= 2:
-                            return data[:expected] if len(data) > expected else data
-                    except json.JSONDecodeError:
-                        start = -1
-
-        # Fall back to regex search for any JSON array
-        for match in re.finditer(r"\[.*\]", raw, re.DOTALL):
-            try:
-                data = json.loads(match.group())
-                if isinstance(data, list) and abs(len(data) - expected) <= 2:
-                    return data[:expected] if len(data) > expected else data
-            except json.JSONDecodeError:
-                continue
+        data = extract_json(raw)
+        if isinstance(data, list) and abs(len(data) - expected) <= 2:
+            return data[:expected] if len(data) > expected else data
     except Exception as e:
         log.warning(f"Outline parse failed: {e}")
 

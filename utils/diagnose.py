@@ -236,7 +236,6 @@ def diagnose_audio(path: Path):
         streams = data.get("streams", [])
 
         duration = float(format_info.get("duration", 0.0))
-        int(format_info.get("bit_rate", 0)) if format_info.get("bit_rate") else 0
 
         log_success("Audio file probed successfully.")
         print(f"  - Duration:   {BOLD}{duration:.2f} seconds{RESET}")
