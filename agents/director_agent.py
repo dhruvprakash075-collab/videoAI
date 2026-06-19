@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 # Re-exports for backward compat (UIState + Devanagari helper live in ui_state.py).
 from utils.utils import extract_json
 
+from .hinglish_glossary import hinglish_ratio, protect_hinglish, restore_hinglish
 from .llm_client import DirectorLlmClient
 from .ui_state import UIState, _devanagari_ratio
 
@@ -2162,15 +2163,17 @@ class DirectorAgent:
     def translate_to_devanagari(
         self, english_script: str, segment_plan: dict, context: str = ""
     ) -> str:
-        """Translate English narration to MODERN spoken Hindi (Devanagari).
+        """Translate English narration to MODERN spoken Hindi (Devanagari),
+        with ~25-30% common English words kept as Hinglish (English written in
+        Devanagari, e.g. problem -> प्रॉब्लम) via a static glossary.
 
-        IMPORTANT: the translator model (sarvam-translate) is a pure translation
-        model -- it translates EVERYTHING in the user message. So we send ONLY the
-        English script as the user content and put all steering in the system
-        message. Putting rules/examples/context in the user content makes the model
-        translate the instructions too (the old ~2700-char "blob" bug).
+        sarvam-translate is a pure translation model -- it translates EVERYTHING
+        in the user message. So we send ONLY the (token-protected) English script
+        as user content and keep all steering in the system message.
 
-        Returns Devanagari Hindi, or the original English on failure.
+        Pipeline: protect glossary words as @@N@@ tokens -> translate -> restore
+        tokens to their Devanagari spellings. Tokens survive sarvam untouched
+        (verified by diagnostic). Returns Devanagari Hindi, or English on failure.
         """
         mood = segment_plan.get("mood", "mysterious")
 
@@ -2179,28 +2182,36 @@ class DirectorAgent:
             "for YouTube narration -- the way young people actually talk today. "
             "Use simple common words, NOT literary, Sanskritized, or archaic Hindi. "
             "Write everything in Devanagari script. Preserve dramatic punctuation "
-            "(... ! ? --). Output ONLY the translation, no commentary, no labels."
+            "(... ! ? --). "
+            "Keep any token like @@0@@ EXACTLY as-is -- do not translate, renumber, "
+            "add spaces inside, or alter these tokens in any way. "
+            "Output ONLY the translation, no commentary, no labels."
         )
 
+        # Protect glossary words BEFORE translation so they return as
+        # English-in-Devanagari (Hinglish) rather than literary Hindi.
+        protected, token_map = protect_hinglish(english_script)
         log.info(
             f"[DIRECTOR] Translating segment to Devanagari "
-            f"(mood={mood}, {len(english_script)} chars)..."
+            f"(mood={mood}, {len(english_script)} chars, "
+            f"{len(token_map)} Hinglish words ~{hinglish_ratio(english_script, token_map):.0%})..."
         )
 
-        try:
-            # User content is ONLY the script to translate.
-            translated = self._call_ollama_chat(
-                english_script,
-                model_type="translator",
-                system_msg=system_msg,
+        def _translate_once(sys_msg: str) -> str:
+            raw = self._call_ollama_chat(
+                protected, model_type="translator", system_msg=sys_msg
             )
+            if not raw:
+                return ""
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            raw = re.sub(r"<\|.*?\|>", "", raw).strip()
+            return restore_hinglish(raw, token_map)
+
+        try:
+            translated = _translate_once(system_msg)
             if not translated:
                 log.warning("[DIRECTOR] Translation returned empty -- using original English")
                 return english_script
-
-            # Clean any stray tags
-            translated = re.sub(r"<think>.*?</think>", "", translated, flags=re.DOTALL).strip()
-            translated = re.sub(r"<\|.*?\|>", "", translated).strip()
 
             # Validate: at least some Devanagari characters present (U+0900-U+097F)
             devanagari_chars = sum(1 for c in translated if "\u0900" <= c <= "\u097f")
@@ -2232,20 +2243,13 @@ class DirectorAgent:
                 )
                 _stricter_sys = system_msg + (
                     " The previous attempt left English (Latin) letters in the output. "
-                    "Transliterate EVERY English word phonetically into Devanagari. "
-                    "Output ONLY Devanagari."
+                    "Transliterate EVERY remaining English word phonetically into "
+                    "Devanagari, but STILL keep the @@N@@ tokens exactly as-is. "
+                    "Output ONLY Devanagari and the tokens."
                 )
                 try:
-                    _candidate = self._call_ollama_chat(
-                        english_script,
-                        model_type="translator",
-                        system_msg=_stricter_sys,
-                    )
+                    _candidate = _translate_once(_stricter_sys)
                     if _candidate:
-                        _candidate = re.sub(
-                            r"<think>.*?</think>", "", _candidate, flags=re.DOTALL
-                        ).strip()
-                        _candidate = re.sub(r"<\|.*?\|>", "", _candidate).strip()
                         _cand_ratio = _devanagari_ratio(_candidate)
                         if _cand_ratio > best_ratio:
                             best, best_ratio = _candidate, _cand_ratio
