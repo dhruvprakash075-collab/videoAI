@@ -17,6 +17,9 @@ from pathlib import Path
 import _pytest.pathlib as _pp
 import pytest
 
+# ponytail: prevent manual live tests from being collected
+collect_ignore = ["manual_integration_test.py", "manual_integration_test_b.py"]
+
 
 def pytest_addoption(parser):
     parser.addoption(

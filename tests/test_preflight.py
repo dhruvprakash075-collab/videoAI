@@ -1,6 +1,7 @@
 """Tests for utils.preflight."""
 
 import time
+from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
 
 from utils.preflight import (
@@ -13,6 +14,26 @@ from utils.preflight import (
     _timed,
     run_preflight,
 )
+
+
+@contextmanager
+def _mock_side_effecting_preflight_checks():
+    """ponytail: aggregate preflight tests must not touch local services/hardware."""
+    checks = [
+        ("utils.preflight._check_ollama", ("ok", "mocked")),
+        ("utils.preflight._check_director_model", ("ok", "mocked")),
+        ("utils.preflight._check_vram", ("skip", "mocked")),
+        ("utils.preflight._check_disk", ("ok", "mocked")),
+        ("utils.preflight._check_supertonic_voice", ("skip", "mocked")),
+        ("utils.preflight._check_layered_v3", ("skip", "mocked")),
+        ("utils.preflight._check_qwen_edit", ("skip", "mocked")),
+        ("utils.preflight._check_ffmpeg", ("ok", "mocked")),
+        ("utils.preflight._check_playwright", ("skip", "mocked")),
+    ]
+    with ExitStack() as stack:
+        for target, result in checks:
+            stack.enter_context(patch(target, return_value=result))
+        yield
 
 
 class TestPreflightCheck:
@@ -135,32 +156,32 @@ class TestQwenEditCheck:
 
 class TestRunPreflight:
     def test_returns_result_object(self):
-        result = run_preflight(config={}, quiet=True)
+        with _mock_side_effecting_preflight_checks():
+            result = run_preflight(config={}, quiet=True)
         assert isinstance(result, PreflightResult)
-        # Should have at least python + ffmpeg checks. Ollama/VRAM/disk may
-        # be ok/warn/fail/skip depending on environment.
         assert len(result.checks) >= 2
 
     def test_quiet_does_not_print(self, capsys):
-        run_preflight(config={}, quiet=True)
+        with _mock_side_effecting_preflight_checks():
+            run_preflight(config={}, quiet=True)
         captured = capsys.readouterr()
         assert "Preflight" not in captured.out
 
     def test_non_quiet_prints_summary(self, capsys):
-        run_preflight(config={}, quiet=False)
+        with _mock_side_effecting_preflight_checks():
+            run_preflight(config={}, quiet=False)
         captured = capsys.readouterr()
         assert "Preflight" in captured.out
 
     def test_fail_fast_stops_on_first_failure(self):
         """If a check fails, fail_fast should return after that one."""
-        # Make the FIRST check (python) fail so we can prove fail_fast halts.
         with patch("utils.preflight._check_python", return_value=("fail", "wrong python")):
             result = run_preflight(config={}, fail_fast=True, quiet=True)
-            # Only the python check should have run, since it's first.
             assert len(result.checks) == 1
             assert result.checks[0].name == "python"
             assert result.checks[0].status == "fail"
 
     def test_includes_qwen_edit_check(self):
-        result = run_preflight(config={}, quiet=True)
+        with _mock_side_effecting_preflight_checks():
+            result = run_preflight(config={}, quiet=True)
         assert any(check.name == "qwen_edit" for check in result.checks)
