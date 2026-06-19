@@ -283,9 +283,10 @@ class TestOmnivoiceSynthesizeSentenceGap:
         monkeypatch.setitem(sys.modules, "torch", MagicMock())
         monkeypatch.setitem(sys.modules, "torchaudio", MagicMock())
 
-        from audio.omnivoice_worker import _synthesize
         import numpy as np
         import soundfile as sf
+
+        from audio.omnivoice_worker import _synthesize
 
         # Mock the OmniVoice model
         mock_model = MagicMock()
@@ -312,19 +313,19 @@ class TestOmnivoiceSynthesizeSentenceGap:
             # 48000 - 4800 = 43200 samples
             out_path_200 = tmp_path / "out_200.wav"
             _synthesize(mock_model, text, str(out_path_200), sentence_gap_ms=200)
-            audio_200, sr_200 = sf.read(str(out_path_200))
+            audio_200, _sr_200 = sf.read(str(out_path_200))
             assert len(audio_200) == 43200
 
             # Case 3: sentence_gap_ms=None (default to 200, so 43200 samples)
             out_path_none = tmp_path / "out_none.wav"
             _synthesize(mock_model, text, str(out_path_none), sentence_gap_ms=None)
-            audio_none, sr_none = sf.read(str(out_path_none))
+            audio_none, _sr_none = sf.read(str(out_path_none))
             assert len(audio_none) == 43200
 
             # Case 4: sentence_gap_ms=-50 (negative, should clamp to 0, so 48000 samples)
             out_path_neg = tmp_path / "out_neg.wav"
             _synthesize(mock_model, text, str(out_path_neg), sentence_gap_ms=-50)
-            audio_neg, sr_neg = sf.read(str(out_path_neg))
+            audio_neg, _sr_neg = sf.read(str(out_path_neg))
             assert len(audio_neg) == 48000
 
 

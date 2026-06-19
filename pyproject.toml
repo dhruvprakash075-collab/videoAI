@@ -8,7 +8,7 @@
 name = "video-ai"
 version = "0.0.0"
 description = "Local video-generation pipeline (see AGENTS.md)"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.10,<3.14"
 
 [tool.ruff]
 # Match the de-facto line length in this codebase (existing modules use ~100-110).
@@ -28,6 +28,8 @@ extend-exclude = [
     "node_modules",
     "dashboard",          # has its own ESLint setup (npm run lint)
     "dashboard/**",
+    "external",           # vendored/untracked tooling (ponytail etc.)
+    "external/**",
     "ffmpeg-8.1.1-essentials_build",
     "hf_cache",
     "studio_outputs",     # runtime artifacts
@@ -261,7 +263,7 @@ omit = [
     "audio/*_worker.py",
     "utils/local_ui.py",
     "utils/diagnose.py",
-    "utils/map_codebase.py",
+    "scripts/map_codebase.py",
     "utils/media_analyzer.py",
 ]
 branch = true
@@ -303,7 +305,7 @@ module = [
     "utils.emotion_control",
 
     "utils.media_analyzer",
-    "utils.map_codebase",
+    "scripts.map_codebase",
     "utils.concurrency",
     "utils.source_splitter",
     "utils.context_manager",

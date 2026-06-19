@@ -133,7 +133,7 @@ class DirectorLlmClient:
             else "http://localhost:11434"
         )
         # SSRF: validate local service URL before constructing request
-        from utils.url_security import validate_service_base_url, build_validated_url
+        from utils.url_security import build_validated_url, validate_service_base_url
 
         validated_host = validate_service_base_url(host)
         model = self._resolve_model()
