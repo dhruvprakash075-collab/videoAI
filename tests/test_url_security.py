@@ -1,5 +1,6 @@
 import socket
 import sys
+import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -76,7 +77,7 @@ class TestSafeUrlOpen:
                 safe_url_open("https://example.com/page", expected_content_type="image/png")
 
     def test_relative_redirect_resolved_before_validation(self):
-        """Verify that safe_url_open's redirect handler resolves relative URLs with urljoin before validation."""
+        """Verify that safe_url_open's redirect handler validates the resolved absolute redirect URL."""
         captured_handlers = []
 
         def fake_build_opener(*handlers):
@@ -96,16 +97,20 @@ class TestSafeUrlOpen:
         ):
             safe_url_open("https://example.com/start")
 
-        redirect_handler = captured_handlers[0]
+        redirect_handler = captured_handlers[0]()
+        fake_req = urllib.request.Request("https://example.com/old/page")
 
-        fake_req = MagicMock()
-        fake_req.full_url = "https://example.com/old/page"
+        with patch("utils.url_security.validate_source_url") as validate_redirect:
+            redirect_handler.redirect_request(
+                fake_req,
+                None,
+                302,
+                "Found",
+                {},
+                "/image.png",
+            )
 
-        with patch("utils.url_security.validate_source_url", return_value="https://example.com/image.png"):
-            import inspect
-            src = inspect.getsource(redirect_handler.redirect_request)
-            assert "urljoin(req.full_url, newurl)" in src
-            assert "validate_source_url(resolved)" in src
+        validate_redirect.assert_called_with("https://example.com/image.png")
 
 
 class TestValidateLocalServiceBaseUrl:
