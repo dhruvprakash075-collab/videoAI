@@ -33,6 +33,8 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 # Re-exports for backward compat (UIState + Devanagari helper live in ui_state.py).
+from utils.utils import extract_json
+
 from .llm_client import DirectorLlmClient
 from .ui_state import UIState, _devanagari_ratio
 
@@ -118,46 +120,13 @@ class DirectorAgent:
             return fallback or {}
 
         try:
-            match = None
-
-            depth = 0
-
-            start = -1
-
-            for i, ch in enumerate(text):
-                if ch == "{":
-                    if depth == 0:
-                        start = i
-
-                    depth += 1
-
-                elif ch == "}":
-                    depth -= 1
-
-                    if depth == 0 and start >= 0:
-                        candidate = text[start : i + 1]
-
-                        try:
-                            json.loads(candidate)
-
-                            match = type("Match", (), {"group": lambda s, *a: candidate})()  # noqa: B023
-
-                            break
-
-                        except Exception:
-                            start = -1
-
-                            depth = 0
-
-            if match:
-                return json.loads(match.group(0))
-
-            return json.loads(text)
-
+            result = extract_json(text)
+            if isinstance(result, dict):
+                return result
         except Exception:
             log.debug("JSON parse failed, using fallback")
 
-            return fallback or {}
+        return fallback or {}
 
     # ── User Consultation ──
 
@@ -626,7 +595,7 @@ class DirectorAgent:
         import urllib.request as _ur
         host, timeout, _ = self.llm._ollama_opts()
         # SSRF: validate local service URL before constructing request
-        from utils.url_security import validate_service_base_url, build_validated_url
+        from utils.url_security import build_validated_url, validate_service_base_url
         validated_host = validate_service_base_url(host)
         model = self._resolve_model("director")
         url = build_validated_url(validated_host, "/api/chat")

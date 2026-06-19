@@ -876,7 +876,7 @@ def make_process_segment(
 
         _memory_items_for_image = []
         try:
-            _mem_data = mem.read()
+            _mem_data = state.get("memory_data") or mem.read()
             for _sk in ("project", "story"):
                 _items = _mem_data.get("memory_items", {}).get(_sk, [])
                 if isinstance(_items, list):
@@ -911,7 +911,10 @@ def make_process_segment(
 
         img_paths = [str(p) for p in images] if images else []
         cp_mgr.save(key, "images", {"data": img_paths})
-        return {"images": img_paths}
+        return {
+            "images": img_paths,
+            "enriched_prompts": enriched_prompts,
+        }
 
     def render_node(state: SegmentState) -> dict:
         i = state["i"]
@@ -943,6 +946,7 @@ def make_process_segment(
                 word_timestamps_json=Path(word_timestamps_json) if word_timestamps_json else None,
                 style=config.get("visual", {}).get("style", ""),
                 is_final=not (dry_run or preview_mode),
+                config=config,
             )
 
         cp_mgr.save(key, "video", {"data": str(mp4_path)})
@@ -1115,27 +1119,32 @@ def make_process_segment(
 
             _mem_items = []
             try:
-                _d = self.mem.read()
+                _d = state.get("memory_data") or self.mem.read()
                 for _sk in ("project", "story"):
                     _items = _d.get("memory_items", {}).get(_sk, [])
                     if isinstance(_items, list):
                         _mem_items.extend(_items)
-            except Exception:
+            except Exception as e:
+                from agents.director_agent import UIState as _UIState
+                _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
                 pass
 
-            raw_prompts = build_prompts(script, plan, self.config)
-            enrich_result = enrich_prompts(
-                raw_prompts, script, self.config, plan, memory_items=_mem_items
-            )
-            enriched_prompts = (
-                enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
-            )
+            enriched_prompts = state.get("enriched_prompts")
+            if not enriched_prompts:
+                raw_prompts = build_prompts(script, plan, self.config)
+                enrich_result = enrich_prompts(
+                    raw_prompts, script, self.config, plan, memory_items=_mem_items
+                )
+                enriched_prompts = (
+                    enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+                )
 
             results = []
             for idx, img_path in enumerate(images):
                 if idx >= len(enriched_prompts):
                     break
 
+                current_hash = _perceptual_hash(img_path)
                 prompt = enriched_prompts[idx]
                 cp = plan.get("char_presence", [])
                 frame_cp = cp[idx] if (isinstance(cp, list) and idx < len(cp)) else {}
@@ -1159,10 +1168,8 @@ def make_process_segment(
                         if frame_cp[dom_char] >= 0.3:
                             stored = self.mem._project.get_character_assets(dom_char)
                             stored_hash = (stored or {}).get("identity_hash", "")
-                            if stored_hash:
-                                current_hash = _perceptual_hash(img_path)
-                                if current_hash and current_hash != stored_hash:
-                                    is_important = True
+                            if stored_hash and current_hash and current_hash != stored_hash:
+                                is_important = True
                     except Exception:
                         pass
 
@@ -1206,7 +1213,7 @@ def make_process_segment(
                                             "trigger_word": f"{dom_char}_v1",
                                             "minimum_needed": 20,
                                         }
-                                    _id_hash = _perceptual_hash(img_path) or None
+                                    _id_hash = current_hash or None
                                     self.mem._project.record_asset_review(
                                         char_key=dom_char,
                                         asset_path=img_path,
@@ -1241,22 +1248,27 @@ def make_process_segment(
 
             _mem_items = []
             try:
-                _d = self.mem.read()
+                _d = state.get("memory_data") or self.mem.read()
                 for _sk in ("project", "story"):
                     _items = _d.get("memory_items", {}).get(_sk, [])
                     if isinstance(_items, list):
                         _mem_items.extend(_items)
-            except Exception:
+            except Exception as e:
+                from agents.director_agent import UIState as _UIState
+                _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
                 pass
-            raw_prompts = build_prompts(script, plan, self.config)
-            enrich_result = enrich_prompts(
-                raw_prompts, script, self.config, plan, memory_items=_mem_items
-            )
-            enriched_prompts = (
-                enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
-            )
 
-            current_mem = self.mem.read()
+            enriched_prompts = state.get("enriched_prompts")
+            if not enriched_prompts:
+                raw_prompts = build_prompts(script, plan, self.config)
+                enrich_result = enrich_prompts(
+                    raw_prompts, script, self.config, plan, memory_items=_mem_items
+                )
+                enriched_prompts = (
+                    enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+                )
+
+            current_mem = state.get("memory_data") or self.mem.read()
             ws_block = self.world_state.to_prompt_block()
 
             try:
@@ -1321,6 +1333,7 @@ def make_process_segment(
                 context = f"{ws_block}\n{build_context(mem.load(topic))}"
 
             # Inject persistent memory_items (from previous segments) into context
+            mem_data = {}
             try:
                 mem_data = mem.read()
                 all_items = []
@@ -1360,6 +1373,8 @@ def make_process_segment(
                         )
             except Exception as e:
                 log.warning(f"[DIRECTOR] Failed to inject memory items into context: {e}")
+                from agents.director_agent import UIState as _UIState
+                _UIState.add_degradation(i, "memory_context_injection", str(e))
 
             initial_state = {
                 "i": i,
@@ -1368,6 +1383,7 @@ def make_process_segment(
                 "rewrites_attempted": 0,
                 "aborted": False,
                 "skip": False,
+                "memory_data": mem_data,
             }
             if source_chunks and 0 <= (i - 1) < len(source_chunks):
                 initial_state["source_chunk"] = source_chunks[i - 1]
@@ -1387,24 +1403,24 @@ def make_process_segment(
                 except Exception:
                     pass
 
-            _UIState.segment_manifests[i] = {
+            _UIState.set_segment_manifest(i, {
                 "segment": i,
                 "status": "success",
                 "title": plan.get("title", f"Part {i}"),
                 "video_path": path_str,
                 "duration_seconds": duration_s,
-            }
+            })
 
         except Exception as e:
             log.error(f"Segment {i} failed: {e}", exc_info=True)
             from agents.director_agent import UIState as _UIState
 
-            _UIState.segment_manifests[i] = {
+            _UIState.set_segment_manifest(i, {
                 "segment": i,
                 "status": "error",
                 "reason": str(e),
                 "title": plan.get("title", f"Part {i}") if "plan" in locals() else f"Part {i}",
-            }
+            })
             if not resume:
                 raise
             log.info(f"  Skipping segment {i}, will resume from next")

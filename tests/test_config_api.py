@@ -144,6 +144,7 @@ class TestConfigAPI:
                 },
             )
 
+            assert response.status_code == 400
             data = response.json()
             assert "bonsai" in data.get("message", "").lower() or "comfyui" in data.get("message", "").lower()
 
@@ -165,6 +166,7 @@ class TestConfigAPI:
                 },
             )
 
+            assert response.status_code == 400
             data = response.json()
             assert "bonsai" in data.get("message", "").lower() or "none" in data.get("message", "").lower()
 

@@ -1098,9 +1098,14 @@ def test_pipeline_long_module_reload_spec_error():
     import importlib
     import sys
 
-    with patch("importlib.util.spec_from_file_location", return_value=None):
-        with pytest.raises(ImportError, match="Could not load concurrency module"):
-            importlib.reload(sys.modules["core.pipeline_long"])
+    import core.pipeline_long as pl
+    import utils.concurrency as uc
+
+    assert pl.global_scheduler is uc.global_scheduler
+
+    with patch("importlib.util.spec_from_file_location") as mock_spec:
+        importlib.reload(sys.modules["core.pipeline_long"])
+        assert not mock_spec.called
 
 
 def test_float_safe_ceil_segment_count():

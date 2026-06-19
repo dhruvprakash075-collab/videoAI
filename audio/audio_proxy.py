@@ -274,7 +274,7 @@ def _call_supertonic_worker(
     """
     super_cfg = {}
     with contextlib.suppress(FileNotFoundError):
-        super_cfg = load_config().get("tts", {}).get("supertonic", {})
+        super_cfg = _get_config().get("tts", {}).get("supertonic", {})
 
     voice = super_cfg.get("voice", "M1")
     steps = int(super_cfg.get("steps", 16))
@@ -554,7 +554,7 @@ def _call_omnivoice_worker(
     """
     omnivoice_cfg = {}
     with contextlib.suppress(FileNotFoundError):
-        omnivoice_cfg = load_config().get("tts", {}).get("omnivoice", {})
+        omnivoice_cfg = _get_config().get("tts", {}).get("omnivoice", {})
 
     speed = omnivoice_cfg.get("speed", 0.85)
     num_step = omnivoice_cfg.get("num_step", 24)
@@ -687,7 +687,7 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
 
     cfg = {}
     try:
-        cfg = load_config()
+        cfg = _get_config()
     except Exception as e:
         log.warning(f"Could not load config in translate_hinglish: {e}")
 
@@ -933,7 +933,7 @@ def rvc_convert(
     # Load RVC config
     rvc_cfg = {}
     with contextlib.suppress(FileNotFoundError):
-        rvc_cfg = load_config().get("rvc", {})
+        rvc_cfg = _get_config().get("rvc", {})
 
     if not rvc_cfg.get("enabled", False):
         log.info("RVC disabled in config — returning original audio")

@@ -76,7 +76,6 @@ def _default_config() -> dict:
         "models": {
             "director": "hermes-director",
             "writer": "zephyr-writer",
-            "script_gen": "ollama/coder",
         },
         "visual": {"num_scenes": 6, "style": "Gothic Horror, Dark Victorian Steampunk"},
         "tts": {"lang": "hi", "slow": False},

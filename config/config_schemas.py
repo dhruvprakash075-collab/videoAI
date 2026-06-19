@@ -189,9 +189,7 @@ class ScriptConfig(BaseModel):
     default_images_per_segment: int = Field(default=6, ge=1, le=30)
     max_images_per_segment: int = Field(default=8, ge=1, le=50)
     word_count_tolerance: float = 0.6
-    word_count_max_retries: int = 1
     writer_max_tokens: int = 1024
-    llm_word_fix: bool = False
     critic_enabled: bool = True
     critic_threshold: int = 60
     critic_max_rewrites: int = 2
@@ -239,7 +237,6 @@ class ModelsConfig(BaseModel):
     writer: str = "zephyr-writer"
     writer_adapt: str = "zephyr-writer"
     writer_scratch: str = "cra-guided-7b"
-    script_gen: str = "ollama/coder"
     image_engineer: str = "image-engineer"
     translator: str = "sarvam-translate"
 

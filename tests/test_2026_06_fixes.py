@@ -36,45 +36,45 @@ class TestP51CooldownRemaining:
     """P5-1: breaker exposes a thread-safe cooldown_remaining_s() method."""
 
     def test_method_exists(self):
-        from utils.ollama_client import _BreakerState
+        from utils.circuit_breaker import CircuitBreaker
 
-        assert hasattr(_BreakerState, "cooldown_remaining_s"), (
-            "_BreakerState is missing cooldown_remaining_s() (P5-1)"
+        assert hasattr(CircuitBreaker, "cooldown_remaining_s"), (
+            "CircuitBreaker is missing cooldown_remaining_s() (P5-1)"
         )
 
     def test_zero_when_closed(self):
-        from utils.ollama_client import _BreakerState
+        from utils.circuit_breaker import CircuitBreaker
 
-        b = _BreakerState(fails_threshold=3, cooldown_s=30)
+        b = CircuitBreaker("test", fails_threshold=3, cooldown_s=30)
         assert b.cooldown_remaining_s() == 0.0
 
     def test_returns_positive_when_open(self):
-        from utils.ollama_client import _BreakerState
+        from utils.circuit_breaker import CircuitBreaker
 
-        b = _BreakerState(fails_threshold=1, cooldown_s=30)
+        b = CircuitBreaker("test", fails_threshold=1, cooldown_s=30)
         b.record_failure()  # opens
         remaining = b.cooldown_remaining_s()
         assert 0.0 < remaining <= 30.0, f"expected (0, 30], got {remaining}"
 
     def test_returns_zero_again_in_half_open(self, monkeypatch):
-        from utils.ollama_client import _BreakerState
+        from utils.circuit_breaker import CircuitBreaker
 
         _time = [1000.0]
         monkeypatch.setattr(time, "time", lambda: _time[0])
 
-        b = _BreakerState(fails_threshold=1, cooldown_s=30)
+        b = CircuitBreaker("test", fails_threshold=1, cooldown_s=30)
         b.record_failure()
         _time[0] += 31.0
         b.allow_request()  # transitions OPEN → HALF_OPEN
         assert b.cooldown_remaining_s() == 0.0
 
     def test_decreases_monotonically(self, monkeypatch):
-        from utils.ollama_client import _BreakerState
+        from utils.circuit_breaker import CircuitBreaker
 
         _time = [1000.0]
         monkeypatch.setattr(time, "time", lambda: _time[0])
 
-        b = _BreakerState(fails_threshold=1, cooldown_s=5)
+        b = CircuitBreaker("test", fails_threshold=1, cooldown_s=5)
         b.record_failure()
         r1 = b.cooldown_remaining_s()
         _time[0] += 1.0
@@ -386,8 +386,9 @@ class TestBreakerOpenCarriesRealCooldown:
         from unittest.mock import patch
 
         from utils import crewai_breaker
+        from utils.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry
         from utils.crewai_breaker import BreakerOpen, guarded_crewai_kickoff
-        from utils.ollama_client import _BreakerState, reset_ollama_client
+        from utils.ollama_client import reset_ollama_client
 
         # Use a unique model name so no other test can collide
         model = f"regression-test-model-{time.time_ns()}"
@@ -395,12 +396,12 @@ class TestBreakerOpenCarriesRealCooldown:
         with patch(
             "utils.ollama_client.get_ollama_client", side_effect=RuntimeError("force fallback path")
         ):
-            # Clean any prior entry in the fallback dict for this model
-            crewai_breaker._fallback_breakers.pop(model, None)
+            # Clean any prior entry in the registry for this model
+            CircuitBreakerRegistry._breakers.pop(f"ollama:{model}", None)
             # Trip the breaker
             breaker = crewai_breaker._get_breaker(model, fails_threshold=1, cooldown_s=30)
             breaker.record_failure()
-            assert breaker.state == _BreakerState.OPEN
+            assert breaker.state == CircuitBreaker.OPEN
 
             class _FakeCrew:
                 pass
@@ -413,7 +414,7 @@ class TestBreakerOpenCarriesRealCooldown:
             f"BreakerOpen.cooldown_s expected (0, 30], got {exc_info.value.cooldown_s}"
         )
         # Cleanup
-        crewai_breaker._fallback_breakers.pop(model, None)
+        CircuitBreakerRegistry._breakers.pop(f"ollama:{model}", None)
         reset_ollama_client()
 
     def test_breaker_open_message_includes_remaining(self):

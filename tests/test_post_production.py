@@ -78,6 +78,7 @@ class TestWriteManifest:
         fake_uis.warning_count = 1
         fake_uis.vram_peaks = []
         fake_uis.segment_manifests = {"seg1": {"id": 1}}
+        fake_uis.list_segment_manifests.return_value = [{"id": 1}]
         fake_uis.run_id = "test-run-id"
         with patch.dict("sys.modules", {"agents.ui_state": MagicMock(UIState=fake_uis)}):
             pp.write_manifest("T", {}, _minimal_config(), 1, 1.0)
@@ -161,6 +162,22 @@ class TestWriteChapters:
         # format_chapters_time uses H:MM:SS format — first chapter always starts at 0
         assert "0:00" in result[0]
         assert "0:30" in result[1] or "30" in result[1]
+
+    def test_chapter_duration_matches_video_path_after_skipped_segment(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        final_out = tmp_path / "studio_outputs" / "skip" / "final.mp4"
+        final_out.parent.mkdir(parents=True)
+        seg1 = tmp_path / "segment_1.mp4"
+        seg3 = tmp_path / "segment_3.mp4"
+        manifests = [
+            {"segment": 1, "video_path": str(seg1), "duration_seconds": 10.0},
+            {"segment": 3, "video_path": str(seg3), "duration_seconds": 30.0},
+        ]
+
+        with patch("agents.ui_state.UIState.list_segment_manifests", return_value=manifests):
+            result = pp._write_chapters(_outline(2), [seg1, seg3], final_out, "skip")
+
+        assert "0:10" in result[1]
 
     def test_uses_key_event_if_no_title(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

@@ -1,7 +1,6 @@
 models:
   director: hermes-director
   writer: zephyr-writer
-  script_gen: ollama/coder
   writer_scratch: cra-guided-7b
   writer_adapt: zephyr-writer
   image_engineer: image-engineer
@@ -67,9 +66,7 @@ script:
   default_images_per_segment: 4
   max_images_per_segment: 8
   word_count_tolerance: 0.6
-  word_count_max_retries: 1
   writer_max_tokens: 1024
-  llm_word_fix: false
   critic_enabled: true
   critic_threshold: 60
   critic_max_rewrites: 2

@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
-import importlib.util
 import logging
 import os
 import sys
@@ -65,20 +64,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # ── Concurrency scheduler (reused everywhere) ────────────────────────────
-concurrency_path = os.path.join(os.path.dirname(__file__), "..", "utils", "concurrency.py")
-_spec = importlib.util.spec_from_file_location("concurrency", concurrency_path)
-if _spec is None or _spec.loader is None:
-    raise ImportError(f"Could not load concurrency module from {concurrency_path}")
-concurrency_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(concurrency_module)
-global_scheduler = concurrency_module.global_scheduler
-
-try:
-    from utils.concurrency import crewai_lock as _crewai_lock
-except Exception:
-    _crewai_lock = threading.RLock()
-
-
 # ── Re-exports for backwards compatibility (tests, TUI, etc.) ────────────
 from core.pre_production import (
     _deep_merge,
@@ -100,6 +85,7 @@ from core.segment_runner import (
     make_process_segment,
     set_director_abort,
 )
+from utils.concurrency import crewai_lock as _crewai_lock, global_scheduler
 
 # Legacy aliases (old private names that tests/scripts still import)
 _evict_ollama_models = evict_ollama_models

@@ -229,6 +229,7 @@ def render_with_assets(
     subtitle_script=None,
     word_timestamps_json=None,
     is_final=True,
+    config=None,
 ):
     """Render segment — tries Hyperframes first, falls back to assembler.
 
@@ -294,9 +295,9 @@ def render_with_assets(
 
     seg_match = re.search(r"segment_(\d+)", str(output_path))
     seg_num = int(seg_match.group(1)) if seg_match else 1
-    from config import load_config
-
-    config = load_config()
+    if config is None:
+        from config import load_config
+        config = load_config()
     return create_segment_mp4(
         seg_num,
         audio_path,

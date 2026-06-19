@@ -68,7 +68,7 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
         "warning_count": _UIS.warning_count,
         "vram_peaks": list(_UIS.vram_peaks),
         "degradations": list(_UIS.degradations),
-        "segments": list(_UIS.segment_manifests.values()),
+        "segments": _UIS.list_segment_manifests(),
         "config_snapshot": config,
     }
 
@@ -99,6 +99,14 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
 def _write_chapters(outline: list, mp4s: list, final_out: Path, topic: str) -> None:
     """Write YouTube chapter markers based on actual segment durations."""
     try:
+        from agents.ui_state import UIState as _UIS
+        manifests = _UIS.list_segment_manifests()
+        manifest_map = {
+            str(m.get("video_path")): m.get("duration_seconds", 0.0)
+            for m in manifests
+            if m.get("video_path")
+        }
+
         chapters_lines = []
         curr_time = 0.0
         for idx, plan in enumerate(outline):
@@ -107,7 +115,10 @@ def _write_chapters(outline: list, mp4s: list, final_out: Path, topic: str) -> N
             chapters_lines.append(f"{t_str} {title}")
             _mp4_idx = mp4s[idx] if idx < len(mp4s) else None
             if _mp4_idx is not None:
-                curr_time += get_video_duration(_mp4_idx)
+                dur = manifest_map.get(str(_mp4_idx), 0.0)
+                if dur <= 0.0:
+                    dur = get_video_duration(_mp4_idx)
+                curr_time += dur
 
         chapters_content = "\n".join(chapters_lines)
         chapters_dir = Path("studio_outputs") / _safe_filename(topic)
@@ -290,7 +301,20 @@ def finalize_production(
         log.debug(f"[QC] Could not read DecisionRecord for duration target: {_e}")
 
     log.info("Running quality checks...")
-    _actual_duration_s = sum(get_video_duration(p) for p in mp4s if p is not None)
+    from agents.ui_state import UIState as _UIS
+    manifests = _UIS.list_segment_manifests()
+    manifest_map = {
+        str(m.get("video_path")): m.get("duration_seconds", 0.0)
+        for m in manifests
+        if m.get("video_path")
+    }
+    _actual_duration_s = 0.0
+    for p in mp4s:
+        if p is not None:
+            dur = manifest_map.get(str(p), 0.0)
+            if dur <= 0.0:
+                dur = get_video_duration(p)
+            _actual_duration_s += dur
     qc = check_video(
         final_video,
         config,

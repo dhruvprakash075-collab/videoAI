@@ -112,6 +112,18 @@ class UIState:
                 cls.logs = cls.logs[-cls._log_maxlen :]
 
     @classmethod
+    def set_segment_manifest(cls, segment: int, manifest: dict) -> None:
+        """Set segment manifest in a thread-safe manner."""
+        with cls._log_lock:
+            cls.segment_manifests[segment] = manifest
+
+    @classmethod
+    def list_segment_manifests(cls) -> list[dict]:
+        """Return a snapshot list of segment manifests in a thread-safe manner."""
+        with cls._log_lock:
+            return list(cls.segment_manifests.values())
+
+    @classmethod
     def add_degradation(cls, seg: int, stage: str, reason: str) -> None:
         """Record a silent quality fallback (B2). Thread-safe append."""
         with cls._log_lock:

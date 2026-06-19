@@ -44,6 +44,10 @@ class SegmentState(TypedDict, total=False):
     # Memory Review
     memory_items: list[dict]
 
+    # Performance caching fields
+    enriched_prompts: list
+    memory_data: dict
+
     # Control signals
     aborted: bool
     skip: bool

@@ -218,3 +218,15 @@ def test_uistate_log_multiple_additions():
     UIState._uistate_log("second")
     UIState._uistate_log("third")
     assert UIState.logs == ["first", "second", "third"]
+
+
+def test_segment_manifests_thread_safety():
+    """Verify thread-safe set and list of segment manifests."""
+    UIState.reset_run("Test Topic")
+    UIState.set_segment_manifest(1, {"title": "Part 1", "status": "success"})
+    UIState.set_segment_manifest(2, {"title": "Part 2", "status": "error"})
+
+    manifests = UIState.list_segment_manifests()
+    assert len(manifests) == 2
+    assert {"title": "Part 1", "status": "success"} in manifests
+    assert {"title": "Part 2", "status": "error"} in manifests
