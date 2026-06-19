@@ -5,10 +5,19 @@ kwargs passed to it without triggering CrewAI's Pydantic Agent validation.
 """
 
 import contextlib
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def test_crewai_storage_defaults_to_project_cache():
+    import core.main  # noqa: F401
+
+    storage = Path(os.environ["CREWAI_STORAGE_DIR"])
+    assert storage.is_absolute()
+    assert storage.parts[-2:] == ("studio_cache", "crewai")
 
 
 def _make_cfg(**overrides):

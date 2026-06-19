@@ -19,6 +19,12 @@ except ImportError:
 os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
 os.environ["CREWAI_TELEMETRY_OPTOUT"] = "true"
+# CrewAI always initializes a SQLite task-output store, even when its response
+# cache is disabled. Keep it in the workspace unless the operator overrides it.
+os.environ.setdefault(
+    "CREWAI_STORAGE_DIR",
+    str(Path(__file__).resolve().parent.parent / "studio_cache" / "crewai"),
+)
 
 # Suppress automatic LLM retries the SAFE way. We can NOT pass num_retries=0 to
 # CrewAI's LLM() — its OpenAI provider forwards that kwarg to openai's
