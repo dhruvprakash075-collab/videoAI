@@ -45,12 +45,9 @@ def check_dependencies():
     except ImportError:
         missing.append("ollama")
 
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            log.warning("CUDA not available — image generation will be slow")
-    except ImportError:
+    # ponytail: dependency checks run during CLI/module startup; do not touch
+    # CUDA here because torch.cuda.is_available() can hang on flaky drivers.
+    if find_spec("torch") is None:
         missing.append("torch")
 
     try:
@@ -85,9 +82,5 @@ def apply_all_patches():
     log.info("Compatibility layer initialized")
 
 
-# P4-29 fix: guard the auto-apply so importing this module a second time
-# (e.g. from bootstrap AND from pipeline_long) does not re-run the patches.
-# The _video_ai_compat_applied flag inside apply_all_patches() already handles
-# this, but the bare call at module level was running before the flag check
-# on the very first import.  The guard is now inside apply_all_patches() itself.
-apply_all_patches()
+# Keep this module import-side-effect free. Entry points call apply_all_patches()
+# explicitly after setting any process environment they need.

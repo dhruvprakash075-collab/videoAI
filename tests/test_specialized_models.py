@@ -9,7 +9,6 @@ from utils.specialized_models import (
     _call_ollama,
     extract_world_state,
     generate_image_prompt,
-    generate_image_prompts_batch,
     review_script_fast,
 )
 
@@ -205,23 +204,7 @@ def test_generate_image_prompt_includes_characters():
     assert "young adventurer" in prompt
 
 
-# ── generate_image_prompts_batch ──────────────────────────────────────────────
 
-
-def test_generate_image_prompts_batch_basic():
-    with patch(
-        "utils.specialized_models.generate_image_prompt",
-        side_effect=lambda s, p, c, v: f"prompt for {p.get('mood', 'unknown')}",
-    ):
-        out = generate_image_prompts_batch(["s1", "s2"], [{"mood": "epic"}, {"mood": "horror"}])
-    assert len(out) == 2
-    assert "epic" in out[0]
-    assert "horror" in out[1]
-
-
-def test_generate_image_prompts_batch_empty():
-    out = generate_image_prompts_batch([], [])
-    assert out == []
 
 
 # ── extract_world_state ───────────────────────────────────────────────────────

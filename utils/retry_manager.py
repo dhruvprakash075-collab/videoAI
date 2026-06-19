@@ -144,26 +144,4 @@ def patch_retries() -> None:
         # generate_images: NOT wrapped — has internal 3-tier OOM handling (B14 fix)
         log.info("generate_images: NOT wrapped (has internal OOM recovery)")
 
-        # Sync patched references into pipeline_long namespace
-        try:
-            import sys
-
-            pl = None
-            for _mod_name in ("core.pipeline_long", "__main__", "pipeline_long"):
-                if _mod_name in sys.modules:
-                    pl = sys.modules[_mod_name]
-                    break
-            if pl:
-                if hasattr(pl, "tts_generate") and not hasattr(
-                    pl.tts_generate, "_is_retry_patched"
-                ):
-                    pl.tts_generate = audio_proxy.tts_generate
-                if hasattr(pl, "translate_hinglish") and not hasattr(
-                    pl.translate_hinglish, "_is_retry_patched"
-                ):
-                    pl.translate_hinglish = audio_proxy.translate_hinglish
-                log.info("Synced patched references into pipeline_long namespace")
-        except Exception as e:
-            log.warning(f"Could not sync pipeline_long namespace: {e}")
-
         log.info("Retry patching complete")

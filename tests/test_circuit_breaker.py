@@ -87,3 +87,17 @@ class TestCircuitBreaker:
         assert exc.cooldown_s == 30.0
         assert "ollama" in str(exc)
         assert "30" in str(exc)
+
+    def test_half_open_allows_exactly_one_probe_concurrent(self):
+        import concurrent.futures
+        cb = CircuitBreaker("test", fails_threshold=1, cooldown_s=60)
+        cb.record_failure()  # → OPEN
+        cb._open_until = 0.0  # cooldown elapsed
+
+        # Concurrently call allow_request
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(lambda _: cb.allow_request(), range(10)))
+
+        # Exactly one thread should have gotten True
+        assert results.count(True) == 1
+        assert results.count(False) == 9

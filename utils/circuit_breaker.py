@@ -60,6 +60,7 @@ class CircuitBreaker:
         self._state = self.CLOSED
         self._fail_count = 0
         self._open_until = 0.0
+        self._probe_issued = False
 
     # ── Query ──────────────────────────────────────────────────────────────
 
@@ -77,9 +78,13 @@ class CircuitBreaker:
                 if time.time() >= self._open_until:
                     self._state = self.HALF_OPEN
                     log.info("[CB:%s] → Half-Open (probe allowed)", self.name)
+                    self._probe_issued = True
                     return True
                 return False
             # HALF_OPEN: allow exactly one probe
+            if self._probe_issued:
+                return False
+            self._probe_issued = True
             return True
 
     def cooldown_remaining_s(self) -> float:
@@ -101,6 +106,7 @@ class CircuitBreaker:
             if self._state != self.CLOSED:
                 log.info("[CB:%s] → Closed (probe succeeded)", self.name)
             self._state = self.CLOSED
+            self._probe_issued = False
 
     def record_failure(self) -> None:
         with self._lock:
@@ -108,6 +114,7 @@ class CircuitBreaker:
             if self._state == self.HALF_OPEN:
                 self._state = self.OPEN
                 self._open_until = time.time() + self._cooldown_s
+                self._probe_issued = False
                 log.warning(
                     "[CB:%s] → Open (probe failed, cooldown %.0fs)",
                     self.name,
@@ -116,6 +123,7 @@ class CircuitBreaker:
             elif self._fail_count >= self._fails_thresh:
                 self._state = self.OPEN
                 self._open_until = time.time() + self._cooldown_s
+                self._probe_issued = False
                 log.warning(
                     "[CB:%s] → Open after %d failures (cooldown %.0fs)",
                     self.name,
@@ -129,6 +137,7 @@ class CircuitBreaker:
             self._state = self.CLOSED
             self._fail_count = 0
             self._open_until = 0.0
+            self._probe_issued = False
             log.info("[CB:%s] reset → Closed", self.name)
 
 

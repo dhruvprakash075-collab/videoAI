@@ -30,12 +30,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-
 from utils.circuit_breaker import BreakerOpen, CircuitBreakerRegistry
-
-# ── Module-level fallback breaker (used when OllamaClient singleton absent) ─
-_fallback_breakers: dict = {}
-_fallback_lock = threading.Lock()
 
 
 def _get_breaker(model: str, fails_threshold: int = 3, cooldown_s: float = 30.0):
@@ -105,7 +100,7 @@ def guarded_crewai_kickoff(
     """
     breaker = _get_breaker(model_name)
 
-    if breaker.state == "open":
+    if not breaker.allow_request():
         # Cooldown not elapsed — fail fast. Report the real remaining cooldown
         # (not a hardcoded 0) so callers can decide whether to back off, log it,
         # or fall back to a different model.

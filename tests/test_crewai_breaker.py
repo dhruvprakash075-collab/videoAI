@@ -11,13 +11,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import utils.crewai_breaker as breaker
-from utils.circuit_breaker import CircuitBreaker
+from utils.circuit_breaker import BreakerOpen, CircuitBreaker, CircuitBreakerRegistry
 
 
 @pytest.fixture(autouse=True)
 def clean_breakers():
-    """Clean the fallback breaker cache between tests."""
-    breaker._fallback_breakers.clear()
+    """Clean CircuitBreakerRegistry between tests."""
+    CircuitBreakerRegistry._breakers.clear()
 
 
 def test_get_breaker_ollama_client_success():
@@ -197,3 +197,58 @@ def test_guarded_ollama_call_exception():
     mock_client.generate.side_effect = Exception("Generate failed")
     with patch("utils.ollama_client.get_ollama_client", return_value=mock_client):
         assert breaker.guarded_ollama_call("p", "m") == ""
+
+
+def test_guarded_crewai_kickoff_blocks_duplicate_probes_half_open():
+    """Test guarded_crewai_kickoff calls allow_request() and blocks duplicate HALF_OPEN probes."""
+    model_name = "test-model-duplicate-probes"
+    crew_mock = MagicMock()
+
+    local_breaker = CircuitBreaker(model_name, fails_threshold=1, cooldown_s=30.0)
+    local_breaker.record_failure()  # OPEN
+    local_breaker._open_until = 0.0  # cooldown elapsed
+
+    import threading
+    first_call_started = threading.Event()
+    second_call_done = threading.Event()
+    second_call_result = {}
+
+    def slow_kickoff():
+        first_call_started.set()
+        second_call_done.wait(5.0)
+        return "First Result"
+
+    crew_mock.kickoff.side_effect = slow_kickoff
+
+    def run_second():
+        try:
+            breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name)
+        except BreakerOpen as bo:
+            second_call_result["exc"] = bo
+        finally:
+            second_call_done.set()
+
+    t1 = threading.Thread(target=run_second)
+
+    first_call_result = {}
+    def run_first():
+        try:
+            first_call_result["res"] = breaker.guarded_crewai_kickoff(crew_mock, model_name=model_name)
+        except Exception as e:
+            first_call_result["exc"] = e
+
+    with patch("utils.crewai_breaker._get_breaker", return_value=local_breaker):
+        t0 = threading.Thread(target=run_first)
+        t0.start()
+
+        # Wait for first call to allow_request and start kickoff
+        first_call_started.wait(2.0)
+
+        # Start second call, which should fail-fast
+        t1.start()
+        t1.join(timeout=2.0)
+        t0.join(timeout=2.0)
+
+    assert "exc" in second_call_result
+    assert isinstance(second_call_result["exc"], BreakerOpen)
+    assert first_call_result.get("res") == "First Result"

@@ -88,19 +88,18 @@ def test_setup_compatibility_no_reconfigure():
         compatibility.setup_compatibility()  # should not crash
 
 
-def test_check_dependencies_cuda_not_available():
-    # Mock torch to have cuda.is_available returning False
-    mock_torch = MagicMock()
-    mock_torch.cuda.is_available.return_value = False
-
-    def fake_import(name, *args, **kwargs):
-        if name == "torch":
-            return mock_torch
-        return MagicMock()
+def test_check_dependencies_does_not_probe_cuda_at_startup():
+    mock_torch_spec = MagicMock()
 
     with (
-        patch("builtins.__import__", side_effect=fake_import),
+        patch("builtins.__import__", return_value=MagicMock()),
+        patch(
+            "utils.compatibility.find_spec",
+            side_effect=lambda name: mock_torch_spec if name in {"torch", "peft"} else MagicMock(),
+        ),
         patch("utils.compatibility.log") as mock_log,
     ):
-        compatibility.check_dependencies()
-        mock_log.warning.assert_any_call("CUDA not available — image generation will be slow")
+        missing = compatibility.check_dependencies()
+
+    assert "torch" not in missing
+    assert not any("CUDA not available" in str(call) for call in mock_log.warning.call_args_list)

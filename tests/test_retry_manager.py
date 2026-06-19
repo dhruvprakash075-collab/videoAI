@@ -128,51 +128,7 @@ def test_patch_retries_handles_missing_audio_proxy(monkeypatch):
     # Should log a warning but not raise
 
 
-def test_patch_retries_sync_pipeline_long_success(monkeypatch):
-    """Test patch_retries syncing attributes when pipeline_long is present."""
-    import sys
-    from unittest.mock import MagicMock
 
-    mock_pl = MagicMock()
-    mock_pl.tts_generate = lambda: None
-    mock_pl.translate_hinglish = lambda: None
-
-    # Put it in sys.modules
-    monkeypatch.setitem(sys.modules, "core.pipeline_long", mock_pl)
-
-    # Force re-patching by deleting '_is_retry_patched' attributes if they exist
-    from audio import audio_proxy
-
-    if hasattr(audio_proxy.tts_generate, "_is_retry_patched"):
-        delattr(audio_proxy.tts_generate, "_is_retry_patched")
-    if hasattr(audio_proxy.translate_hinglish, "_is_retry_patched"):
-        delattr(audio_proxy.translate_hinglish, "_is_retry_patched")
-
-    patch_retries()
-
-    assert hasattr(mock_pl.tts_generate, "_is_retry_patched")
-    assert hasattr(mock_pl.translate_hinglish, "_is_retry_patched")
-
-
-def test_patch_retries_sync_pipeline_long_exception(monkeypatch):
-    """Test patch_retries exception handling when checking sys.modules."""
-    import sys
-
-    class BrokenDict(dict):
-        def __contains__(self, item):
-            if "pipeline_long" in item or item == "__main__":
-                raise RuntimeError("Fake lookup error")
-            return super().__contains__(item)
-
-    monkeypatch.setattr(sys, "modules", BrokenDict(sys.modules))
-
-    with patch("utils.retry_manager.log") as mock_log:
-        patch_retries()
-        # Find warning log matching fake lookup error
-        warnings = [call[0][0] for call in mock_log.warning.call_args_list]
-        assert any(
-            "Could not sync pipeline_long namespace: Fake lookup error" in w for w in warnings
-        )
 
 
 def test_constants_have_expected_values():

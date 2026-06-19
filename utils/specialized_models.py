@@ -9,9 +9,10 @@ Uses small, purpose-built models for specific tasks:
 These models run via Ollama and are much faster than using the Director/Writer models.
 """
 
-import json
 import logging
 import re
+
+from utils.utils import extract_json
 
 log = logging.getLogger(__name__)
 
@@ -126,68 +127,30 @@ OUTPUT ONLY VALID JSON:
         }
 
     try:
-        # Try to parse JSON
-        result = json.loads(response)
-        # Validate required fields
-        if "approved" not in result:
-            result["approved"] = True
-        if "quality_score" not in result:
-            result["quality_score"] = 7
-        if "issues" not in result:
-            result["issues"] = []
-        if "suggestions" not in result:
-            result["suggestions"] = []
-        if "rewrite_needed" not in result:
-            result["rewrite_needed"] = False
-        if "rewrite_instructions" not in result:
-            result["rewrite_instructions"] = ""
-        return result
-    except json.JSONDecodeError:
-        # Use brace-depth extraction to handle nested JSON (B17 fix)
-        # The simple regex \{[^{}]+\} fails on nested objects.
-        try:
-            depth = 0
-            start = -1
-            for i, ch in enumerate(response):
-                if ch == "{":
-                    if depth == 0:
-                        start = i
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-                    if depth == 0 and start >= 0:
-                        candidate = response[start : i + 1]
-                        try:
-                            result = json.loads(candidate)
-                            if isinstance(result, dict):
-                                result.setdefault("approved", False)
-                                result.setdefault("review_unavailable", True)
-                                result.setdefault("quality_score", 0)
-                                result.setdefault("issues", [])
-                                result.setdefault("suggestions", [])
-                                result.setdefault("rewrite_needed", False)
-                                result.setdefault("rewrite_instructions", "")
-                                result.setdefault(
-                                    "feedback", "Reviewer unavailable — manual review recommended"
-                                )
-                                return result
-                        except json.JSONDecodeError:
-                            start = -1
-                            depth = 0
-        except Exception:
-            pass
+        result = extract_json(response)
+        if isinstance(result, dict):
+            # Validate required fields
+            result.setdefault("approved", True)
+            result.setdefault("quality_score", 7)
+            result.setdefault("issues", [])
+            result.setdefault("suggestions", [])
+            result.setdefault("rewrite_needed", False)
+            result.setdefault("rewrite_instructions", "")
+            return result
+    except Exception:
+        pass
 
-        log.warning(f"[reviewer] Failed to parse JSON: {response[:100]}")
-        return {
-            "approved": False,
-            "review_unavailable": True,
-            "quality_score": 0,
-            "issues": [],
-            "suggestions": [],
-            "rewrite_needed": False,
-            "rewrite_instructions": "",
-            "feedback": "Reviewer unavailable — manual review recommended",
-        }
+    log.warning(f"[reviewer] Failed to parse JSON: {response[:100]}")
+    return {
+        "approved": False,
+        "review_unavailable": True,
+        "quality_score": 0,
+        "issues": [],
+        "suggestions": [],
+        "rewrite_needed": False,
+        "rewrite_instructions": "",
+        "feedback": "Reviewer unavailable — manual review recommended",
+    }
 
 
 def generate_image_prompt(
@@ -261,20 +224,7 @@ Generate prompt now:"""
     return response
 
 
-def generate_image_prompts_batch(
-    scripts: list[str], plans: list[dict], characters: dict | None = None, visual_style: str = ""
-) -> list[str]:
-    """
-    Generate image prompts for multiple scripts in batch.
 
-    Returns:
-        List of SD prompt strings
-    """
-    prompts = []
-    for script, plan in zip(scripts, plans, strict=False):
-        prompt = generate_image_prompt(script, plan, characters, visual_style)
-        prompts.append(prompt)
-    return prompts
 
 
 def extract_world_state(text: str, config: dict) -> dict | None:
@@ -318,35 +268,23 @@ Rules:
         if not response:
             return None
 
-        # Parse with brace-depth extractor (handles nested JSON)
-        depth = 0
-        start = -1
-        for i, ch in enumerate(response):
-            if ch == "{":
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    candidate = response[start : i + 1]
-                    try:
-                        result = json.loads(candidate)
-                        if isinstance(result, dict):
-                            # Validate and normalise
-                            return {
-                                "characters": [str(c) for c in result.get("characters", []) if c],
-                                "facts": [str(f) for f in result.get("facts", []) if f],
-                                "open_threads": [
-                                    str(t) for t in result.get("open_threads", []) if t
-                                ],
-                                "resolved_threads": [
-                                    str(t) for t in result.get("resolved_threads", []) if t
-                                ],
-                            }
-                    except json.JSONDecodeError:
-                        start = -1
-                        depth = 0
+        # Parse with extract_json
+        try:
+            result = extract_json(response)
+            if isinstance(result, dict):
+                # Validate and normalise
+                return {
+                    "characters": [str(c) for c in result.get("characters", []) if c],
+                    "facts": [str(f) for f in result.get("facts", []) if f],
+                    "open_threads": [
+                        str(t) for t in result.get("open_threads", []) if t
+                    ],
+                    "resolved_threads": [
+                        str(t) for t in result.get("resolved_threads", []) if t
+                    ],
+                }
+        except Exception:
+            pass
         log.warning(
             f"[B3] extract_world_state: could not parse JSON from response: {response[:100]}"
         )

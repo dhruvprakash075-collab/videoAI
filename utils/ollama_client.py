@@ -25,11 +25,6 @@ log = logging.getLogger(__name__)
 from utils.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry
 
 
-class _BreakerState(CircuitBreaker):
-    """Subclass of CircuitBreaker for backward compatibility in legacy tests."""
-    def __init__(self, fails_threshold: int, cooldown_s: float):
-        super().__init__("legacy", fails_threshold, cooldown_s)
-
 class OllamaClient:
     """Centralized Ollama HTTP client.
     Thread-safe. One instance per pipeline run is sufficient.
@@ -59,65 +54,11 @@ class OllamaClient:
     def _breaker(self, model: str) -> CircuitBreaker:
         fails, cooldown = self._breaker_defaults
         return CircuitBreakerRegistry.get(f"ollama:{model}", fails=fails, cooldown=cooldown)
-    def _is_local_host(self, host: str) -> bool:
-        """Check if the host is a local address (localhost/127.0.0.1/::1).
-        Valid formats:
-        - localhost
-        - 127.0.0.1
-        - ::1
-        - http://localhost, http://localhost:11434
-        - http://127.0.0.1, http://127.0.0.1:11434
-        - http://[::1], http://[::1]:11434
-        Rejects:
-        - localhost.evil.com
-        - 127.0.0.1.evil.com
-        - http://attacker.com?localhost
-        """
-        import ipaddress
-        import urllib.parse
-
-        # Handle raw IPv6 addresses
-        if host.lower() in {"::1", "[::1]", "http://[::1]", "http://[::1]:11434"}:
-            return True
-
-        # Normalize host: remove scheme and port
-        parsed = urllib.parse.urlparse(host)
-        netloc = parsed.netloc or host
-
-        # Handle IPv6 brackets (e.g., [::1]:11434)
-        if netloc.startswith('[') and ']' in netloc:
-            ipv6_end = netloc.find(']')
-            if ipv6_end != -1:
-                netloc = netloc[1:ipv6_end]
-
-        # Strip port if present
-        if ':' in netloc:
-            netloc = netloc.split(':')[0]
-
-        # Define valid localhost patterns
-        valid_hosts = {
-            "localhost",
-            "127.0.0.1",
-            "::1"
-        }
-
-        # Check hostname
-        if netloc in valid_hosts:
-            return True
-
-        # Check IP
-        try:
-            ip = ipaddress.ip_address(netloc)
-            return ip.is_loopback
-        except ValueError:
-            return False
     def _post(self, url: str, payload: dict, timeout: int) -> dict:
         """Raw POST with retry on transient errors. Classification: local service URL (Ollama)."""
         # Validate URL before making the request to prevent SSRF
-        import urllib.parse
-        parsed = urllib.parse.urlparse(url)
-        if not self._is_local_host(parsed.netloc):
-            raise ValueError(f"Ollama requests are only allowed to local hosts, got: {parsed.netloc}")
+        from utils.url_security import validate_local_service_base_url
+        validate_local_service_base_url(url)
         data = json.dumps(payload).encode("utf-8")
         last_err = None
         for attempt in range(1, 4):

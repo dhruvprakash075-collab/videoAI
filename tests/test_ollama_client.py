@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from utils.circuit_breaker import CircuitBreakerRegistry
-from utils.ollama_client import OllamaClient, _BreakerState, reset_ollama_client
+from utils.circuit_breaker import CircuitBreaker, CircuitBreakerRegistry
+from utils.ollama_client import OllamaClient, reset_ollama_client
 
 
 @pytest.fixture(autouse=True)
@@ -56,13 +56,13 @@ def _force_breaker_open(client: OllamaClient, model: str) -> None:
 
 
 def test_breaker_starts_closed():
-    b = _BreakerState(fails_threshold=3, cooldown_s=30)
+    b = CircuitBreaker("legacy", fails_threshold=3, cooldown_s=30)
     assert b.state == "closed"
     assert b.allow_request() is True
 
 
 def test_breaker_opens_after_n_failures():
-    b = _BreakerState(fails_threshold=3, cooldown_s=30)
+    b = CircuitBreaker("legacy", fails_threshold=3, cooldown_s=30)
     for _ in range(3):
         b.record_failure()
     assert b.state == "open"
@@ -75,7 +75,7 @@ def test_breaker_half_open_after_cooldown(monkeypatch):
     _time = [1000.0]
     monkeypatch.setattr(time, "time", lambda: _time[0])
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=30)
+    b = CircuitBreaker("legacy", fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
     assert b.state == "open"
@@ -91,7 +91,7 @@ def test_breaker_closes_on_probe_success(monkeypatch):
     _time = [1000.0]
     monkeypatch.setattr(time, "time", lambda: _time[0])
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=30)
+    b = CircuitBreaker("legacy", fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
     _time[0] += 31.0
@@ -106,7 +106,7 @@ def test_breaker_reopens_on_probe_failure(monkeypatch):
     _time = [1000.0]
     monkeypatch.setattr(time, "time", lambda: _time[0])
 
-    b = _BreakerState(fails_threshold=2, cooldown_s=30)
+    b = CircuitBreaker("legacy", fails_threshold=2, cooldown_s=30)
     b.record_failure()
     b.record_failure()
     _time[0] += 31.0
@@ -573,14 +573,13 @@ def test_get_resident_models_exception():
     assert res == []
 
 def test_ollama_ipv6_localhost():
-    '''Test that IPv6 localhost is accepted'''
-    client = OllamaClient({'ollama': {'host': 'http://localhost:11434', 'request_timeout': 10}})
-    assert client._is_local_host('http://[::1]:11434') is True
-    assert client._is_local_host('::1') is True
+    """Test that IPv6 localhost is accepted"""
+    from utils.url_security import validate_local_service_base_url
+    assert validate_local_service_base_url('http://[::1]:11434') == 'http://[::1]:11434'
 
 def test_ollama_non_local_ipv6():
-    '''Test that non-local IPv6 is rejected'''
-    client = OllamaClient({'ollama': {'host': 'http://localhost:11434', 'request_timeout': 10}})
-    assert client._is_local_host('http://[2001:db8::1]:11434') is False
-    assert client._is_local_host('2001:db8::1') is False
+    """Test that non-local IPv6 is rejected"""
+    from utils.url_security import validate_local_service_base_url
+    with pytest.raises(ValueError):
+        validate_local_service_base_url('http://[2001:db8::1]:11434')
 
