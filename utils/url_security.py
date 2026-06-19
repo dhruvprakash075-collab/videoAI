@@ -70,6 +70,35 @@ def validate_service_base_url(raw_url: str, *, allow_loopback: bool = True) -> s
     return raw_url.rstrip("/")
 
 
+def validate_local_service_base_url(raw_url: str) -> str:
+    """Validate a URL for local-only service endpoints (Ollama, ComfyUI).
+
+    Only loopback addresses (127.0.0.1, ::1, localhost) are allowed.
+    Public hosts, metadata IPs, private non-loopback IPs, link-local IPs,
+    file URLs, and unsupported schemes are all rejected.
+    """
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
+    if not parsed.hostname:
+        raise ValueError("URL host is required")
+    host = parsed.hostname
+    # Allow loopback IPs directly
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback:
+            return raw_url.rstrip("/")
+        # Any non-loopback IP is rejected
+        raise ValueError(f"URL host must be loopback for local service: {host}")
+    except ValueError:
+        pass
+    # Allow localhost if it resolves only to loopback
+    if host.lower() == "localhost" and _host_resolves_only_to_loopback(host):
+        return raw_url.rstrip("/")
+    # Everything else is rejected
+    raise ValueError(f"URL host must be loopback for local service: {host}")
+
+
 def validate_source_url(raw_url: str) -> str:
     """Validate a user-provided or source URL (e.g. from config or user input).
 
@@ -103,24 +132,33 @@ def safe_url_open(
     timeout: int = 30,
     max_bytes: int = 10 * 1024 * 1024,
     user_agent: str = "Video.AI",
+    expected_content_type: str | None = None,
 ) -> bytes:
-    """Open a URL with SSRF validation, size cap, and redirect control.
+    """Open a URL with SSRF validation, size cap, redirect control, and optional content-type check.
 
     Returns up to max_bytes of response body. Raises ValueError on
-    disallowed hosts, redirects to private IPs, or oversized responses.
+    disallowed hosts, redirects to private IPs, oversized responses,
+    or content-type mismatch when expected_content_type is provided.
     """
     validated = validate_source_url(url)
     req = urllib.request.Request(validated, headers={"User-Agent": user_agent})
     # Disable automatic redirect handling so we can validate each hop
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
-            # Validate redirect target before following
-            validate_source_url(newurl)
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
+            # Resolve relative redirect against current URL
+            resolved = urljoin(req.full_url, newurl)
+            # Validate resolved redirect target before following
+            validate_source_url(resolved)
+            return super().redirect_request(req, fp, code, msg, headers, resolved)
 
     opener = urllib.request.build_opener(_NoRedirect)
     resp = opener.open(req, timeout=timeout)
     try:
+        # Check content type if expected
+        if expected_content_type is not None:
+            content_type = resp.headers.get("Content-Type", "")
+            if content_type and not content_type.startswith(expected_content_type):
+                raise ValueError(f"Unexpected content type: {content_type} (expected {expected_content_type})")
         data = resp.read(max_bytes + 1)
         if len(data) > max_bytes:
             raise ValueError(f"Response too large: {len(data)} bytes (cap: {max_bytes})")

@@ -16,9 +16,9 @@ log = logging.getLogger(__name__)
 class ComfyUIClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8188", timeout: int = 300):
         # SSRF: validate local service URL at init time
-        from utils.url_security import validate_service_base_url
+        from utils.url_security import validate_local_service_base_url
 
-        self.base_url = validate_service_base_url(base_url).rstrip("/")
+        self.base_url = validate_local_service_base_url(base_url).rstrip("/")
         self.timeout = timeout
         self._session_id: str | None = None
 
@@ -97,11 +97,13 @@ class ComfyUIClient:
             raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
 
         from urllib.parse import urlencode
+
         from utils.url_security import build_validated_url
 
         params = urlencode({"filename": filename, "type": image_type, **({"subfolder": subfolder} if subfolder else {})})
         url = build_validated_url(self.base_url, f"/view?{params}")
         try:
+            req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 content = response.read()
                 cb.record_success()

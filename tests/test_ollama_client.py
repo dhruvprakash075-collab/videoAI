@@ -265,7 +265,7 @@ def test_environment_variables_reject_remote_hosts():
 
     # Test OLLAMA_HOST rejects remote host
     with patch.dict(os.environ, {"OLLAMA_HOST": "http://my-remote-ollama-host:11434"}), \
-         pytest.raises(ValueError, match="must be a local address"):
+         pytest.raises(ValueError, match="must be loopback"):
         OllamaClient(
             {
                 "ollama": {
@@ -279,7 +279,7 @@ def test_environment_variables_reject_remote_hosts():
 
     # Test OLLAMA_BASE_URL rejects remote host
     with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://my-remote-host:11434"}), \
-         pytest.raises(ValueError, match="must be a local address"):
+         pytest.raises(ValueError, match="must be loopback"):
         OllamaClient(
             {
                 "ollama": {

@@ -247,17 +247,30 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     max_redirects = 5
     redirect_count = 0
     current_url = validated_url
-    while resp.is_redirect and redirect_count < max_redirects:
-        next_url = resp.headers.get("Location", "")
-        if not next_url:
-            break
-        # Resolve relative redirects against the current URL
-        next_url = urljoin(current_url, next_url)
+
+    while resp.is_redirect:
+        if redirect_count >= max_redirects:
+            raise SourceLoaderError(f"URL fetch failed: too many redirects (>{max_redirects})")
+
+        location = resp.headers.get("Location", "")
+        if not location:
+            raise SourceLoaderError("URL fetch failed: redirect missing Location header")
+
+        next_url = urljoin(current_url, location)
         validated_next = validate_source_url(next_url)
         current_url = validated_next
         redirect_count += 1
-        resp = requests.get(validated_next, headers={"User-Agent": user_agent}, timeout=timeout_s, allow_redirects=False)
-        resp.raise_for_status()
+
+        try:
+            resp = requests.get(
+                validated_next,
+                headers={"User-Agent": user_agent},
+                timeout=timeout_s,
+                allow_redirects=False,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            raise SourceLoaderError(f"URL fetch failed: {e}") from e
 
     try:
         declared = int(resp.headers.get("Content-Length", 0))

@@ -14,6 +14,7 @@ from video.image_gen.image_gen import (
     _pexels,
     _prompt_cache_key,
     _record_oom_event,
+    _replicate,
     _resolve_dominant_char,
     clear_oom_events,
     generate_images,
@@ -369,3 +370,98 @@ def test_generate_images_passes_project_id(tmp_path: Path):
         generate_images(["p"], tmp_path, cfg, project_id="myproject")
     # _bonsai is called as _bonsai(prompts, out, cfg, char_presence=..., project_id=...)
     assert bns.call_args.kwargs.get("project_id") == "myproject"
+
+
+class TestReplicateRegression:
+    def test_replicate_metadata_url_rejected(self, tmp_path: Path):
+        """Replicate returning a metadata IP URL should be rejected."""
+        mock_output = ["http://169.254.169.254/latest/meta-data/"]
+        mock_replicate = MagicMock()
+        mock_replicate.run.return_value = mock_output
+        with (
+            patch.dict("sys.modules", {"replicate": mock_replicate}),
+            patch("utils.url_security.validate_source_url", side_effect=ValueError("URL host is disallowed: 169.254.169.254")),
+        ):
+            with pytest.raises(ValueError, match="disallowed"):
+                _replicate(["test"], tmp_path, {"replicate_model": "test/model"})
+
+
+class TestPexelsRegression:
+    def test_pexels_non_image_content_rejected(self, tmp_path: Path):
+        """Pexels returning non-image content-type should be rejected."""
+        import json
+
+        mock_search_resp = {
+            "photos": [{"src": {"large2x": "https://example.com/image.jpg"}}]
+        }
+
+        class FakeSearchResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json.dumps(mock_search_resp).encode("utf-8")
+
+        class FakeImageResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            headers = {"Content-Type": "text/html"}
+            def read(self, n=None):
+                return b"<html>not an image</html>"
+
+        call_count = [0]
+        def fake_urlopen(req, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return FakeSearchResponse()
+            return FakeImageResponse()
+
+        with (
+            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+            patch("utils.url_security.validate_source_url", return_value="https://example.com/image.jpg"),
+        ):
+            with pytest.raises(ValueError, match="non-image content-type"):
+                _pexels(["test"], tmp_path, {"pexels_api_key": "test-key"})
+
+    def test_pexels_oversized_image_rejected(self, tmp_path: Path):
+        """Pexels returning an oversized image should be rejected."""
+        import json
+
+        mock_search_resp = {
+            "photos": [{"src": {"large2x": "https://example.com/image.jpg"}}]
+        }
+
+        class FakeSearchResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json.dumps(mock_search_resp).encode("utf-8")
+
+        class FakeOversizeResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            headers = {"Content-Type": "image/jpeg"}
+            def read(self, n=None):
+                # Return more than max_download_bytes (50 MB)
+                return b"x" * (50 * 1024 * 1024 + 1)
+
+        call_count = [0]
+        def fake_urlopen(req, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return FakeSearchResponse()
+            return FakeOversizeResponse()
+
+        with (
+            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+            patch("utils.url_security.validate_source_url", return_value="https://example.com/image.jpg"),
+        ):
+            with pytest.raises(ValueError, match="too large"):
+                _pexels(["test"], tmp_path, {"pexels_api_key": "test-key"})

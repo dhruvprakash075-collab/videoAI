@@ -57,8 +57,8 @@ class TestComfyUIRuntime:
             assert runtime.ensure_running(timeout=5.0) is False
 
     def test_base_url_constructs_correctly(self):
-        runtime = ComfyUIRuntime({"comfyui": {"host": "192.168.1.100", "port": 8189}})
-        assert runtime.base_url == "http://192.168.1.100:8189"
+        runtime = ComfyUIRuntime({"comfyui": {"host": "127.0.0.1", "port": 8189}})
+        assert runtime.base_url == "http://127.0.0.1:8189"
 
 
 class TestComfyUIClient:
@@ -169,6 +169,25 @@ class TestComfyUIClient:
 
             with pytest.raises(ComfyUIError, match="Node 12 \\(KSampler\\): CUDA out of memory"):
                 client.wait_for_completion("prompt_123", poll_interval=0.1, timeout=5.0)
+
+    def test_get_view_encoded_query_params(self):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.read.return_value = b"fake image data"
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            # This should not raise NameError and should encode query params correctly
+            result = client.get_view("test image.png", subfolder="sub folder", image_type="output")
+            assert result == b"fake image data"
+            # Verify the request was made with proper URL encoding
+            call_args = mock_urlopen.call_args
+            req = call_args[0][0]
+            assert "test+image.png" in req.full_url or "test%20image.png" in req.full_url
+            assert "sub+folder" in req.full_url or "sub%20folder" in req.full_url
 
 
 class TestWorkflowPatcher:
@@ -363,7 +382,7 @@ class TestWorkflowPatcher:
         # "12" is unclassified and not matched by title
         assert "11" in pos
         assert "10" in neg
-        
+
         # Order fallback only triggers if BOTH positive and negative are completely empty
         # If title matches resolved one of them, the order fallback doesn't run.
         # Let's test order fallback when no titles match and no KSampler exists:

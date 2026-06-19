@@ -25,6 +25,9 @@ class ComfyUIRuntime:
         self._process: subprocess.Popen | None = None
         self._process_lock = threading.Lock()
         self._base_url = f"http://{self.host}:{self.port}"
+        # Validate the base URL is local-only
+        from utils.url_security import validate_local_service_base_url
+        validate_local_service_base_url(self._base_url)
         self._project_root = Path(__file__).resolve().parents[2]
         self._stdout_handle = None
         self._stderr_handle = None
@@ -72,9 +75,9 @@ class ComfyUIRuntime:
     def is_running(self, timeout: float = 2.0) -> bool:
         """Check if ComfyUI is running and responding."""
         try:
-            from utils.url_security import validate_service_base_url, build_validated_url
+            from utils.url_security import build_validated_url, validate_local_service_base_url
 
-            validated = validate_service_base_url(self._base_url)
+            validated = validate_local_service_base_url(self._base_url)
             req = urllib.request.Request(build_validated_url(validated, "/system_stats"))
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 return response.status == 200

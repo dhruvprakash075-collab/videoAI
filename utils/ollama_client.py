@@ -36,20 +36,18 @@ class OllamaClient:
     """
     def __init__(self, config: dict):
         import os as _os
+
+        from utils.url_security import build_validated_url, validate_local_service_base_url
+
         self._config = config
         _ollama = config.get("ollama", {})
         # Check standard environment variables first to allow external server settings
         _env_host = _os.environ.get("OLLAMA_HOST") or _os.environ.get("OLLAMA_BASE_URL")
         if _env_host:
-            _env_host = _env_host.rstrip("/")
-            if not self._is_local_host(_env_host):
-                raise ValueError(f"OLLAMA_HOST must be a local address (localhost/127.0.0.1/::1), got: {_env_host}")
-            self._host = _env_host
+            self._host = validate_local_service_base_url(_env_host.rstrip("/"))
         else:
             host = _ollama.get("host", "http://localhost:11434").rstrip("/")
-            if not self._is_local_host(host):
-                raise ValueError(f"ollama.host must be a local address (localhost/127.0.0.1/::1), got: {host}")
-            self._host = host
+            self._host = validate_local_service_base_url(host)
         self._timeout = int(_ollama.get("request_timeout", 240))
         self._keep_alive = _ollama.get("keep_alive", "3m")
         _fails = int(_ollama.get("breaker_fails", 3))
@@ -57,6 +55,7 @@ class OllamaClient:
         self._breakers: dict[str, CircuitBreaker] = {}
         self._breaker_defaults = (_fails, _cooldown)
         self._lock = threading.Lock()
+        self._build_url = build_validated_url
     def _breaker(self, model: str) -> CircuitBreaker:
         fails, cooldown = self._breaker_defaults
         return CircuitBreakerRegistry.get(f"ollama:{model}", fails=fails, cooldown=cooldown)
@@ -183,7 +182,7 @@ class OllamaClient:
             payload["options"]["seed"] = int(seed) % (2**32)
             payload["options"]["temperature"] = 0.0
         try:
-            res = self._post(f"{self._host}/api/generate", payload, self._timeout)
+            res = self._post(self._build_url(self._host, "/api/generate"), payload, self._timeout)
             text = self._clean_response((res.get("response") or "").strip())
             if not text:
                 raise ValueError("empty response")
@@ -221,7 +220,7 @@ class OllamaClient:
             "options": {"temperature": temperature, "num_predict": num_predict},
         }
         try:
-            res = self._post(f"{self._host}/api/chat", payload, self._timeout)
+            res = self._post(self._build_url(self._host, "/api/chat"), payload, self._timeout)
             text = self._clean_response((res.get("message", {}).get("content") or "").strip())
             breaker.record_success()
             log.debug(f"[OllamaClient] chat ok ({model}, {len(text)} chars)")
@@ -248,7 +247,7 @@ class OllamaClient:
         full = []
         try:
             req = urllib.request.Request(
-                f"{self._host}/api/generate",
+                self._build_url(self._host, "/api/generate"),
                 data=payload,
                 headers={"Content-Type": "application/json"},
             )
@@ -275,7 +274,7 @@ class OllamaClient:
         """Send keep_alive=0 to evict a model from VRAM (best-effort, non-fatal)."""
         with contextlib.suppress(urllib.error.URLError, TimeoutError, OSError):
             self._post(
-                f"{self._host}/api/generate",
+                self._build_url(self._host, "/api/generate"),
                 {"model": model, "keep_alive": 0},
                 timeout=3,
             )
@@ -283,7 +282,7 @@ class OllamaClient:
     def get_resident_models(self) -> list[str]:
         """Return list of currently loaded model names via /api/ps."""
         try:
-            req = urllib.request.Request(f"{self._host}/api/ps")
+            req = urllib.request.Request(self._build_url(self._host, "/api/ps"))
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
