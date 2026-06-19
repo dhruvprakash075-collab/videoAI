@@ -248,7 +248,7 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
     redirect_count = 0
     current_url = validated_url
 
-    while resp.is_redirect:
+    while getattr(resp, "is_redirect", False) is True:
         if redirect_count >= max_redirects:
             raise SourceLoaderError(f"URL fetch failed: too many redirects (>{max_redirects})")
 

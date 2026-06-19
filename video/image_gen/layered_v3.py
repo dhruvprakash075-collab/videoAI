@@ -68,7 +68,7 @@ def preflight_layered_v3(config: dict) -> list[str]:
         with urllib.request.urlopen(f"{comfy_url}/system_stats", timeout=5) as resp:
             if resp.status >= 400:
                 errors.append(f"ComfyUI returned HTTP {resp.status}")
-    except (urllib.error.URLError, TimeoutError):
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         errors.append(f"ComfyUI not reachable at http://{host}:{port}/")
     except Exception as e:
         errors.append(f"ComfyUI probe failed: {e}")
