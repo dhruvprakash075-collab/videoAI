@@ -141,23 +141,23 @@ def test_best_result_kept():
     assert result == _medium
 
 
-def test_empty_translation_falls_back_to_english():
-    """Empty translation → returns original English script."""
+def test_empty_translation_signals_failure():
+    """Empty translation signals the caller to use its English fallback."""
     agent = _make_director()
     plan = {"mood": "calm", "title": "T", "key_event": "E"}
 
     with patch.object(agent, "_call_ollama_chat", return_value=""):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    assert result == "Hello world."
+    assert result is None
 
 
-def test_exception_falls_back_to_english():
-    """LLM exception → returns original English script, no crash."""
+def test_exception_signals_failure():
+    """LLM exception signals the caller to use its English fallback."""
     agent = _make_director()
     plan = {"mood": "calm", "title": "T", "key_event": "E"}
 
     with patch.object(agent, "_call_ollama_chat", side_effect=RuntimeError("LLM down")):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    assert result == "Hello world."
+    assert result is None

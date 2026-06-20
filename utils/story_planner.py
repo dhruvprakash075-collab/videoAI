@@ -153,7 +153,10 @@ def _plan_batch(
         f"  - 0.5 to 0.7: balanced (both character and environment clearly visible)\n"
         f"  - 0.8 to 1.0: character-dominant portrait (medium or close-up)\n"
         f"Ensure variety in each segment: do not make all frames have the same weights. "
-        f"The first frame of a segment should typically have lower weights for an establishing shot.\n\n"
+        f"The first frame of a segment should typically have lower weights for an establishing shot. "
+        f"If the key event, dialogue, or emotional beat involves two or more named characters, "
+        f"at least one frame MUST include every interacting character ID at weight 0.3 or higher. "
+        f"Use their actual character IDs, not generic substitutes. You choose each exact weight.\n\n"
         f"CRITICAL: Assign a segment_duration in seconds per segment. "
         f"Slow/lore-heavy: 80-120s. Fast/action: 30-50s. Moderate: 50-80s. Match duration to story rhythm."
     )

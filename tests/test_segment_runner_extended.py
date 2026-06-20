@@ -256,6 +256,7 @@ def test_critic_node_llm_unavailable(mock_dependencies):
 def test_segment_runner_graph_nodes_live(mock_dependencies):
     mock_dependencies["dry_run"] = False
     mock_dependencies["resume"] = False
+    mock_dependencies["director_agent_instance"].translate_to_devanagari.return_value = None
 
     mock_crew = MagicMock()
     mock_crew.kickoff.return_value = "crewai script response"
@@ -275,7 +276,7 @@ def test_segment_runner_graph_nodes_live(mock_dependencies):
         patch(
             "audio.audio_proxy.tts_generate",
             return_value={"wav_path": "fake.wav", "word_timestamps": "fake_json"},
-        ),
+        ) as mock_tts,
         patch("video.renderer.renderer.render_with_assets", return_value=Path("out.mp4")),
         patch("utils.scene_director.enrich_prompts", return_value=(["prompt1"], "neg_prompt")),
         patch("torch.cuda.is_available", return_value=True),
@@ -286,6 +287,7 @@ def test_segment_runner_graph_nodes_live(mock_dependencies):
 
         # Verify that render_with_assets was successfully called and stored
         assert mock_dependencies["mp4s"][0] == Path("out.mp4")
+        assert all(call.kwargs["lang"] == "en" for call in mock_tts.call_args_list)
 
 
 def test_evict_ollama_models_exceptions():

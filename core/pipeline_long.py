@@ -376,11 +376,47 @@ def run_long_pipeline(
             cp_list = seg_plan.get("char_presence")
             if isinstance(cp_list, list):
                 if len(cp_list) >= _default_imgs:
-                    seg_plan["char_presence"] = cp_list[:_default_imgs]
+                    # Keep one establishing frame, then choose the strongest
+                    # character frames. Truncating the first N selected only the
+                    # Director's low-weight world shots.
+                    _env = min(
+                        cp_list,
+                        key=lambda f: max(f.values()) if isinstance(f, dict) and f else 0,
+                    )
+                    _character_frames = sorted(
+                        cp_list,
+                        key=lambda f: (
+                            sum(float(v) >= 0.3 for v in f.values()),
+                            sum(float(v) for v in f.values()),
+                            max(f.values()) if f else 0,
+                        ) if isinstance(f, dict) and f else (0, 0, 0),
+                        reverse=True,
+                    )
+                    seg_plan["char_presence"] = [
+                        _env,
+                        *_character_frames[: max(0, _default_imgs - 1)],
+                    ]
                 elif cp_list:
                     seg_plan["char_presence"] = cp_list + [cp_list[-1]] * (
                         _default_imgs - len(cp_list)
                     )
+
+                _story_keys = [
+                    k for k in config.get("characters", {})
+                    if k not in {"protagonist", "mentor", "guardian"}
+                ]
+                _aliases = {
+                    "protagonist": _story_keys[0] if _story_keys else "protagonist",
+                    "mentor": _story_keys[1] if len(_story_keys) > 1 else (_story_keys[0] if _story_keys else "mentor"),
+                }
+                _normalized = []
+                for _frame in seg_plan.get("char_presence", []):
+                    if not isinstance(_frame, dict):
+                        _normalized.append(_frame)
+                        continue
+                    _mapped = {_aliases.get(k, k): v for k, v in _frame.items() if k != "environment"}
+                    _normalized.append(_mapped)
+                seg_plan["char_presence"] = _normalized
             continue
 
         _ni = seg_plan.get("num_images", _default_imgs)
@@ -420,7 +456,10 @@ def run_long_pipeline(
                     else:
                         cp_list[j] = {}
                     env_indices.append(j)
-        for _force_idx in [0, n_frames - 1]:
+        # With only two frames, forcing both first and last to environment
+        # eliminates every character shot. Keep the final frame character-led.
+        _forced_environment_indices = [0] if n_frames <= 2 else [0, n_frames - 1]
+        for _force_idx in _forced_environment_indices:
             if isinstance(cp_list[_force_idx], dict) and cp_list[_force_idx]:
                 cp_list[_force_idx] = {k: min(0.15, v) for k, v in cp_list[_force_idx].items()}
             else:

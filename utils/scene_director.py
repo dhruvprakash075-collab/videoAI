@@ -222,6 +222,16 @@ def enrich_prompts(
                     pattern = char_key_patterns.get(c_key)
                     if pattern:
                         prompt = pattern.sub("someone", prompt)
+                else:
+                    # build_prompts may already contain the canonical description.
+                    # Remove that scene copy because assemble_prompt adds identity
+                    # once, in its protected high-priority identity section.
+                    _visible_desc = chars.get(c_key, {}).get("description", "")
+                    if _visible_desc:
+                        prompt = re.sub(
+                            re.escape(_visible_desc), "", prompt, flags=re.IGNORECASE
+                        )
+                        prompt = re.sub(r",\s*,", ",", prompt)
 
         # Vary camera slightly for first/last frames if no presence map was provided (backward compatibility)
         if not char_presence:
@@ -250,7 +260,8 @@ def enrich_prompts(
                         if _memory_extra := memory_identity_map.get(c_key):
                             _cd = f"{_cd}, {_memory_extra}" if _cd else _memory_extra
                         if _cd:
-                            _char_identities.append((_cd, cw))
+                            _name = chars.get(c_key, {}).get("name", c_key)
+                            _char_identities.append((f"{_name}: {_cd}", cw))
 
                 if len(_char_identities) >= 2:
                     _assembled = assemble_prompt_multi(
@@ -262,7 +273,7 @@ def enrich_prompts(
                 elif _char_identities:
                     _assembled = assemble_prompt(
                         identity_tokens=_char_identities[0][0],
-                        scene_tokens=f"{prompt}, {move}",
+                        scene_tokens=f"solo, exactly one character, {prompt}, {move}",
                         style_tokens=_style_part,
                         budget=_total_budget,
                     )
@@ -294,7 +305,8 @@ def enrich_prompts(
                         if _memory_extra := memory_identity_map.get(c_key):
                             _cd = f"{_cd}, {_memory_extra}" if _cd else _memory_extra
                         if _cd:
-                            _char_identities.append((_cd, cw))
+                            _name = chars.get(c_key, {}).get("name", c_key)
+                            _char_identities.append((f"{_name}: {_cd}", cw))
 
                 if len(_char_identities) >= 2:
                     # Multi-character interaction frame — use budget-shared assembler
@@ -308,7 +320,7 @@ def enrich_prompts(
                     # Single character — use standard assembler
                     _assembled = assemble_prompt(
                         identity_tokens=_char_identities[0][0],
-                        scene_tokens=f"{prompt}, {move}",
+                        scene_tokens=f"solo, exactly one character, {prompt}, {move}",
                         style_tokens=_style_part,
                         budget=_total_budget,
                     )
@@ -326,6 +338,18 @@ def enrich_prompts(
 
     # Generate dynamic negative prompt for this scene
     neg_prompt = get_dynamic_negative_prompt(mood, script, config)
+    _presence_frames = [f for f in char_presence or [] if isinstance(f, dict)]
+    _visible_counts = [sum(float(v) >= 0.3 for v in frame.values()) for frame in _presence_frames]
+    if 1 in _visible_counts and not any(count >= 2 for count in _visible_counts):
+        neg_prompt = (
+            f"{neg_prompt}, multiple people, duplicate person, cloned character, twins, "
+            "triplets, character sheet, lineup"
+        )
+    elif any(count >= 2 for count in _visible_counts):
+        neg_prompt = (
+            f"{neg_prompt}, merged people, fused bodies, fused faces, same face, "
+            "identical characters, cloned clothing"
+        )
 
     return result, neg_prompt
 
@@ -390,10 +414,13 @@ def assemble_prompt_multi(
 
     if valid_identities:
         total_weight = sum(w for _, w in valid_identities) or 1.0
-        for desc, weight in valid_identities:
+        for index, (desc, weight) in enumerate(valid_identities):
             # Proportional budget allocation by character weight
             char_budget = max(5, int(identity_budget * (weight / total_weight)))
-            trimmed = _trim_to_budget(desc, char_budget)
+            position = "left" if index == 0 else "right" if index == 1 else "center"
+            _label = f"distinct character {index + 1} on {position}"
+            _desc = _trim_to_budget(desc, max(1, char_budget - _count(_label)))
+            trimmed = f"{_label}, {_desc}" if _desc else _label
             if trimmed:
                 cost = _count(trimmed)
                 if used + cost <= budget:

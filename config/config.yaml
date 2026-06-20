@@ -17,7 +17,7 @@ tts:
   slow: false
   engine: supertonic
   supertonic:
-    voice: character_voices/dhruv_voice_polished.json
+    voice: character_voices/dhruv_narration.json
     steps: 16
     speed: 1.0
     silence_duration: 0.1
@@ -62,10 +62,12 @@ script:
   words_per_segment: 100
   min_words: 20
   max_words: 600
-  dynamic_image_count: true
-  default_images_per_segment: 4
-  max_images_per_segment: 8
+  dynamic_image_count: false
+  default_images_per_segment: 2
+  max_images_per_segment: 4
   word_count_tolerance: 0.6
+  tts_words_per_minute_hi: 100
+  tts_words_per_minute_en: 150
   writer_max_tokens: 1024
   critic_enabled: true
   critic_threshold: 60
@@ -123,9 +125,9 @@ ollama:
 image_gen:
   backend: comfyui
   bonsai_model: prism-ml/bonsai-image-ternary-4B-gemlite-2bit
-  height: 1024
-  width: 1024
-  steps: 12
+  height: 768
+  width: 1344
+  steps: 30
   guidance_scale: 3.5
   ip_adapter_scale: 0.8
   lock_seed: true
@@ -147,16 +149,16 @@ image_gen:
     open_browser: false
     workflow_path: config/comfyui/workflows/text_to_image_api.json
     checkpoint: DreamShaper_8.safetensors
-    width: 1024
-    height: 1024
-    steps: 20
+    width: 1344
+    height: 768
+    steps: 30
     cfg: 7.0
     sampler_name: euler
     scheduler: normal
     timeout_seconds: 300
     poll_seconds: 1.0
     auto_start_timeout: 60
-    unload_after_batch: false
+    unload_after_batch: true
   fallback_backend: bonsai
   composition_mode: one_pass
   qwen_edit:
@@ -170,7 +172,7 @@ image_gen:
     denoise: 0.6
     max_resolution: 1024
     youtube_aspect: "16:9"
-    vram_offload: true
+    vram_offload: false
     trigger: any_character
     character_threshold: 0.05
     cache_dir: .qwen_edit_cache

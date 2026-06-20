@@ -10,12 +10,36 @@ import pytest
 
 from core.segment_runner import (
     _director_aborted,
+    _trim_script_to_word_limit,
+    _tts_word_budget,
     aggressive_vram_cleanup,
     evict_ollama_models,
     get_director_abort,
     log_vram_usage,
     set_director_abort,
 )
+
+
+def test_tts_word_budget_respects_short_duration_and_language():
+    assert _tts_word_budget({}, 15, "hi") == 25
+    assert _tts_word_budget({}, 15, "en") == 37
+    assert _tts_word_budget({}, 0.1, "hi") == 1
+
+
+def test_tts_word_budget_uses_configured_rates():
+    config = {"script": {"tts_words_per_minute_hi": 80, "tts_words_per_minute_en": 120}}
+    assert _tts_word_budget(config, 30, "hi") == 40
+    assert _tts_word_budget(config, 30, "en") == 60
+
+
+def test_trim_script_hard_caps_run_on_sentence():
+    script = " ".join(f"word{i}" for i in range(100))
+    assert len(_trim_script_to_word_limit(script, 25).split()) == 25
+
+
+def test_trim_script_prefers_sentence_boundary():
+    script = "One two three. Four five six seven. Eight nine ten."
+    assert _trim_script_to_word_limit(script, 7) == "One two three. Four five six seven."
 
 
 @pytest.fixture(autouse=True)

@@ -2162,7 +2162,7 @@ class DirectorAgent:
 
     def translate_to_devanagari(
         self, english_script: str, segment_plan: dict, context: str = ""
-    ) -> str:
+    ) -> str | None:
         """Translate English narration to MODERN spoken Hindi (Devanagari),
         with ~25-30% common English words kept as Hinglish (English written in
         Devanagari, e.g. problem -> प्रॉब्लम) via a static glossary.
@@ -2181,6 +2181,9 @@ class DirectorAgent:
             "You are a translator who writes MODERN, casual, everyday spoken Hindi "
             "for YouTube narration -- the way young people actually talk today. "
             "Use simple common words, NOT literary, Sanskritized, or archaic Hindi. "
+            "For names and common English terms, use pronunciation-friendly phonetic "
+            "Devanagari so a Hindi TTS voice says the English word naturally; never replace "
+            "a familiar English term with an awkward formal Hindi translation. "
             "Write everything in Devanagari script. Preserve dramatic punctuation "
             "(... ! ? --). "
             "Keep any token like @@0@@ EXACTLY as-is -- do not translate, renumber, "
@@ -2211,7 +2214,22 @@ class DirectorAgent:
             translated = _translate_once(system_msg)
             if not translated:
                 log.warning("[DIRECTOR] Translation returned empty -- using original English")
-                return english_script
+                return None
+
+            # Some translation models echo/translate the system prompt before the
+            # requested narration. A large expansion is the reliable boundary
+            # signal: retry without steering, then fail closed rather than speak
+            # instructions to the audience.
+            _max_translation_chars = max(len(english_script) + 250, int(len(english_script) * 1.4))
+            if len(translated) > _max_translation_chars:
+                log.warning(
+                    "[DIRECTOR] Translation likely contains instruction leakage "
+                    f"({len(translated)} > {_max_translation_chars} chars); retrying clean"
+                )
+                translated = _translate_once("")
+                if not translated or len(translated) > _max_translation_chars:
+                    log.error("[DIRECTOR] Rejecting leaked/oversized translation")
+                    return None
 
             # Validate: at least some Devanagari characters present (U+0900-U+097F)
             devanagari_chars = sum(1 for c in translated if "\u0900" <= c <= "\u097f")
@@ -2220,7 +2238,7 @@ class DirectorAgent:
                     f"[DIRECTOR] Translation has only {devanagari_chars} Devanagari chars "
                     "-- using original."
                 )
-                return english_script
+                return None
 
             # Devanagari-ratio check with bounded re-translation.
             _full_cfg = getattr(self, "llm_config", None) or {}
@@ -2271,7 +2289,7 @@ class DirectorAgent:
 
         except Exception as e:
             log.exception(f"[DIRECTOR] Translation failed: {e}. Falling back to English.")
-            return english_script
+            return None
 
     def generate_hinglish_script(self, segment_plan: dict) -> str:
         """Convert English segment to Hinglish voiceover script."""

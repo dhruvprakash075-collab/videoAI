@@ -245,6 +245,29 @@ def test_write_srt_word_timestamps_json(tmp_path):
     assert "Test srt" in content
 
 
+def test_write_srt_english_uses_caption_script_not_hindi_timestamp_words(tmp_path):
+    timestamps = tmp_path / "words.json"
+    timestamps.write_text(
+        json.dumps([{"word": "हिंदी", "start": 0.0, "end": 1.0}]), encoding="utf-8"
+    )
+    output = tmp_path / "english.srt"
+
+    assembler._write_srt(
+        "# Story Title\nThe lantern keeper entered the ancient ruins with a bright blue flame.",
+        output,
+        4.0,
+        word_timestamps_json=timestamps,
+        subtitle_language="en",
+    )
+
+    content = output.read_text(encoding="utf-8-sig")
+    assert "The lantern keeper" in content
+    assert "हिंदी" not in content
+    assert "# Story Title" not in content
+    blocks = [block.splitlines() for block in content.strip().split("\n\n")]
+    assert max(len(" ".join(block[2:]).split()) for block in blocks) <= 7
+
+
 def test_write_srt_whisper_fallback(tmp_path):
     """Test _write_srt when json is missing but audio exists, falling back to Whisper."""
     srt_path = tmp_path / "test.srt"

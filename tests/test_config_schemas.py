@@ -135,6 +135,17 @@ def test_tts_schema_rejects_removed_engines_and_subconfigs():
             validate_config({"tts": {"engine": "supertonic", removed_key: {}}})
 
 
+def test_script_schema_accepts_tts_word_rates():
+    valid = validate_config(
+        {"script": {"tts_words_per_minute_hi": 95, "tts_words_per_minute_en": 145}}
+    )
+    assert valid["script"]["tts_words_per_minute_hi"] == 95
+    assert valid["script"]["tts_words_per_minute_en"] == 145
+
+    with pytest.raises(FatalError, match="Config section 'script' validation failed"):
+        validate_config({"script": {"tts_words_per_minute_hi": 0}})
+
+
 def test_decision_record_authority_and_locks():
     rec = DecisionRecord()
     # rank helper

@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -86,7 +87,29 @@ def _tts_word_budget(config: dict, target_seconds: float, lang: str) -> int:
             100.0 if lang == "hi" else 150.0,
         )
     )
-    return max(20, int((target_seconds / 60.0) * wpm))
+    return max(1, int((target_seconds / 60.0) * wpm))
+
+
+def _trim_script_to_word_limit(script: str, limit: int) -> str:
+    """Trim narration at a sentence boundary, with a hard word-limit fallback."""
+    if limit <= 0 or len(script.split()) <= limit:
+        return script
+
+    sentences = re.split(r"(?<=[.!?\u0964])\s+", script)
+    parts: list[str] = []
+    running = 0
+    for sentence in sentences:
+        sentence_words = len(sentence.split())
+        if running + sentence_words > limit:
+            break
+        parts.append(sentence)
+        running += sentence_words
+
+    if parts:
+        return " ".join(parts).strip()
+    # ponytail: A hard cut is preferable to over-length audio when the LLM emits
+    # one run-on sentence; upgrade to clause-aware trimming only if quality needs it.
+    return " ".join(script.split()[:limit]).strip()
 
 # ── VRAM management (shared with orchestrator) ────────────────────────
 
@@ -522,6 +545,9 @@ def make_process_segment(
         log.debug(f"  Seg {i}: generating script (LIGHT)")
         writer = writer_agent
 
+        # A 6 GB GPU cannot keep the Director and Writer resident together.
+        evict_ollama_models(config, reason="Writer model handoff")
+
         seg_words = plan.get("target_word_count", words_per_seg)
         tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
         lo = int(words_per_seg * (1 - tolerance))
@@ -540,7 +566,7 @@ def make_process_segment(
         )
         _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_ws(config))
         if _dur_budget:
-            seg_words = max(lo, min(seg_words, _dur_budget))
+            seg_words = min(seg_words, _dur_budget)
         persona = config.get("narrator_persona", "")
 
         from utils.story_planner import build_segment_prompt
@@ -555,6 +581,11 @@ def make_process_segment(
             narrator_persona=persona,
             include_character_descriptions=_include_char_desc,
         )
+        _director_instruction = config.get("production_notes", {}).get(
+            "custom_instructions", ""
+        )
+        if _director_instruction:
+            prompt += f"\n\nDIRECTOR PRODUCTION INSTRUCTION:\n{_director_instruction}"
         feedback = state.get("critic_feedback") or ""
         if feedback:
             prompt = (
@@ -727,20 +758,7 @@ def make_process_segment(
         _wc_hi = int(seg_words * (1 + _wc_tolerance))
 
         if _actual_wc > _wc_hi:
-            import re as _re_wc
-
-            _sentences = _re_wc.split(r"(?<=[.!?\u0964])\s+", script)
-            _trimmed_parts = []
-            _running_wc = 0
-            for _sent in _sentences:
-                _sent_wc = len(_sent.split())
-                if _running_wc + _sent_wc <= _wc_hi:
-                    _trimmed_parts.append(_sent)
-                    _running_wc += _sent_wc
-                else:
-                    break
-            if _trimmed_parts:
-                script = " ".join(_trimmed_parts).strip()
+            script = _trim_script_to_word_limit(script, _wc_hi)
 
         # Sanitize BEFORE checkpointing so TTS never sees artifacts
         script = _sanitize_narration(script)
@@ -766,11 +784,20 @@ def make_process_segment(
         _audio_lang = get_language(config)
         if _audio_lang == "hi":
             try:
+                evict_ollama_models(config, reason="Translator model handoff")
                 with global_scheduler.task("heavy", f"Seg{i}:translate"):
                     with crewai_lock:
                         devanagari_script = director_agent_instance.translate_to_devanagari(
                             script, plan, state["context"]
                         )
+                if not devanagari_script:
+                    from agents.ui_state import UIState
+
+                    UIState.add_degradation(
+                        i,
+                        "translate_node",
+                        "Director translation failed -- falling back to English narration",
+                    )
                 if devanagari_script:
                     en_words = max(1, len(script.split()))
                     hi_words = len(devanagari_script.split())
@@ -784,7 +811,7 @@ def make_process_segment(
                             "using original script for TTS"
                         )
                         devanagari_script = None
-                log.info(f"  Seg {i}: Director translated to Devanagari")
+                    log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e})")
                 from agents.ui_state import UIState
@@ -826,12 +853,14 @@ def make_process_segment(
         mood = plan.get("mood", "mysterious")
 
         if audio_lang == "hi" and dev_script:
+            tts_lang = "hi"
             script_for_tts = inject_emotion(dev_script, mood, lang="hi")
         else:
+            tts_lang = "en"
             script_for_tts = inject_emotion(script, mood, lang="en")
 
         # Normalize Hindi characters for Supertonic compatibility
-        if audio_lang == "hi":
+        if tts_lang == "hi":
             from core.pre_production import _normalize_hindi_for_tts as _norm_hin
 
             _normalized = _norm_hin(script_for_tts)
@@ -863,7 +892,7 @@ def make_process_segment(
         for _tts_retry in range(2):  # at most 1 retry
             with global_scheduler.task("heavy", f"Seg{i}:TTS"):
                 tts_out = tts_generate(
-                    script_for_tts, lang=audio_lang, output_dir=out_base / "audio", speed=_tts_speed
+                    script_for_tts, lang=tts_lang, output_dir=out_base / "audio", speed=_tts_speed
                 )
                 audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
                 word_timestamps = (
@@ -1005,7 +1034,11 @@ def make_process_segment(
                 audio_path=Path(audio_path) if audio_path else None,
                 image_paths=[Path(p) for p in images],
                 script=script,
-                subtitle_script=state.get("devanagari_script") or script,
+                subtitle_script=(
+                    script
+                    if config.get("subtitles", {}).get("language") == "en"
+                    else state.get("devanagari_script") or script
+                ),
                 word_timestamps_json=Path(word_timestamps_json) if word_timestamps_json else None,
                 style=config.get("visual", {}).get("style", ""),
                 is_final=not (dry_run or preview_mode),
@@ -1335,6 +1368,13 @@ def make_process_segment(
             ws_block = self.world_state.to_prompt_block()
 
             try:
+                # ComfyUI may have just rendered this segment. Release its model
+                # before loading the Director again on constrained GPUs.
+                if self.config.get("image_gen", {}).get("backend") == "comfyui":
+                    from video.image_gen.image_gen import _free_comfyui_memory
+
+                    _free_comfyui_memory(self.config.get("image_gen", {}))
+                evict_ollama_models(self.config, reason="Memory review model handoff")
                 review_result = self.director_agent_instance.review_segment_memory(
                     segment_script=script,
                     image_plan=plan,

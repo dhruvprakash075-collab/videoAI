@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from video.image_gen.image_gen import (
+    _comfyui,
     _pexels,
     _prompt_cache_key,
     _record_oom_event,
@@ -21,6 +22,23 @@ from video.image_gen.image_gen import (
     get_oom_report,
     unload_bonsai_pipeline,
 )
+
+
+def test_comfyui_keeps_generated_images_when_memory_cleanup_fails(tmp_path: Path):
+    image = tmp_path / "scene.png"
+    client = MagicMock()
+    client.generate_image.return_value = [image]
+    client.free_memory.side_effect = RuntimeError("free failed")
+    runtime = MagicMock(base_url="http://127.0.0.1:8188")
+    runtime.ensure_running.return_value = True
+    cfg = {"comfyui": {"unload_after_batch": True}}
+
+    with (
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime),
+        patch("video.image_gen.comfyui_client.ComfyUIClient", return_value=client),
+        patch("video.image_gen.comfyui_workflow.create_default_workflow", return_value={}),
+    ):
+        assert _comfyui(["prompt"], tmp_path, cfg) == [image]
 
 
 @pytest.fixture(autouse=True)
