@@ -268,6 +268,13 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
         _unique_prompts.append(p)
     prompts = _unique_prompts
 
+    # YouTube delivery contract: dimensions enforce 16:9; this cue also keeps
+    # the generated composition landscape-safe and detail-oriented.
+    prompts = [
+        f"{p}, YouTube landscape 16:9 composition, highly detailed, high quality"
+        for p in prompts
+    ]
+
     return "; ".join(prompts)
 
 

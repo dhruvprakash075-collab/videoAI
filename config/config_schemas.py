@@ -189,6 +189,8 @@ class ScriptConfig(BaseModel):
     default_images_per_segment: int = Field(default=6, ge=1, le=30)
     max_images_per_segment: int = Field(default=8, ge=1, le=50)
     word_count_tolerance: float = 0.6
+    tts_words_per_minute_hi: float = Field(default=100.0, gt=0)
+    tts_words_per_minute_en: float = Field(default=150.0, gt=0)
     writer_max_tokens: int = 1024
     critic_enabled: bool = True
     critic_threshold: int = 60
@@ -325,7 +327,7 @@ class ComfyUIConfig(BaseModel):
     timeout_seconds: int = 300
     poll_seconds: float = 1.0
     auto_start_timeout: int = 60
-    unload_after_batch: bool = False
+    unload_after_batch: bool = True
 
 
 class UpscalerConfig(BaseModel):

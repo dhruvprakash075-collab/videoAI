@@ -753,7 +753,12 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
 
     if comfy_cfg.get("unload_after_batch", False):
         log.info("[ComfyUI] Unloading after batch (VRAM release)")
-        client.free_memory()
+        try:
+            client.free_memory()
+        except Exception as e:
+            # ponytail: cleanup is best-effort; a failed /free request must not
+            # discard images that ComfyUI already generated successfully.
+            log.warning(f"[ComfyUI] Could not unload after batch: {e}")
 
     return images
 

@@ -293,8 +293,23 @@ class TestEnrichPrompts:
             "image_gen": {"token_budget": {}},
         }
         plan = {"char_presence": [{"hero": 0.9}]}  # high weight
-        enriched, _ = sd.enrich_prompts("scene prompt", "battle charge attack", cfg, plan=plan)
+        enriched, negative = sd.enrich_prompts("scene prompt", "battle charge attack", cfg, plan=plan)
         assert "warrior with bow" in enriched
+        assert "exactly one character" in enriched
+        assert "duplicate person" in negative
+
+    def test_character_identity_is_not_duplicated_in_prompt(self):
+        description = "long black hair, blue eyes, weathered crimson cloak"
+        cfg = {
+            "visual": {"style": "dark fantasy anime"},
+            "characters": {"aria": {"name": "Aria", "description": description}},
+            "image_gen": {"token_budget": {}},
+        }
+        plan = {"char_presence": [{"aria": 0.9}]}
+        enriched, _ = sd.enrich_prompts(
+            f"Close-up, {description}, holding a lantern", "dark night", cfg, plan=plan
+        )
+        assert enriched.lower().count(description.lower()) == 1
 
     def test_no_char_presence_uses_establishing_and_closing(self):
         cfg = {
@@ -336,9 +351,13 @@ class TestEnrichPrompts:
             "image_gen": {"token_budget": {}},
         }
         plan = {"char_presence": [{"hero": 0.8, "villain": 0.7}]}
-        enriched, _ = sd.enrich_prompts("epic battle", "battle charge attack fight", cfg, plan=plan)
+        enriched, negative = sd.enrich_prompts("epic battle", "battle charge attack fight", cfg, plan=plan)
         # At least one character description should appear
         assert "strong warrior" in enriched or "demon king" in enriched
+        assert "duplicate person" not in negative
+        assert "distinct character 1 on left" in enriched
+        assert "distinct character 2 on right" in enriched
+        assert "fused faces" in negative
 
     def test_stop_words_not_stripped_as_char_names(self):
         """Short stop-words like 'The', 'a', 'an' should NOT be treated as character names."""

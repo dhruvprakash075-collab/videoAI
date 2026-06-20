@@ -1019,7 +1019,7 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
             "vram_hint_gb": 0.0,
             "notes": "Default. CPU ONNX, 4.5x faster than OmniVoice. Zero VRAM. Custom voice JSON.",
             "recommended": {
-                "voice": "character_voices/dhruv_voice_polished.json",
+                "voice": "character_voices/dhruv_narration.json",
                 "steps": 16,
                 "speed": 1.0,
             },

@@ -837,15 +837,14 @@ def _write_srt(
     # ------------------------------------------------------------------ #
     # Step 1: Try word_timestamps_json (real audio timing, all formats)   #
     # ------------------------------------------------------------------ #
-    wants_translated_subtitles = subtitle_language and subtitle_language != "auto"
-    script_has_devanagari = bool(re.search(r"[\u0900-\u097F]", script or ""))
-    skip_word_timestamps = (
-        wants_translated_subtitles and subtitle_language == "en" and script_has_devanagari
-    )
+    # TTS timestamps contain the spoken Hindi words. They can provide timing but
+    # must never replace an explicitly supplied English caption script.
+    force_english_script = subtitle_language == "en"
+    skip_word_timestamps = force_english_script
     if skip_word_timestamps:
         log.info(
             "Skipping provided word timestamps because English subtitles were requested "
-            "for Devanagari caption text"
+            "instead of spoken-language timestamp words"
         )
 
     if word_timestamps_json and word_timestamps_json.exists() and not skip_word_timestamps:
@@ -869,7 +868,7 @@ def _write_srt(
     # ------------------------------------------------------------------ #
     # Step 2: Try Whisper transcription (real audio timing, all formats)  #
     # ------------------------------------------------------------------ #
-    if audio is not None and audio.exists():
+    if not force_english_script and audio is not None and audio.exists():
         try:
             log.warning(
                 f"REGRESSION: Whisper fallback fired for seg (format={format_style}). "
@@ -942,6 +941,30 @@ def _write_srt(
     log.info(
         f"Using proportional split for subtitles ({format_style}) — no real timestamps available"
     )
+    # Source-mode scripts can retain their Markdown title. It is metadata, not
+    # caption text, and rendering the leading '#' is especially ugly.
+    script = re.sub(r"(?m)^\s*#{1,6}\s+.*(?:\r?\n|$)", "", script).strip()
+
+    # English captions have no matching word timestamps when narration is Hindi.
+    # Keep them readable with short, evenly timed phrases instead of placing one
+    # or more entire sentences on screen (which produced 50+ word blocks).
+    if subtitle_language == "en":
+        words = script.split()
+        words_per_caption = 1 if format_style == "tiktok" else 7
+        chunks = [
+            " ".join(words[i : i + words_per_caption])
+            for i in range(0, len(words), words_per_caption)
+        ]
+        total_words = len(words) or 1
+        lines: list[str] = []
+        t = 0.0
+        for idx, text in enumerate(chunks):
+            t_end = t + (len(text.split()) / total_words) * duration
+            lines += [str(idx + 1), f"{_ts(t)} --> {_ts(t_end)}", text, ""]
+            t = t_end
+        path.write_text("\n".join(lines), encoding="utf-8-sig")
+        return
+
     sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?=\s|$)|[!?।]+", script) if s.strip()]
     if not sentences:
         sentences = [script.strip()] if script.strip() else []

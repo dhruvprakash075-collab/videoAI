@@ -50,7 +50,9 @@ vision_document: |
     "recommendations": List of 3-5 production suggestions.
     "segment_count": int 3-8, recommended number of video segments.
     "words_per_segment": int 100-400, target words per segment.
-    "image_count_per_segment": int 5-12, images per segment.
+    "image_count_per_segment": int 2-4. Prefer fewer, stronger, highly detailed
+      compositions over many repetitive images. Every frame must be composed for
+      YouTube landscape 16:9; never request square or portrait framing.
     "recommended_duration_min": int, optimal video length in minutes based on content analysis.
       Consider content length, story complexity, character count, pacing, emotional arcs.
       Ranges: short stories (<1000 words) = 5-15 min, medium (1000-5000) = 15-45 min,
@@ -75,7 +77,7 @@ vision_document: |
     "recommendations": ["Suggestion 1", "Suggestion 2", "Suggestion 3"],
     "segment_count": 5,
     "words_per_segment": 280,
-    "image_count_per_segment": 8,
+    "image_count_per_segment": 3,
     "recommended_duration_min": 10
   }}
 

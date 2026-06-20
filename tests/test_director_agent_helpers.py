@@ -1117,7 +1117,7 @@ def test_translate_to_devanagari_empty_response_uses_original(agent):
     with patch.object(agent.llm, "_call_ollama_chat", return_value=""):
         original = "The original English text."
         result = agent.translate_to_devanagari(original, {})
-    assert result == original
+    assert result is None
 
 
 def test_translate_to_devanagari_too_few_deva_chars_uses_original(agent):
@@ -1126,7 +1126,7 @@ def test_translate_to_devanagari_too_few_deva_chars_uses_original(agent):
     with patch.object(agent.llm, "_call_ollama_chat", return_value=bad_translation):
         original = "the original"
         result = agent.translate_to_devanagari(original, {})
-    assert result == original
+    assert result is None
 
 
 def test_translate_to_devanagari_strips_think_tags(agent):
@@ -1142,7 +1142,7 @@ def test_translate_to_devanagari_exception_uses_original(agent):
     with patch.object(agent.llm, "_call_ollama_chat", side_effect=RuntimeError("ollama fail")):
         original = "the original"
         result = agent.translate_to_devanagari(original, {})
-    assert result == original
+    assert result is None
 
 
 # ── consult_on_config (early branches) ──────────────────────────────────────
