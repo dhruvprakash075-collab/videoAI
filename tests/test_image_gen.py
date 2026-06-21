@@ -291,16 +291,23 @@ def test_generate_images_qwen_runtime_failure_respects_non_bonsai_fallback(tmp_p
 
 def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
     from video.image_gen import image_gen
+    from video.image_gen.qwen_repose import QwenEditResult
 
     images = [tmp_path / "scene_01.png", tmp_path / "scene_02.png", tmp_path / "scene_03.png"]
     cfg = {"qwen_edit": {"character_threshold": 0.05}}
+    # The two-pass loop calls repose_character_detailed and uses the returned
+    # QwenEditResult.output_path for each composited frame.
+    repose = MagicMock(
+        side_effect=[
+            QwenEditResult("edited", str(tmp_path / "edited_01.png"), ""),
+            QwenEditResult("edited", str(tmp_path / "edited_03.png"), ""),
+        ]
+    )
     with (
         patch.object(image_gen, "_comfyui", return_value=images),
         patch.object(image_gen, "_free_comfyui_memory") as free_memory,
-        patch("video.image_gen.qwen_repose.repose_character") as repose,
+        patch("video.image_gen.qwen_repose.repose_character_detailed", repose),
     ):
-        repose.side_effect = [str(tmp_path / "edited_01.png"), str(tmp_path / "edited_03.png")]
-
         result = image_gen._comfyui_qwen_edit(
             ["first", "second", "third"],
             tmp_path,
@@ -310,6 +317,8 @@ def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
         )
 
     free_memory.assert_called_once_with(cfg)
+    # Only the two frames with a dominant character above threshold are reposed;
+    # the middle (no-character) frame is left untouched.
     assert repose.call_count == 2
     assert repose.call_args_list[0].args[:4] == (
         str(images[0]),
@@ -323,18 +332,21 @@ def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
         "third",
         str(images[2]),
     )
+    # Composited outputs are interleaved in order with the kept background.
     assert result == [tmp_path / "edited_01.png", images[1], tmp_path / "edited_03.png"]
 
 
 def test_comfyui_qwen_edit_respects_character_threshold(tmp_path: Path):
     from video.image_gen import image_gen
+    from video.image_gen.qwen_repose import QwenEditResult
 
     images = [tmp_path / "scene_01.png", tmp_path / "scene_02.png"]
     cfg = {"qwen_edit": {"character_threshold": 0.5}}
+    repose = MagicMock(return_value=QwenEditResult("edited", str(images[1]), ""))
     with (
         patch.object(image_gen, "_comfyui", return_value=images),
         patch.object(image_gen, "_free_comfyui_memory"),
-        patch("video.image_gen.qwen_repose.repose_character", return_value=str(images[1])) as repose,
+        patch("video.image_gen.qwen_repose.repose_character_detailed", repose),
     ):
         result = image_gen._comfyui_qwen_edit(
             ["low", "high"],
@@ -344,6 +356,7 @@ def test_comfyui_qwen_edit_respects_character_threshold(tmp_path: Path):
             project_id="project-a",
         )
 
+    # 0.49 is below the 0.5 threshold (frame skipped); 0.5 meets it and is reposed.
     repose.assert_called_once()
     assert repose.call_args.args[1] == "hero"
     assert repose.call_args.args[2] == "high"
