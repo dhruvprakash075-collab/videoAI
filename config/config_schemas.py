@@ -360,10 +360,8 @@ class QwenEditConfig(BaseModel):
     steps: int = 8
     cfg: float = 1.0
     denoise: float = 0.6
-    max_resolution: int = 1024
-    youtube_aspect: str = "16:9"
     vram_offload: bool = True
-    trigger: str = "any_character"
+    trigger: Literal["any_character", "disabled"] = "any_character"
     character_threshold: float = 0.05
     cache_dir: str = ".qwen_edit_cache"
     timeout_seconds: int = 600

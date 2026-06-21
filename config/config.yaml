@@ -170,8 +170,6 @@ image_gen:
     steps: 8
     cfg: 1.0
     denoise: 0.6
-    max_resolution: 1024
-    youtube_aspect: "16:9"
     vram_offload: false
     trigger: any_character
     character_threshold: 0.05
