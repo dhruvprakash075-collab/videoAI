@@ -208,6 +208,43 @@ def test_comfyui_passes_locked_seed_into_workflow(tmp_path: Path):
     assert seen_seeds[0] == seen_seeds[1]
 
 
+def test_comfyui_passes_locked_seed_into_workflow_patcher(tmp_path: Path):
+    """With a configured workflow_path, the locked seed reaches WorkflowPatcher.patch_all each run.
+
+    Mirrors test_comfyui_passes_locked_seed_into_workflow but exercises the
+    WorkflowPatcher branch (taken when comfyui.workflow_path is set, which the
+    live config.yaml does), closing the seed-wiring coverage gap on that path.
+    """
+    client = MagicMock()
+    client.generate_image.return_value = [tmp_path / "scene_01.png"]
+    runtime = MagicMock(base_url="http://127.0.0.1:8188")
+    runtime.ensure_running.return_value = True
+    cfg = {"lock_seed": True, "seed": -1, "comfyui": {"workflow_path": "workflow.json"}}
+
+    seen_seeds = []
+
+    def _capture(**kwargs):
+        seen_seeds.append(kwargs.get("seed"))
+        patched = MagicMock()
+        patched.get_workflow.return_value = {}
+        return patched
+
+    fake_patcher = MagicMock()
+    fake_patcher.patch_all.side_effect = _capture
+
+    with (
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime),
+        patch("video.image_gen.comfyui_client.ComfyUIClient", return_value=client),
+        patch("video.image_gen.comfyui_workflow.WorkflowPatcher", return_value=fake_patcher),
+    ):
+        _comfyui(["a forest"], tmp_path, cfg)
+        _comfyui(["a forest"], tmp_path, cfg)
+
+    assert fake_patcher.patch_all.call_count == 2
+    assert seen_seeds[0] is not None
+    assert seen_seeds[0] == seen_seeds[1]
+
+
 # ── _resolve_dominant_char ──────────────────────────────────
 
 
