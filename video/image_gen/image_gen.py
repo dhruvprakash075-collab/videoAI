@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 log = logging.getLogger(__name__)
 
-# ── Cached Bonsai pipeline (one process-wide instance) ───────────────────
+# ── Cached Bonsai pipeline (one process-wide instance) ────────────────────
 _bonsai_pipe = None
 _bonsai_pipe_lock = threading.Lock()
 _bonsai_model_id: str | None = None  # tracks which model is loaded; reload if cfg changes
@@ -77,7 +77,7 @@ def unload_bonsai_pipeline() -> None:
         log.debug("[image_gen] unload_bonsai_pipeline called but pipeline is already unloaded")
 
 
-# ── IP-Adapter re-export for convenience ─────────────────────────────────
+# ── IP-Adapter re-export for convenience ────────────────────────────
 # (Most callers shouldn't have to import ip_adapter directly.)
 from video.image_gen.ip_adapter import (
     get_ip_adapter,  # noqa: F401
@@ -215,7 +215,7 @@ def generate_images(
         )
 
 
-# ── CACHE HELPERS ──────────────────────────────────────────────────────────
+# ── CACHE HELPERS ─────────────────────────────────────────────
 
 
 def _master_portrait_hash_for_frame(char_key: str | None, ps=None) -> str:
@@ -276,7 +276,7 @@ def _prompt_cache_key(
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
 
 
-# ── BONSAI ────────────────────────────────────────────────────────────────
+# ── BONSAI ─────────────────────────────────────────────────
 
 
 def _load_bonsai_pipeline(model_id: str):
@@ -379,7 +379,7 @@ def _bonsai(
 
             dom_char, dom_weight = _resolve_dominant_char(cp)
 
-            # ── Build the per-frame prompt ─────────────────────────────
+            # ── Build the per-frame prompt ──────────────────────────
             # Prepend the dominant character's visual description as a second
             # layer of consistency (alongside IP-Adapter). Bonsai gets no
             # negative prompt by design.
@@ -498,7 +498,7 @@ def _bonsai(
                 except Exception as e:
                     log.debug(f"[Bonsai] IP-Adapter setup failed for {dom_char}: {e}")
 
-            # ── 2-Tier OOM-Resilient Inference ───────────────────────
+            # ── 2-Tier OOM-Resilient Inference ────────────────────
             # Tier 1: normal, Tier 2: half-steps, then skip.
             img = None
             _generator = None
@@ -602,7 +602,7 @@ def _bonsai(
     return images
 
 
-# ── UPSCALER ──────────────────────────────────────────────────────────────
+# ── UPSCALER ─────────────────────────────────────────────
 
 
 def _maybe_upscale(img, cfg: dict):
@@ -672,7 +672,7 @@ def _maybe_upscale(img, cfg: dict):
         return img
 
 
-# ── COMFYUI ──────────────────────────────────────────────────────────────
+# ── COMFYUI ───────────────────────────────────────────────
 
 
 def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
@@ -709,229 +709,4 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     images: list[Path] = []
 
     with tqdm(total=len(prompts), desc="  ComfyUI", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            filename_prefix = f"scene_{i + 1:02d}"
-            if patcher:
-                workflow = patcher.patch_all(
-                    prompt=prompt,
-                    negative_prompt=neg_prompt,
-                    width=width,
-                    height=height,
-                    steps=steps,
-                    cfg=cfg_scale,
-                    sampler_name=sampler,
-                    scheduler=scheduler,
-                    checkpoint=checkpoint,
-                    filename_prefix=filename_prefix,
-                ).get_workflow()
-            else:
-                workflow = create_default_workflow(
-                    prompt=prompt,
-                    negative_prompt=neg_prompt,
-                    width=width,
-                    height=height,
-                    steps=steps,
-                    cfg=cfg_scale,
-                    sampler_name=sampler,
-                    scheduler=scheduler,
-                    checkpoint=checkpoint,
-                    filename_prefix=filename_prefix,
-                )
-
-            output_images = client.generate_image(
-                workflow,
-                out,
-                filename_prefix=f"scene_{i + 1:02d}",
-                poll_interval=comfy_cfg.get("poll_seconds", 1.0),
-                timeout=comfy_cfg.get("timeout_seconds", 300),
-            )
-
-            images.extend(output_images)
-            pbar.update(1)
-
-    log.info(f"ComfyUI: {len(images)} images generated")
-
-    if comfy_cfg.get("unload_after_batch", False):
-        log.info("[ComfyUI] Unloading after batch (VRAM release)")
-        try:
-            client.free_memory()
-        except Exception as e:
-            # ponytail: cleanup is best-effort; a failed /free request must not
-            # discard images that ComfyUI already generated successfully.
-            log.warning(f"[ComfyUI] Could not unload after batch: {e}")
-
-    return images
-
-
-def _qwen_seed(char_key: str, frame_index: int, prompt: str) -> int:
-    raw = f"qwen_edit|{char_key}|{frame_index}|{prompt[:80]}"
-    return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16) % (2**32)
-
-
-def _free_comfyui_memory(cfg: dict) -> None:
-    try:
-        from video.image_gen.comfyui_client import ComfyUIClient
-        from video.image_gen.comfyui_runtime import get_comfyui_runtime
-
-        comfy_cfg = cfg.get("comfyui", {}) or {}
-        runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
-        client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
-        client.free_memory()
-        log.info("[ComfyUI] Requested memory free before Qwen edit pass")
-    except Exception as e:
-        log.debug("[ComfyUI] Could not free memory before Qwen edit pass: %s", e)
-
-
-def _comfyui_qwen_edit(
-    prompts: list[str],
-    out: Path,
-    cfg: dict,
-    char_presence: list[dict[str, float]] | None = None,
-    project_id: str = "",
-) -> list[Path]:
-    """Two-pass ComfyUI pipeline: generate full backgrounds, then paste characters.
-
-    Pass 1 deliberately uses the existing character-blind ComfyUI one-pass path
-    to create complete backgrounds. Pass 2 loads Qwen-Image-Edit only for frames
-    with a saved character and writes the result back to the same frame path.
-    """
-    qwen_cfg = cfg.get("qwen_edit", {}) or {}
-    threshold = float(qwen_cfg.get("character_threshold", 0.05))
-
-    log.info("[qwen_edit] Pass 1/2: generating full backgrounds")
-    images = _comfyui(prompts, out, cfg)
-    if not images:
-        return images
-
-    _free_comfyui_memory(cfg)
-
-    from video.image_gen.qwen_repose import repose_character
-
-    edited: list[Path] = []
-    with tqdm(total=len(images), desc="  Qwen edit", leave=False) as pbar:
-        for i, image_path in enumerate(images):
-            cp = {}
-            if isinstance(char_presence, list) and i < len(char_presence):
-                val = char_presence[i]
-                if isinstance(val, dict):
-                    cp = val
-            dom_char, _dom_weight = _resolve_dominant_char_at_threshold(cp, threshold)
-            if not dom_char:
-                edited.append(Path(image_path))
-                pbar.update(1)
-                continue
-
-            prompt = prompts[i] if i < len(prompts) else ""
-            seed = _qwen_seed(dom_char, i, prompt)
-            result = repose_character(
-                str(image_path),
-                dom_char,
-                prompt,
-                str(image_path),
-                config={"image_gen": cfg},
-                project_id=project_id,
-                seed=seed,
-            )
-            edited.append(Path(result))
-            pbar.update(1)
-
-    return edited
-
-
-# ── REPLICATE / PEXELS (kept as code; not in active path) ────────────────
-
-
-def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
-    try:
-        import replicate
-    except ImportError as e:
-        raise ImportError("pip install replicate") from e
-
-    from utils.url_security import validate_source_url
-
-    model = cfg.get(
-        "replicate_model",
-        "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
-    )
-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
-    images = []
-    with tqdm(total=len(prompts), desc="  Replicate", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            output = replicate.run(
-                model,
-                input={
-                    "prompt": prompt,
-                    "width": cfg.get("width", 1024),
-                    "height": cfg.get("height", 576),
-                    "num_inference_steps": cfg.get("steps", 25),
-                    "guidance_scale": cfg.get("guidance_scale", 7.5),
-                },
-            )
-            url = output[0] if isinstance(output, list) else output
-            # SSRF: validate returned image URL before download
-            validated_url = validate_source_url(url)
-            p = out / f"scene_{i + 1:02d}.png"
-            req = urllib.request.Request(validated_url, headers={"User-Agent": "Video.AI"})
-            with urllib.request.urlopen(req, timeout=30) as response:
-                # Content-type check when header is present
-                ct = response.headers.get("Content-Type", "")
-                if ct and not ct.startswith("image/"):
-                    raise ValueError(f"Replicate returned non-image content-type: {ct}")
-                data = response.read(max_download_bytes + 1)
-                if len(data) > max_download_bytes:
-                    raise ValueError(f"Replicate image too large: {len(data)} bytes")
-            with open(str(p), "wb") as out_file:
-                out_file.write(data)
-            images.append(p)
-            pbar.update(1)
-
-    log.info(f"Replicate: {len(images)} images")
-    return images
-
-
-def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
-    api_key = cfg.get("pexels_api_key") or os.environ.get("PEXELS_API_KEY", "")
-    if not api_key:
-        raise ValueError("pexels_api_key missing from config or PEXELS_API_KEY env var")
-
-    from utils.url_security import validate_source_url
-
-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
-    images = []
-    with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            query = urllib.parse.quote_plus(prompt[:100])
-            url = (
-                f"https://api.pexels.com/v1/search?query={query}"
-                "&per_page=1&orientation=landscape"
-            )
-            req = urllib.request.Request(url, headers={"Authorization": api_key})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
-
-            photos = data.get("photos", [])
-            if not photos:
-                log.warning(f"Pexels: no results for prompt {i + 1}, skipping")
-                pbar.update(1)
-                continue
-
-            img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["original"]
-            # SSRF: validate returned image URL before download
-            validated_img_url = validate_source_url(img_url)
-            p = out / f"scene_{i + 1:02d}.png"
-            img_req = urllib.request.Request(validated_img_url, headers={"User-Agent": "Video.AI"})
-            with urllib.request.urlopen(img_req, timeout=30) as response:
-                # Content-type check when header is present
-                ct = response.headers.get("Content-Type", "")
-                if ct and not ct.startswith("image/"):
-                    raise ValueError(f"Pexels returned non-image content-type: {ct}")
-                data = response.read(max_download_bytes + 1)
-                if len(data) > max_download_bytes:
-                    raise ValueError(f"Pexels image too large: {len(data)} bytes")
-            with open(str(p), "wb") as out_file:
-                out_file.write(data)
-            images.append(p)
-            pbar.update(1)
-
-    log.info(f"Pexels: {len(images)} images")
-    return images
+        
