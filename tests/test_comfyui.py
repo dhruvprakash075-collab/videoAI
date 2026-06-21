@@ -190,6 +190,165 @@ class TestComfyUIClient:
             assert "sub+folder" in req.full_url or "sub%20folder" in req.full_url
 
 
+class TestUploadImage:
+    """Coverage for ComfyUIClient.upload_image (multipart upload to /upload/image)."""
+
+    @staticmethod
+    def _json_response(payload: dict) -> MagicMock:
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        return mock_response
+
+    @staticmethod
+    def _write_image(tmp_path: Path, name: str = "frame.png") -> tuple[Path, bytes]:
+        image_bytes = b"\x89PNG\r\n\x1a\nfake-image-bytes"
+        image_file = tmp_path / name
+        image_file.write_bytes(image_bytes)
+        return image_file, image_bytes
+
+    def test_posts_multipart_to_upload_image(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response(
+                {"name": "frame.png", "subfolder": "", "type": "input"}
+            )
+            result = client.upload_image(image_file)
+
+        mock_urlopen.assert_called_once()
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_method() == "POST"
+        assert req.full_url.endswith("/upload/image")
+        assert result["name"] == "frame.png"
+        assert result["type"] == "input"
+
+    def test_content_type_has_multipart_boundary(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"name": "frame.png"})
+            client.upload_image(image_file)
+
+        req = mock_urlopen.call_args[0][0]
+        content_type = req.get_header("Content-type")
+        assert content_type is not None
+        assert content_type.startswith("multipart/form-data; boundary=")
+
+    def test_body_contains_filename_type_and_image_bytes(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, image_bytes = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"name": "frame.png"})
+            client.upload_image(image_file)
+
+        body = mock_urlopen.call_args[0][0].data
+        assert isinstance(body, bytes)
+        assert b'name="image"' in body
+        assert b'filename="frame.png"' in body
+        assert b'name="type"' in body
+        assert b"input" in body
+        assert image_bytes in body
+
+    def test_preserves_subfolder_and_type_from_response(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response(
+                {"name": "frame.png", "subfolder": "characters", "type": "input"}
+            )
+            result = client.upload_image(image_file)
+
+        assert result == {
+            "name": "frame.png",
+            "subfolder": "characters",
+            "type": "input",
+        }
+
+    def test_uses_basename_only_for_filename(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"name": "hack.png"})
+            client.upload_image(image_file, name="/etc/evil/hack.png")
+
+        body = mock_urlopen.call_args[0][0].data
+        assert b'filename="hack.png"' in body
+        assert b"/etc/evil" not in body
+
+    def test_missing_file_raises_filenotfound_without_network(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        missing = tmp_path / "does_not_exist.png"
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            with pytest.raises(FileNotFoundError):
+                client.upload_image(missing)
+            mock_urlopen.assert_not_called()
+
+    def test_missing_name_in_response_raises_comfyui_error(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"subfolder": "", "type": "input"})
+            with pytest.raises(ComfyUIError, match="name"):
+                client.upload_image(image_file)
+
+    def test_malformed_json_response_raises_comfyui_error(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"<html>not json</html>"
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = mock_response
+            with pytest.raises(ComfyUIError):
+                client.upload_image(image_file)
+
+    def test_overwrite_flag_included_in_body(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"name": "frame.png"})
+            client.upload_image(image_file, overwrite=True)
+
+        body = mock_urlopen.call_args[0][0].data
+        assert b'name="overwrite"' in body
+        assert b"true" in body
+
+    def test_overwrite_flag_absent_by_default(self, tmp_path):
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._json_response({"name": "frame.png"})
+            client.upload_image(image_file)
+
+        body = mock_urlopen.call_args[0][0].data
+        assert b'name="overwrite"' not in body
+
+    def test_connection_error_raises_comfyui_error(self, tmp_path):
+        import urllib.error
+
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        image_file, _ = self._write_image(tmp_path)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+            with pytest.raises(ComfyUIError):
+                client.upload_image(image_file)
+
+
 class TestWorkflowPatcher:
     def test_load_workflow(self, tmp_path):
         workflow_file = tmp_path / "test.json"
