@@ -2,9 +2,11 @@
 
 import json
 import logging
+import mimetypes
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 from utils.circuit_breaker import BreakerOpen, CircuitBreakerRegistry
@@ -80,14 +82,118 @@ class ComfyUIClient:
         """Get current queue status."""
         return self._request("/queue")
 
-    def upload_image(self, image_path: Path, name: str | None = None) -> dict:
-        """Upload an image to ComfyUI."""
-        if name is None:
-            name = image_path.name
+    def upload_image(
+        self,
+        image_path: Path,
+        name: str | None = None,
+        overwrite: bool = False,
+    ) -> dict:
+        """Upload a local image to ComfyUI's ``/upload/image`` endpoint.
 
-        import multipart  # noqa: F401
+        Builds a ``multipart/form-data`` request using only the standard
+        library and returns the validated JSON response expected by a
+        ``LoadImage`` workflow node. The returned dict always contains a
+        non-empty ``name`` and preserves ``subfolder``/``type`` when present.
 
-        raise NotImplementedError("upload_image requires multipart form encoding")
+        Args:
+            image_path: Path to the local image file to upload.
+            name: Optional filename to present to ComfyUI. Only the basename is
+                used so host paths never leak into the input store.
+            overwrite: When True, instruct ComfyUI to overwrite an existing
+                input file with the same name.
+        """
+        image_path = Path(image_path)
+        # Reject a missing file before any network activity.
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Image to upload does not exist: {image_path}")
+
+        safe_name = Path(name).name if name else image_path.name
+        if not safe_name:
+            safe_name = image_path.name
+
+        cb = CircuitBreakerRegistry.get("comfyui", fails=3, cooldown=30.0)
+        if not cb.allow_request():
+            log.warning("[ComfyUIClient] Circuit breaker OPEN for ComfyUI — failing fast")
+            raise BreakerOpen("comfyui", cb.cooldown_remaining_s())
+
+        from utils.url_security import build_validated_url
+
+        url = build_validated_url(self.base_url, "/upload/image")
+
+        image_bytes = image_path.read_bytes()
+        content_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+        boundary = "----comfyui" + uuid.uuid4().hex
+        body = self._encode_multipart(boundary, safe_name, content_type, image_bytes, overwrite)
+
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                raw = response.read().decode("utf-8")
+            cb.record_success()
+        except urllib.error.HTTPError as e:
+            cb.record_failure()
+            raise ComfyUIError(f"HTTP {e.code}: {e.reason}") from e
+        except urllib.error.URLError as e:
+            cb.record_failure()
+            raise ComfyUIError(f"Connection failed: {e.reason}") from e
+        except Exception as e:
+            cb.record_failure()
+            raise ComfyUIError(f"Upload failed: {e}") from e
+
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ComfyUIError(f"Malformed upload response from ComfyUI: {e}") from e
+
+        if not isinstance(result, dict) or not result.get("name"):
+            raise ComfyUIError("ComfyUI upload response missing required 'name' field")
+
+        return {
+            "name": result["name"],
+            "subfolder": result.get("subfolder", ""),
+            "type": result.get("type", "input"),
+        }
+
+    @staticmethod
+    def _encode_multipart(
+        boundary: str,
+        filename: str,
+        content_type: str,
+        image_bytes: bytes,
+        overwrite: bool,
+    ) -> bytes:
+        """Encode a multipart/form-data body for the upload request.
+
+        Never logs the body or the image bytes.
+        """
+        crlf = b"\r\n"
+        bbound = boundary.encode("ascii")
+        parts: list[bytes] = []
+
+        # Binary image field.
+        parts.append(b"--" + bbound + crlf)
+        parts.append(
+            f'Content-Disposition: form-data; name="image"; filename="{filename}"'.encode()
+            + crlf
+        )
+        parts.append(f"Content-Type: {content_type}".encode() + crlf + crlf)
+        parts.append(image_bytes + crlf)
+
+        # type=input field.
+        parts.append(b"--" + bbound + crlf)
+        parts.append(b'Content-Disposition: form-data; name="type"' + crlf + crlf)
+        parts.append(b"input" + crlf)
+
+        # overwrite field (only when explicitly requested).
+        if overwrite:
+            parts.append(b"--" + bbound + crlf)
+            parts.append(b'Content-Disposition: form-data; name="overwrite"' + crlf + crlf)
+            parts.append(b"true" + crlf)
+
+        parts.append(b"--" + bbound + b"--" + crlf)
+        return b"".join(parts)
 
     def get_view(self, filename: str, subfolder: str = "", image_type: str = "output") -> bytes:
         """Get an image from ComfyUI — local service URL."""
