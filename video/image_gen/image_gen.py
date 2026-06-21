@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 log = logging.getLogger(__name__)
 
-# ── Cached Bonsai pipeline (one process-wide instance) ───────────────────
+# ── Cached Bonsai pipeline (one process-wide instance) ────────────────
 _bonsai_pipe = None
 _bonsai_pipe_lock = threading.Lock()
 _bonsai_model_id: str | None = None  # tracks which model is loaded; reload if cfg changes
@@ -77,7 +77,7 @@ def unload_bonsai_pipeline() -> None:
         log.debug("[image_gen] unload_bonsai_pipeline called but pipeline is already unloaded")
 
 
-# ── IP-Adapter re-export for convenience ────────────────────────────
+# ── IP-Adapter re-export for convenience ───────────────────
 # (Most callers shouldn't have to import ip_adapter directly.)
 from video.image_gen.ip_adapter import (
     get_ip_adapter,  # noqa: F401
@@ -128,7 +128,8 @@ def generate_images(
 
     if backend == "comfyui" and composition_mode == "qwen_edit":
         qwen_cfg = cfg.get("qwen_edit", {}) or {}
-        if qwen_cfg.get("enabled", False):
+        qwen_trigger = qwen_cfg.get("trigger", "any_character")
+        if qwen_cfg.get("enabled", False) and qwen_trigger != "disabled":
             qwen_issues = _qwen_preflight_issues(cfg)
             if qwen_issues:
                 log.warning(
@@ -158,7 +159,12 @@ def generate_images(
                         )
                     raise
         else:
-            log.info("[image_gen] qwen_edit mode is configured but disabled; using one_pass")
+            log.info(
+                "[image_gen] qwen_edit mode configured but inactive "
+                "(enabled=%s, trigger=%s); using one_pass",
+                qwen_cfg.get("enabled", False),
+                qwen_trigger,
+            )
 
     if backend == "comfyui" and composition_mode == "layered_v3":
         try:
@@ -215,7 +221,7 @@ def generate_images(
         )
 
 
-# ── CACHE HELPERS ─────────────────────────────────────────────
+# ── CACHE HELPERS ────────────────────────────
 
 
 def _master_portrait_hash_for_frame(char_key: str | None, ps=None) -> str:
@@ -276,7 +282,7 @@ def _prompt_cache_key(
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
 
 
-# ── BONSAI ─────────────────────────────────────────────────
+# ── BONSAI ──────────────────────────
 
 
 def _load_bonsai_pipeline(model_id: str):
@@ -379,7 +385,7 @@ def _bonsai(
 
             dom_char, dom_weight = _resolve_dominant_char(cp)
 
-            # ── Build the per-frame prompt ──────────────────────────
+            # ── Build the per-frame prompt ───────────────────────
             # Prepend the dominant character's visual description as a second
             # layer of consistency (alongside IP-Adapter). Bonsai gets no
             # negative prompt by design.
@@ -498,7 +504,7 @@ def _bonsai(
                 except Exception as e:
                     log.debug(f"[Bonsai] IP-Adapter setup failed for {dom_char}: {e}")
 
-            # ── 2-Tier OOM-Resilient Inference ────────────────────
+            # ── 2-Tier OOM-Resilient Inference ────────────────
             # Tier 1: normal, Tier 2: half-steps, then skip.
             img = None
             _generator = None
@@ -602,7 +608,7 @@ def _bonsai(
     return images
 
 
-# ── UPSCALER ─────────────────────────────────────────────
+# ── UPSCALER ──────────────────────────
 
 
 def _maybe_upscale(img, cfg: dict):
@@ -672,7 +678,32 @@ def _maybe_upscale(img, cfg: dict):
         return img
 
 
-# ── COMFYUI ───────────────────────────────────────────────
+# ── COMFYUI ───────────────────────────
+
+
+def _comfyui_seed(cfg: dict, prompt: str, frame_index: int) -> int | None:
+    """Resolve a deterministic ComfyUI seed for one frame.
+
+    Priority:
+    1. An explicit non-negative ``image_gen.seed`` is used as a reproducible
+       base, offset per frame so frames differ while the whole run repeats.
+    2. Otherwise, when ``lock_seed`` is true, derive a stable seed from the
+       prompt and frame index via md5 — never Python's salted ``hash()``,
+       which changes between processes.
+    3. Otherwise return ``None`` so the workflow layer picks a fresh random
+       seed (legacy, non-reproducible behavior).
+    """
+    explicit = cfg.get("seed", -1)
+    try:
+        explicit = int(explicit)
+    except (TypeError, ValueError):
+        explicit = -1
+    if explicit >= 0:
+        return (explicit + frame_index * 7919) % (2**32)
+    if cfg.get("lock_seed", True):
+        raw = f"comfyui|{prompt[:120]}|frame={frame_index}"
+        return int(hashlib.md5(raw.encode("utf-8")).hexdigest()[:8], 16) % (2**32)
+    return None
 
 
 def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
@@ -711,10 +742,12 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     with tqdm(total=len(prompts), desc="  ComfyUI", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
             filename_prefix = f"scene_{i + 1:02d}"
+            seed = _comfyui_seed(cfg, prompt, i)
             if patcher:
                 workflow = patcher.patch_all(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
+                    seed=seed,
                     width=width,
                     height=height,
                     steps=steps,
@@ -728,6 +761,7 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
                 workflow = create_default_workflow(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
+                    seed=seed,
                     width=width,
                     height=height,
                     steps=steps,
@@ -756,7 +790,7 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
         try:
             client.free_memory()
         except Exception as e:
-            # ponytail: cleanup is best-effort; a failed /free request must not
+            # cleanup is best-effort; a failed /free request must not
             # discard images that ComfyUI already generated successfully.
             log.warning(f"[ComfyUI] Could not unload after batch: {e}")
 
