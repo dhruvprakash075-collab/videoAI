@@ -14,6 +14,8 @@ Patches use zero context, so apply with --unidiff-zero:
     git add -A && git commit -m "Phase 5: route research through utils.researcher"
     git apply --unidiff-zero patches/phase6.patch
     git add -A && git commit -m "Phase 6: remove dead config switches; honor critic.enabled"
+    git apply --unidiff-zero patches/phase7a.patch
+    git add -A && git commit -m "Phase 7a: remove dormant replicate/pexels image backend"
 
 ## Phase 5 - research consolidation
 
@@ -48,3 +50,19 @@ write_script_node -> critic_node edge is now a conditional edge.
 tests/test_pipeline_graph.py: _FakeCtx nests max_rewrites/threshold under
 critic, plus two new tests covering route_after_write for the enabled and
 disabled critic cases.
+
+## Phase 7a - remove dormant replicate/pexels backend
+
+The replicate and pexels image backends were dead code: defined in image_gen.py
+but not wired into any active code path (no caller anywhere in the pipeline).
+Removing them makes the dependency set and the image_gen surface truthful.
+
+video/image_gen/image_gen.py: removed _replicate() and _pexels(), plus the
+now-unused imports json, os, urllib.parse and urllib.request.
+
+tests/test_image_gen.py: removed the _pexels/_replicate imports and the
+tests that exercised the deleted functions
+(test_pexels_search_url_has_no_literal_braces, TestReplicateRegression and
+TestPexelsRegression).
+
+requirements.txt: dropped the replicate>=1.0.7 dependency.

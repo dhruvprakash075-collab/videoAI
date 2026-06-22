@@ -1,0 +1,250 @@
+diff --git a/video/image_gen/image_gen.py b/video/image_gen/image_gen.py
+--- a/video/image_gen/image_gen.py
++++ b/video/image_gen/image_gen.py
+@@ -20 +19,0 @@
+-import json
+@@ -22 +20,0 @@
+-import os
+@@ -24,2 +21,0 @@
+-import urllib.parse
+-import urllib.request
+@@ -921,99 +916,0 @@
+-
+-
+-# ── REPLICATE / PEXELS (kept as code; not in active path) ────────────
+-
+-
+-def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
+-    try:
+-        import replicate
+-    except ImportError as e:
+-        raise ImportError("pip install replicate") from e
+-
+-    from utils.url_security import validate_source_url
+-
+-    model = cfg.get(
+-        "replicate_model",
+-        "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
+-    )
+-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
+-    images = []
+-    with tqdm(total=len(prompts), desc="  Replicate", leave=False) as pbar:
+-        for i, prompt in enumerate(prompts):
+-            output = replicate.run(
+-                model,
+-                input={
+-                    "prompt": prompt,
+-                    "width": cfg.get("width", 1024),
+-                    "height": cfg.get("height", 576),
+-                    "num_inference_steps": cfg.get("steps", 25),
+-                    "guidance_scale": cfg.get("guidance_scale", 7.5),
+-                },
+-            )
+-            url = output[0] if isinstance(output, list) else output
+-            # SSRF: validate returned image URL before download
+-            validated_url = validate_source_url(url)
+-            p = out / f"scene_{i + 1:02d}.png"
+-            req = urllib.request.Request(validated_url, headers={"User-Agent": "Video.AI"})
+-            with urllib.request.urlopen(req, timeout=30) as response:
+-                # Content-type check when header is present
+-                ct = response.headers.get("Content-Type", "")
+-                if ct and not ct.startswith("image/"):
+-                    raise ValueError(f"Replicate returned non-image content-type: {ct}")
+-                data = response.read(max_download_bytes + 1)
+-                if len(data) > max_download_bytes:
+-                    raise ValueError(f"Replicate image too large: {len(data)} bytes")
+-            with open(str(p), "wb") as out_file:
+-                out_file.write(data)
+-            images.append(p)
+-            pbar.update(1)
+-
+-    log.info(f"Replicate: {len(images)} images")
+-    return images
+-
+-
+-def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
+-    api_key = cfg.get("pexels_api_key") or os.environ.get("PEXELS_API_KEY", "")
+-    if not api_key:
+-        raise ValueError("pexels_api_key missing from config or PEXELS_API_KEY env var")
+-
+-    from utils.url_security import validate_source_url
+-
+-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
+-    images = []
+-    with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
+-        for i, prompt in enumerate(prompts):
+-            query = urllib.parse.quote_plus(prompt[:100])
+-            url = (
+-                f"{{https://api.pexels.com/v1/search?query={query}}}"
+-                "&per_page=1&orientation=landscape"
+-            )
+-            req = urllib.request.Request(url, headers={"Authorization": api_key})
+-            with urllib.request.urlopen(req, timeout=15) as resp:
+-                data = json.loads(resp.read())
+-
+-            photos = data.get("photos", [])
+-            if not photos:
+-                log.warning(f"Pexels: no results for prompt {i + 1}, skipping")
+-                pbar.update(1)
+-                continue
+-
+-            img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["original"]
+-            # SSRF: validate returned image URL before download
+-            validated_img_url = validate_source_url(img_url)
+-            p = out / f"scene_{i + 1:02d}.png"
+-            img_req = urllib.request.Request(validated_img_url, headers={"User-Agent": "Video.AI"})
+-            with urllib.request.urlopen(img_req, timeout=30) as response:
+-                # Content-type check when header is present
+-                ct = response.headers.get("Content-Type", "")
+-                if ct and not ct.startswith("image/"):
+-                    raise ValueError(f"Pexels returned non-image content-type: {ct}")
+-                data = response.read(max_download_bytes + 1)
+-                if len(data) > max_download_bytes:
+-                    raise ValueError(f"Pexels image too large: {len(data)} bytes")
+-            with open(str(p), "wb") as out_file:
+-                out_file.write(data)
+-            images.append(p)
+-            pbar.update(1)
+-
+-    log.info(f"Pexels: {len(images)} images")
+-    return images
+diff --git a/tests/test_image_gen.py b/tests/test_image_gen.py
+--- a/tests/test_image_gen.py
++++ b/tests/test_image_gen.py
+@@ -16 +15,0 @@
+-    _pexels,
+@@ -19 +17,0 @@
+-    _replicate,
+@@ -505,31 +502,0 @@
+-def test_pexels_search_url_has_no_literal_braces(tmp_path: Path, monkeypatch):
+-    """Regression guard for malformed f-string URLs in the dormant Pexels path."""
+-    import json
+-    import urllib.request
+-
+-    captured_urls = []
+-
+-    class FakeResponse:
+-        def __enter__(self):
+-            return self
+-
+-        def __exit__(self, *args):
+-            return False
+-
+-        def read(self):
+-            return json.dumps({"photos": []}).encode("utf-8")
+-
+-    def fake_urlopen(req, *args, **kwargs):
+-        captured_urls.append(req.full_url if isinstance(req, urllib.request.Request) else req)
+-        return FakeResponse()
+-
+-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+-
+-    assert _pexels(["hero portrait"], tmp_path, {"pexels_api_key": "test-key"}) == []
+-    assert captured_urls == [
+-        "https://api.pexels.com/v1/search?query=hero+portrait&per_page=1&orientation=landscape"
+-    ]
+-    assert "{" not in captured_urls[0]
+-    assert "}" not in captured_urls[0]
+-
+-
+@@ -543,95 +509,0 @@
+-
+-
+-class TestReplicateRegression:
+-    def test_replicate_metadata_url_rejected(self, tmp_path: Path):
+-        """Replicate returning a metadata IP URL should be rejected."""
+-        mock_output = ["http://169.254.169.254/latest/meta-data/"]
+-        mock_replicate = MagicMock()
+-        mock_replicate.run.return_value = mock_output
+-        with (
+-            patch.dict("sys.modules", {"replicate": mock_replicate}),
+-            patch("utils.url_security.validate_source_url", side_effect=ValueError("URL host is disallowed: 169.254.169.254")),
+-        ):
+-            with pytest.raises(ValueError, match="disallowed"):
+-                _replicate(["test"], tmp_path, {"replicate_model": "test/model"})
+-
+-
+-class TestPexelsRegression:
+-    def test_pexels_non_image_content_rejected(self, tmp_path: Path):
+-        """Pexels returning non-image content-type should be rejected."""
+-        import json
+-
+-        mock_search_resp = {
+-            "photos": [{"src": {"large2x": "https://example.com/image.jpg"}}]
+-        }
+-
+-        class FakeSearchResponse:
+-            def __enter__(self):
+-                return self
+-            def __exit__(self, *args):
+-                return False
+-            def read(self):
+-                return json.dumps(mock_search_resp).encode("utf-8")
+-
+-        class FakeImageResponse:
+-            def __enter__(self):
+-                return self
+-            def __exit__(self, *args):
+-                return False
+-            headers = {"Content-Type": "text/html"}
+-            def read(self, n=None):
+-                return b"<html>not an image</html>"
+-
+-        call_count = [0]
+-        def fake_urlopen(req, *args, **kwargs):
+-            call_count[0] += 1
+-            if call_count[0] == 1:
+-                return FakeSearchResponse()
+-            return FakeImageResponse()
+-
+-        with (
+-            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+-            patch("utils.url_security.validate_source_url", return_value="https://example.com/image.jpg"),
+-        ):
+-            with pytest.raises(ValueError, match="non-image content-type"):
+-                _pexels(["test"], tmp_path, {"pexels_api_key": "test-key"})
+-
+-    def test_pexels_oversized_image_rejected(self, tmp_path: Path):
+-        """Pexels returning an oversized image should be rejected."""
+-        import json
+-
+-        mock_search_resp = {
+-            "photos": [{"src": {"large2x": "https://example.com/image.jpg"}}]
+-        }
+-
+-        class FakeSearchResponse:
+-            def __enter__(self):
+-                return self
+-            def __exit__(self, *args):
+-                return False
+-            def read(self):
+-                return json.dumps(mock_search_resp).encode("utf-8")
+-
+-        class FakeOversizeResponse:
+-            def __enter__(self):
+-                return self
+-            def __exit__(self, *args):
+-                return False
+-            headers = {"Content-Type": "image/jpeg"}
+-            def read(self, n=None):
+-                # Return more than max_download_bytes (50 MB)
+-                return b"x" * (50 * 1024 * 1024 + 1)
+-
+-        call_count = [0]
+-        def fake_urlopen(req, *args, **kwargs):
+-            call_count[0] += 1
+-            if call_count[0] == 1:
+-                return FakeSearchResponse()
+-            return FakeOversizeResponse()
+-
+-        with (
+-            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+-            patch("utils.url_security.validate_source_url", return_value="https://example.com/image.jpg"),
+-        ):
+-            with pytest.raises(ValueError, match="too large"):
+-                _pexels(["test"], tmp_path, {"pexels_api_key": "test-key"})
+diff --git a/requirements.txt b/requirements.txt
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -39 +38,0 @@
+-replicate>=1.0.7
