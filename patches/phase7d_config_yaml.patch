@@ -1,0 +1,11 @@
+--- a/config/config.yaml
++++ b/config/config.yaml
+@@ -219,8 +219,6 @@
+   program_loudnorm: true
+   loudnorm_two_pass: true
+   target_lufs: -14
+-rvc:
+-  enabled: false
+ music:
+   enabled: false
+   ducking: true
