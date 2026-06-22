@@ -1,0 +1,77 @@
+--- a/video/image_gen/image_gen.py
++++ b/video/image_gen/image_gen.py
+@@ -165,31 +165,6 @@
+                 qwen_cfg.get("enabled", False),
+                 qwen_trigger,
+             )
+-
+-    if backend == "comfyui" and composition_mode == "layered_v3":
+-        try:
+-            from video.image_gen.layered_v3 import generate_layered_images
+-
+-            return generate_layered_images(
+-                prompt_list,
+-                output_dir,
+-                cfg,
+-                char_presence=char_presence,
+-                project_id=project_id or "",
+-            )
+-        except Exception as e:
+-            log.warning(f"[image_gen] Layered v3 failed: {e}")
+-            fallback = cfg.get("fallback_backend", "bonsai")
+-            if fallback == "bonsai":
+-                log.info("[image_gen] Falling back to Bonsai after layered_v3 error")
+-                return _bonsai(
+-                    prompt_list,
+-                    output_dir,
+-                    cfg,
+-                    char_presence=char_presence,
+-                    project_id=project_id or "",
+-                )
+-            raise
+ 
+    if backend == "comfyui":
+        try:
+--- a/config/config.yaml
++++ b/config/config.yaml
+@@ -178,18 +178,6 @@
+     poll_seconds: 1.0
+     required_custom_nodes:
+       - ComfyUI-nunchaku
+-  layered_v3:
+-    approval_mode: auto
+-    character_threshold: 0.3
+-    closeup_threshold: 0.8
+-    max_characters: 2
+-    fallback_mode: one_pass
+-    workflows:
+-      character_sheet: ""
+-      background: ""
+-      character_pose: ""
+-      composite_refine: ""
+-    character_dir: studio_projects/{project}/characters
+ subtitles:
+   format: classic
+   font: Nirmala UI
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -296,11 +296,9 @@
+     "tests.manual_integration_test_b",
+     "tests.manual_integration_test",
+     "tests.conftest",
+-    "tests.test_layered_v3",
+     "manual_integration_test_b",
+     "manual_integration_test",
+     "conftest",
+-    "test_layered_v3",
+     "utils.retry_manager",
+     "utils.emotion_control",
+ 
+@@ -315,7 +313,6 @@
+     "utils.utils",
+     "utils.local_ui",
+     "video.image_gen.image_gen",
+-    "video.image_gen.layered_v3",
+     "video.renderer.assembler",
+     "core.pre_production",
+     "core.segment_runner",

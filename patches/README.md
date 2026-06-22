@@ -19,6 +19,9 @@ Patches use zero context, so apply with --unidiff-zero:
     git rm video/image_gen/framepack_i2v.py tests/test_framepack_i2v.py tests/test_motion_engine.py
     git apply --unidiff-zero patches/phase7b.patch
     git add -A && git commit -m "Phase 7b: remove dead FramePack i2v module and motion_engine config"
+    git rm video/image_gen/layered_v3.py tests/test_layered_v3.py docs/layered_v3_setup.md
+    git apply --unidiff-zero patches/phase7c.patch
+    git add -A && git commit -m "Phase 7c: remove dead Layered V3 composition module"
 
 ## Phase 5 - research consolidation
 
@@ -89,3 +92,30 @@ phase7b.patch edits:
     video.motion_seconds_per_image (no readers).
   - config/config_schemas.py: removed VideoConfig.motion_engine and
     VideoConfig.motion_seconds_per_image to match.
+
+## Phase 7c - remove dead Layered V3 composition module
+
+The layered_v3 multi-pass composition path (character-sheet -> background ->
+character-pose -> composite-refine) was never reachable in production:
+image_gen.composition_mode defaults to one_pass and nothing flips it, so the
+`backend == "comfyui" and composition_mode == "layered_v3"` branch never ran.
+Removing the module makes the image_gen surface and the config truthful.
+
+Deleted outright (run the git rm shown in Applying; not reproduced in the patch):
+  - video/image_gen/layered_v3.py - the dormant layered composition module.
+  - tests/test_layered_v3.py - tested only the deleted module.
+  - docs/layered_v3_setup.md - documented only the deleted feature.
+
+phase7c.patch edits:
+  - video/image_gen/image_gen.py: removed the composition_mode == "layered_v3"
+    dispatch block in generate_images() (the import of generate_layered_images
+    and the bonsai fallback).
+  - config/config.yaml: removed the image_gen.layered_v3 config block.
+  - pyproject.toml: removed the tests.test_layered_v3 / test_layered_v3 /
+    video.image_gen.layered_v3 mypy override entries for the deleted files.
+
+Residual harmless defaults are left for a follow-up cleanup (none of them run
+once the module is gone): config/config_schemas.py LayeredV3Config and the
+ImageGenConfig.layered_v3 field, utils/local_ui.py layered_v3 form handling,
+utils/preflight.py _check_layered_v3, and the Layered options in the React
+ControlPanel UI.
