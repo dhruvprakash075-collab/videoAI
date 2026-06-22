@@ -16,6 +16,9 @@ Patches use zero context, so apply with --unidiff-zero:
     git add -A && git commit -m "Phase 6: remove dead config switches; honor critic.enabled"
     git apply --unidiff-zero patches/phase7a.patch
     git add -A && git commit -m "Phase 7a: remove dormant replicate/pexels image backend"
+    git rm video/image_gen/framepack_i2v.py tests/test_framepack_i2v.py tests/test_motion_engine.py
+    git apply --unidiff-zero patches/phase7b.patch
+    git add -A && git commit -m "Phase 7b: remove dead FramePack i2v module and motion_engine config"
 
 ## Phase 5 - research consolidation
 
@@ -66,3 +69,23 @@ tests that exercised the deleted functions
 TestPexelsRegression).
 
 requirements.txt: dropped the replicate>=1.0.7 dependency.
+
+## Phase 7b - remove dead FramePack i2v motion engine
+
+FramePack image-to-video motion was never wired into the pipeline: the module
+existed but no production code path imported or called it, and motion_engine /
+motion_seconds_per_image were read nowhere outside the deleted tests. Removing
+it makes the renderer surface and the config truthful.
+
+Deleted outright (run the git rm shown in Applying; not reproduced in the patch):
+  - video/image_gen/framepack_i2v.py - the dormant FramePack i2v module.
+  - tests/test_framepack_i2v.py - tested only the deleted module.
+  - tests/test_motion_engine.py - every test referenced FramePack/motion_engine.
+
+phase7b.patch edits:
+  - core/segment_runner.py: removed the false "FramePack image-to-video motion
+    (V1, opt-in)" bullet from the module docstring (no such step ever ran).
+  - config/config.yaml: removed video.motion_engine and
+    video.motion_seconds_per_image (no readers).
+  - config/config_schemas.py: removed VideoConfig.motion_engine and
+    VideoConfig.motion_seconds_per_image to match.
