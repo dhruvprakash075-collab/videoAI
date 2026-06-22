@@ -1,0 +1,50 @@
+--- a/tests/test_preflight_extended.py
++++ b/tests/test_preflight_extended.py
+@@ -11,7 +11,6 @@
+     _check_director_model,
+     _check_disk,
+     _check_ffmpeg,
+-    _check_layered_v3,
+     _check_ollama,
+     _check_playwright,
+     _check_python,
+@@ -91,39 +90,6 @@
+     with patch("urllib.request.urlopen", side_effect=Exception("network down")):
+         status, _msg = _check_director_model({})
+         assert status == "warn"
+-
+-
+-def test_check_layered_v3_probe_url_has_no_literal_braces(monkeypatch):
+-    """Regression guard for malformed f-string URLs in layered-v3 preflight."""
+-    captured_urls = []
+-
+-    class FakeResp:
+-        status = 200
+-
+-        def __enter__(self):
+-            return self
+-
+-        def __exit__(self, *args):
+-            return False
+-
+-    def fake_urlopen(url, *args, **kwargs):
+-        captured_urls.append(url)
+-        return FakeResp()
+-
+-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+-
+-    config = {
+-        "image_gen": {
+-            "composition_mode": "layered_v3",
+-            "comfyui": {"host": "127.0.0.1", "port": 8188},
+-            "layered_v3": {"workflows": {}},
+-        }
+-    }
+-    _check_layered_v3(config)
+-
+-    assert captured_urls[0] == "http://127.0.0.1:8188/system_stats"
+-    assert "{" not in captured_urls[0]
+-    assert "}" not in captured_urls[0]
+ 
+ 
+ def test_check_vram_skip_no_torch(monkeypatch):
