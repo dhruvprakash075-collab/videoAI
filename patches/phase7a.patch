@@ -75,7 +75,7 @@ diff --git a/video/image_gen/image_gen.py b/video/image_gen/image_gen.py
 -        for i, prompt in enumerate(prompts):
 -            query = urllib.parse.quote_plus(prompt[:100])
 -            url = (
--                f"{{https://api.pexels.com/v1/search?query={query}}}"
+-                f"https://api.pexels.com/v1/search?query={query}"
 -                "&per_page=1&orientation=landscape"
 -            )
 -            req = urllib.request.Request(url, headers={"Authorization": api_key})
