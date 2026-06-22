@@ -30,8 +30,8 @@
 -                )
 -            raise
  
-    if backend == "comfyui":
-        try:
+     if backend == "comfyui":
+         try:
 --- a/config/config.yaml
 +++ b/config/config.yaml
 @@ -178,18 +178,6 @@
