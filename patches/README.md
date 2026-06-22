@@ -23,6 +23,21 @@ Patches use zero context, so apply with --unidiff-zero:
     git apply --unidiff-zero patches/phase7c.patch
     git add -A && git commit -m "Phase 7c: remove dead Layered V3 composition module"
 
+The Phase 7c part 2 patches below carry normal context; apply them with plain
+git apply (not --unidiff-zero):
+
+    git apply patches/phase7c_schema.patch
+    git apply patches/phase7c_local_ui.patch
+    git apply patches/phase7c_test_local_ui_api.patch
+    git apply patches/phase7c_preflight.patch
+    git apply patches/phase7c_test_preflight.patch
+    git apply patches/phase7c_test_preflight_extended.patch
+    git apply patches/phase7c_ui.patch
+    # Manually delete the now-unused _check_layered_v3 function body from
+    # utils/preflight.py: it contains literal f-string braces that a unified
+    # diff cannot carry, so the patch only removes its registration line.
+    git add -A && git commit -m "Phase 7c part 2: remove residual Layered V3 references"
+
 ## Phase 5 - research consolidation
 
 agents/director_agent.py: research_story() now delegates to
@@ -114,8 +129,30 @@ phase7c.patch edits:
   - pyproject.toml: removed the tests.test_layered_v3 / test_layered_v3 /
     video.image_gen.layered_v3 mypy override entries for the deleted files.
 
-Residual harmless defaults are left for a follow-up cleanup (none of them run
-once the module is gone): config/config_schemas.py LayeredV3Config and the
-ImageGenConfig.layered_v3 field, utils/local_ui.py layered_v3 form handling,
-utils/preflight.py _check_layered_v3, and the Layered options in the React
-ControlPanel UI.
+## Phase 7c part 2 - remove residual Layered V3 references
+
+Part 1 (above) removed the runtime dispatch. Part 2 removes every remaining
+reference so layered_v3 disappears from the schema, the local UI server, the
+preflight checks, the React dashboard, and their tests. These patches carry
+normal (non-zero) context; apply them with plain git apply (not --unidiff-zero).
+
+  - phase7c_schema.patch (config/config_schemas.py): removed the LayeredV3Config
+    class and the ImageGenConfig.layered_v3 field.
+  - phase7c_local_ui.patch (utils/local_ui.py): removed the layered_v3 form
+    parsing and persistence; the composition_mode handler now accepts only
+    one_pass.
+  - phase7c_test_local_ui_api.patch (tests/test_local_ui_api.py): removed the
+    tests that exercised the deleted layered_v3 form handling.
+  - phase7c_preflight.patch (utils/preflight.py): removed the _check_layered_v3
+    entry from the checks list. The now-unused _check_layered_v3 function body
+    must be deleted manually - it contains literal f-string braces that a
+    unified diff cannot carry, so the patch only removes its registration line.
+  - phase7c_test_preflight.patch (tests/test_preflight.py) and
+    phase7c_test_preflight_extended.patch (tests/test_preflight_extended.py):
+    removed the _check_layered_v3 references and the brace-probe test.
+  - phase7c_ui.patch (dashboard/src/components/ControlPanel.jsx): removed the
+    Layered settings tab, the LayeredSettings component, the layeredV3 default
+    config, the APPROVAL_OPTIONS list, the layered_v3 form fields, and the
+    Layers/Layered menu entries. The Composition Mode selector now offers only
+    One Pass. The composition_mode plumbing is intentionally kept (one_pass is
+    a valid backend value).
