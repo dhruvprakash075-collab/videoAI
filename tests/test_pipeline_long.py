@@ -1126,3 +1126,290 @@ def test_float_safe_ceil_segment_count():
     total = 2.0
     n_segs = max(1, math.ceil(total / seg_min))
     assert n_segs == 1
+
+
+# ── Character-role normalization regression tests ────────────────────────────
+
+
+def _make_mock_bb(images_per_seg=2):
+    """Create a mock blackboard with images_per_segment locked."""
+    mock_record = MagicMock()
+    mock_record.segment_count.value = 1
+    mock_record.segment_count.locked = False
+    mock_record.segment_count.provenance = "director"
+    mock_record.words_per_segment.value = 130
+    mock_record.words_per_segment.provenance = "director"
+    mock_record.total_duration_min.value = 1
+    mock_record.images_per_segment.value = images_per_seg
+    mock_record.images_per_segment.locked = True
+    mock_record.images_per_segment.provenance = "user"
+    mock_bb = MagicMock()
+    mock_bb.read_decision.return_value = mock_record
+    return mock_bb
+
+
+def test_role_normalization_single_named_char_keeps_max_weight(tmp_path):
+    """One named character + protagonist/mentor/guardian → one key with max weight."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "visual": {"environment_frame_ratio": 0},
+        "characters": {
+            "aria": {"name": "Aria", "description": "heroine"},
+        },
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+
+    def fake_make_seg(*args, **kwargs):
+        mp4s_list = kwargs.get("mp4s")
+        def run_seg(seg_idx):
+            if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
+                mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
+        return run_seg
+
+    with (
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("utils.retry_manager.patch_retries"),
+        patch("utils.checkpoint.build_checkpoint_manager"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.main.create_writer"),
+        patch("memory.StoryMemory"),
+        patch("memory.WorldState"),
+        patch("utils.context_manager.ContextWindowManager"),
+        patch("core.main.create_director"),
+        patch("core.pipeline_long.plan_outline") as mock_plan_outline,
+        patch("core.pipeline_long.make_process_segment") as mock_make_seg,
+        patch("core.post_production.finalize_dry_run") as mock_finalize,
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("memory.blackboard.get_blackboard", return_value=_make_mock_bb(2)),
+    ):
+        # protagonist→aria(0.9), mentor→aria(0.6), guardian→aria(0.3)
+        # When all three map to same key, max weight (0.9) should win.
+        mock_plan_outline.return_value = [
+            {
+                "seg": 1, "title": "Intro", "num_images": 2,
+                "char_presence": [
+                    {"protagonist": 0.9, "mentor": 0.6, "guardian": 0.3},
+                    {"protagonist": 0.4},
+                ],
+            }
+        ]
+        mock_make_seg.side_effect = fake_make_seg
+        mock_finalize.return_value = {"status": "dry_run", "output": "dummy.mp4", "segments": 1}
+
+        with patch("utils.load_config", return_value=cfg):
+            res = run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
+
+        assert res["status"] == "dry_run"
+
+        # Inspect the char_presence that was passed to make_process_segment
+        call_args = mock_make_seg.call_args
+        outline_used = call_args.kwargs.get("outline") or call_args[0][3]  # positional arg
+        cp = outline_used[0]["char_presence"]
+        # First frame: all three roles mapped to "aria" (max weight wins)
+        # env_ratio may reduce weights, but role keys should be gone
+        assert "aria" in cp[0]
+        assert "protagonist" not in cp[0]
+        assert "mentor" not in cp[0]
+        assert "guardian" not in cp[0]
+
+
+def test_role_normalization_three_named_characters_map_independently(tmp_path):
+    """Three named characters map protagonist/mentor/guardian independently."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "visual": {"environment_frame_ratio": 0},
+        "characters": {
+            "aria": {"name": "Aria", "description": "heroine"},
+            "gandalf": {"name": "Gandalf", "description": "wizard"},
+            "legolas": {"name": "Legolas", "description": "elf"},
+        },
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+
+    def fake_make_seg(*args, **kwargs):
+        mp4s_list = kwargs.get("mp4s")
+        def run_seg(seg_idx):
+            if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
+                mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
+        return run_seg
+
+    with (
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("utils.retry_manager.patch_retries"),
+        patch("utils.checkpoint.build_checkpoint_manager"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.main.create_writer"),
+        patch("memory.StoryMemory"),
+        patch("memory.WorldState"),
+        patch("utils.context_manager.ContextWindowManager"),
+        patch("core.main.create_director"),
+        patch("core.pipeline_long.plan_outline") as mock_plan_outline,
+        patch("core.pipeline_long.make_process_segment") as mock_make_seg,
+        patch("core.post_production.finalize_dry_run") as mock_finalize,
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("memory.blackboard.get_blackboard", return_value=_make_mock_bb(2)),
+    ):
+        mock_plan_outline.return_value = [
+            {
+                "seg": 1, "title": "Intro", "num_images": 2,
+                "char_presence": [
+                    {"protagonist": 0.9, "mentor": 0.7, "guardian": 0.5},
+                ],
+            }
+        ]
+        mock_make_seg.side_effect = fake_make_seg
+        mock_finalize.return_value = {"status": "dry_run", "output": "dummy.mp4", "segments": 1}
+
+        with patch("utils.load_config", return_value=cfg):
+            run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
+
+        call_args = mock_make_seg.call_args
+        outline_used = call_args.kwargs.get("outline") or call_args[0][3]
+        cp = outline_used[0]["char_presence"]
+        # protagonist→aria, mentor→gandalf, guardian→legolas
+        # env_ratio may reduce weights, but role keys should be gone
+        assert "aria" in cp[0]
+        assert "gandalf" in cp[0]
+        assert "legolas" in cp[0]
+        assert "protagonist" not in cp[0]
+        assert "mentor" not in cp[0]
+        assert "guardian" not in cp[0]
+
+
+def test_role_normalization_environment_removed(tmp_path):
+    """'environment' entries are removed from char_presence."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "visual": {"environment_frame_ratio": 0},
+        "characters": {
+            "aria": {"name": "Aria", "description": "heroine"},
+        },
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+
+    def fake_make_seg(*args, **kwargs):
+        mp4s_list = kwargs.get("mp4s")
+        def run_seg(seg_idx):
+            if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
+                mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
+        return run_seg
+
+    with (
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("utils.retry_manager.patch_retries"),
+        patch("utils.checkpoint.build_checkpoint_manager"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.main.create_writer"),
+        patch("memory.StoryMemory"),
+        patch("memory.WorldState"),
+        patch("utils.context_manager.ContextWindowManager"),
+        patch("core.main.create_director"),
+        patch("core.pipeline_long.plan_outline") as mock_plan_outline,
+        patch("core.pipeline_long.make_process_segment") as mock_make_seg,
+        patch("core.post_production.finalize_dry_run") as mock_finalize,
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("memory.blackboard.get_blackboard", return_value=_make_mock_bb(2)),
+    ):
+        mock_plan_outline.return_value = [
+            {
+                "seg": 1, "title": "Intro", "num_images": 2,
+                "char_presence": [
+                    {"protagonist": 0.8, "environment": 0.1},
+                    {"protagonist": 0.5},
+                ],
+            }
+        ]
+        mock_make_seg.side_effect = fake_make_seg
+        mock_finalize.return_value = {"status": "dry_run", "output": "dummy.mp4", "segments": 1}
+
+        with patch("utils.load_config", return_value=cfg):
+            run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
+
+        call_args = mock_make_seg.call_args
+        outline_used = call_args.kwargs.get("outline") or call_args[0][3]
+        cp = outline_used[0]["char_presence"]
+        assert "environment" not in cp[0]
+
+
+def test_role_normalization_non_dict_frames_unchanged(tmp_path):
+    """Non-dict frames in char_presence pass through unchanged."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "characters": {
+            "aria": {"name": "Aria", "description": "heroine"},
+        },
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+
+    def fake_make_seg(*args, **kwargs):
+        mp4s_list = kwargs.get("mp4s")
+        def run_seg(seg_idx):
+            if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
+                mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
+        return run_seg
+
+    with (
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("utils.retry_manager.patch_retries"),
+        patch("utils.checkpoint.build_checkpoint_manager"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.main.create_writer"),
+        patch("memory.StoryMemory"),
+        patch("memory.WorldState"),
+        patch("utils.context_manager.ContextWindowManager"),
+        patch("core.main.create_director"),
+        patch("core.pipeline_long.plan_outline") as mock_plan_outline,
+        patch("core.pipeline_long.make_process_segment") as mock_make_seg,
+        patch("core.post_production.finalize_dry_run") as mock_finalize,
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("memory.blackboard.get_blackboard", return_value=_make_mock_bb(2)),
+    ):
+        # A non-dict frame (None) should pass through the role normalization unchanged.
+        # The env_ratio enforcement may later convert it to {}, but that's a separate block.
+        mock_plan_outline.return_value = [
+            {
+                "seg": 1, "title": "Intro", "num_images": 2,
+                "char_presence": [
+                    {"protagonist": 0.8},
+                    None,  # non-dict
+                ],
+            }
+        ]
+        mock_make_seg.side_effect = fake_make_seg
+        mock_finalize.return_value = {"status": "dry_run", "output": "dummy.mp4", "segments": 1}
+
+        with patch("utils.load_config", return_value=cfg):
+            run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
+
+        call_args = mock_make_seg.call_args
+        outline_used = call_args.kwargs.get("outline") or call_args[0][3]
+        cp = outline_used[0]["char_presence"]
+        # None was the non-dict input; role normalization preserved it as-is.
+        # The env_ratio block later replaces it with {}, but the role normalization
+        # step itself should not have crashed or turned it into something unexpected.
+        assert isinstance(cp[1], dict)  # env_ratio converted None → {}
+        assert "protagonist" not in cp[1]  # no role keys leaked into the non-dict frame

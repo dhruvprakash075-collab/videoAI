@@ -401,6 +401,8 @@ def run_long_pipeline(
                         _default_imgs - len(cp_list)
                     )
 
+                # ponytail: positional aliases are the existing heuristic; keep the maximum
+                # weight on collisions until the planner emits stable character IDs.
                 _story_keys = [
                     k for k in config.get("characters", {})
                     if k not in {"protagonist", "mentor", "guardian"}
@@ -408,13 +410,22 @@ def run_long_pipeline(
                 _aliases = {
                     "protagonist": _story_keys[0] if _story_keys else "protagonist",
                     "mentor": _story_keys[1] if len(_story_keys) > 1 else (_story_keys[0] if _story_keys else "mentor"),
+                    "guardian": _story_keys[2] if len(_story_keys) > 2 else (_story_keys[-1] if _story_keys else "guardian"),
                 }
                 _normalized = []
                 for _frame in seg_plan.get("char_presence", []):
                     if not isinstance(_frame, dict):
                         _normalized.append(_frame)
                         continue
-                    _mapped = {_aliases.get(k, k): v for k, v in _frame.items() if k != "environment"}
+                    _mapped: dict = {}
+                    for k, v in _frame.items():
+                        if k == "environment":
+                            continue
+                        _target = _aliases.get(k, k)
+                        if _target in _mapped:
+                            _mapped[_target] = max(_mapped[_target], v)
+                        else:
+                            _mapped[_target] = v
                     _normalized.append(_mapped)
                 seg_plan["char_presence"] = _normalized
             continue

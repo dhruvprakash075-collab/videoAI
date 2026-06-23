@@ -360,3 +360,33 @@ def test_run_pre_production_tts_normalization_failure(tmp_path):
             topic="test_norm_fail", config=config, content_text="Some content", run_mode="scratch"
         )
         assert res["tts"]["engine"] == "custom_engine"
+
+
+def test_seed_director_memory_dedup(tmp_path):
+    """Calling _seed_director_memory twice produces no duplicate facts."""
+    overlay = {
+        "characters": {
+            "aria": {"name": "Aria", "description": "a brave heroine with a sword"},
+        },
+        "_director_vision": {"theme": "courage"},
+        "production_notes": {
+            "custom_instructions": "Keep the pacing tight",
+            "recommendations": ["Use wide shots for battles", "Emphasize silence in tense moments"],
+        },
+    }
+    config = {"checkpoint": {"dir": str(tmp_path)}}
+    topic = "test_dedup"
+
+    with patch("memory.permanent_memory.PermanentMemoryLog._save_memory"):
+        _seed_director_memory(topic=topic, overlay=overlay, config=config)
+        _seed_director_memory(topic=topic, overlay=overlay, config=config)
+
+    ws_file = tmp_path / f"world_state_{topic}.json"
+    import json
+    ws_data = json.loads(ws_file.read_text(encoding="utf-8"))
+    facts = ws_data.get("world_facts", [])
+
+    # Each fact should appear exactly once
+    assert facts.count("[Director instruction] Keep the pacing tight") == 1
+    assert facts.count("[Director] Use wide shots for battles") == 1
+    assert facts.count("[Director] Emphasize silence in tense moments") == 1

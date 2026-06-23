@@ -555,12 +555,14 @@ def _seed_director_memory(topic: str, overlay: dict, config: dict) -> None:
     _production_notes = overlay.get("production_notes", {})
     _custom_instruction = _production_notes.get("custom_instructions", "")
     if _custom_instruction:
-        ws._data.setdefault("world_facts", []).append(
-            f"[Director instruction] {_custom_instruction}"
-        )
+        _instruction_fact = f"[Director instruction] {_custom_instruction}"
+        if _instruction_fact not in ws._data.get("world_facts", []):
+            ws._data.setdefault("world_facts", []).append(_instruction_fact)
     for rec in _production_notes.get("recommendations", []):
-        if rec and rec not in ws._data.get("world_facts", []):
-            ws._data.setdefault("world_facts", []).append(f"[Director] {rec}")
+        if rec:
+            _rec_fact = f"[Director] {rec}"
+            if _rec_fact not in ws._data.get("world_facts", []):
+                ws._data.setdefault("world_facts", []).append(_rec_fact)
 
     ws._save()
     log.info(
