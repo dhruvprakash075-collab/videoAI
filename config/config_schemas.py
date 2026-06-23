@@ -192,9 +192,6 @@ class ScriptConfig(BaseModel):
     tts_words_per_minute_hi: float = Field(default=100.0, gt=0)
     tts_words_per_minute_en: float = Field(default=150.0, gt=0)
     writer_max_tokens: int = 1024
-    critic_enabled: bool = True
-    critic_threshold: int = 60
-    critic_max_rewrites: int = 2
     uncapped_scaling: bool = False
 
 
@@ -296,7 +293,6 @@ class OllamaConfig(BaseModel):
 class PerformanceConfig(BaseModel):
     model_config = {"extra": "forbid"}
     max_workers: int = 1
-    checkpoint_interval: int = 1
     whisper_model: str = "tiny"
     whisper_model_final: str = "base"
     max_segment_retries: int = 2

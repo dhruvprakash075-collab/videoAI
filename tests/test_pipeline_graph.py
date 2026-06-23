@@ -9,9 +9,13 @@ from core.pipeline_graph import END, SegmentGraphBuilder
 class _FakeCtx:
     """Minimal context for SegmentGraphBuilder - supplies config + node fns."""
 
-    def __init__(self, max_rewrites=2):
+    def __init__(self, max_rewrites=2, critic_enabled=True):
         self.config = {
-            "script": {"critic_max_rewrites": max_rewrites, "critic_threshold": 60},
+            "critic": {
+                "enabled": critic_enabled,
+                "threshold": 60,
+                "max_rewrites": max_rewrites,
+            },
         }
 
     def do_write_script(self, state):
@@ -61,6 +65,18 @@ def test_route_after_critic_rejected_at_max_returns_translate():
     builder = SegmentGraphBuilder(_FakeCtx(max_rewrites=2))
     state = {"aborted": False, "critic_approved": False, "rewrites_attempted": 2, "i": 1}
     assert builder.route_after_critic(state) == "translate_node"
+
+
+def test_route_after_write_critic_enabled_returns_critic():
+    builder = SegmentGraphBuilder(_FakeCtx())
+    state = {"aborted": False, "skip": False}
+    assert builder.route_after_write(state) == "critic_node"
+
+
+def test_route_after_write_critic_disabled_returns_translate():
+    builder = SegmentGraphBuilder(_FakeCtx(critic_enabled=False))
+    state = {"aborted": False, "skip": False}
+    assert builder.route_after_write(state) == "translate_node"
 
 
 def test_state_script_propagates_across_write_to_critic():

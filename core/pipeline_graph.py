@@ -104,7 +104,7 @@ class SegmentGraphBuilder:
             return END
         if not state.get("critic_approved", True):
             rewrites = state.get("rewrites_attempted", 0)
-            max_rewrites = self.ctx.config.get("script", {}).get("critic_max_rewrites", 2)
+            max_rewrites = self.ctx.config.get("critic", {}).get("max_rewrites", 2)
             if rewrites < max_rewrites:
                 log.info(
                     f"  Seg {state['i']}: Critic rejected script. Routing back to writer (attempt {rewrites + 1}/{max_rewrites})."
@@ -116,6 +116,16 @@ class SegmentGraphBuilder:
                 )
                 return "translate_node"
         return "translate_node"
+
+    def route_after_write(self, state: SegmentState) -> str:
+        if state.get("aborted") or state.get("skip"):
+            return END
+        # The critic is the single source of truth for whether scripts are
+        # reviewed. When critic.enabled is false, skip the critic node and
+        # route the writer's output straight to translation.
+        if not self.ctx.config.get("critic", {}).get("enabled", True):
+            return "translate_node"
+        return "critic_node"
 
     def build(self) -> Any:
         builder = StateGraph(SegmentState)
@@ -141,7 +151,15 @@ class SegmentGraphBuilder:
             },
         )
 
-        builder.add_edge("write_script_node", "critic_node")
+        builder.add_conditional_edges(
+            "write_script_node",
+            self.route_after_write,
+            {
+                "critic_node": "critic_node",
+                "translate_node": "translate_node",
+                END: END,
+            },
+        )
         builder.add_edge("translate_node", "tts_node")
         builder.add_edge("tts_node", "image_node")
         builder.add_edge("image_node", "important_image_review_node")
