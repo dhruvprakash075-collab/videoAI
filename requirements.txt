@@ -36,7 +36,6 @@ hqq>=0.2.8
 # xformers>=0.0.29
 
 # ── Optional image backends ───────────────────────────────────────
-replicate>=1.0.7
 
 # ── Audio processing ──────────────────────────────────────────────
 pydub>=0.25.0

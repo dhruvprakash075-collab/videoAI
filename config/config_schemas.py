@@ -225,8 +225,6 @@ class VideoConfig(BaseModel):
     ken_burns: str = "light"
     audio_crossfade_ms: int = 200
     generate_thumbnail: bool = True
-    motion_engine: str = "none"
-    motion_seconds_per_image: int = 3
 
 
 class ModelsConfig(BaseModel):

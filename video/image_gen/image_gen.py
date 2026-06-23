@@ -17,12 +17,8 @@ Public surface:
 
 import contextlib
 import hashlib
-import json
 import logging
-import os
 import threading
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from tqdm import tqdm
@@ -918,102 +914,3 @@ def _comfyui_qwen_edit(
         f"{skipped} skipped | {failed} failed"
     )
     return edited_paths
-
-
-# ── REPLICATE / PEXELS (kept as code; not in active path) ────────────
-
-
-def _replicate(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
-    try:
-        import replicate
-    except ImportError as e:
-        raise ImportError("pip install replicate") from e
-
-    from utils.url_security import validate_source_url
-
-    model = cfg.get(
-        "replicate_model",
-        "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
-    )
-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
-    images = []
-    with tqdm(total=len(prompts), desc="  Replicate", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            output = replicate.run(
-                model,
-                input={
-                    "prompt": prompt,
-                    "width": cfg.get("width", 1024),
-                    "height": cfg.get("height", 576),
-                    "num_inference_steps": cfg.get("steps", 25),
-                    "guidance_scale": cfg.get("guidance_scale", 7.5),
-                },
-            )
-            url = output[0] if isinstance(output, list) else output
-            # SSRF: validate returned image URL before download
-            validated_url = validate_source_url(url)
-            p = out / f"scene_{i + 1:02d}.png"
-            req = urllib.request.Request(validated_url, headers={"User-Agent": "Video.AI"})
-            with urllib.request.urlopen(req, timeout=30) as response:
-                # Content-type check when header is present
-                ct = response.headers.get("Content-Type", "")
-                if ct and not ct.startswith("image/"):
-                    raise ValueError(f"Replicate returned non-image content-type: {ct}")
-                data = response.read(max_download_bytes + 1)
-                if len(data) > max_download_bytes:
-                    raise ValueError(f"Replicate image too large: {len(data)} bytes")
-            with open(str(p), "wb") as out_file:
-                out_file.write(data)
-            images.append(p)
-            pbar.update(1)
-
-    log.info(f"Replicate: {len(images)} images")
-    return images
-
-
-def _pexels(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
-    api_key = cfg.get("pexels_api_key") or os.environ.get("PEXELS_API_KEY", "")
-    if not api_key:
-        raise ValueError("pexels_api_key missing from config or PEXELS_API_KEY env var")
-
-    from utils.url_security import validate_source_url
-
-    max_download_bytes = 50 * 1024 * 1024  # 50 MB cap for images
-    images = []
-    with tqdm(total=len(prompts), desc="  Pexels", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            query = urllib.parse.quote_plus(prompt[:100])
-            url = (
-                f"https://api.pexels.com/v1/search?query={query}"
-                "&per_page=1&orientation=landscape"
-            )
-            req = urllib.request.Request(url, headers={"Authorization": api_key})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
-
-            photos = data.get("photos", [])
-            if not photos:
-                log.warning(f"Pexels: no results for prompt {i + 1}, skipping")
-                pbar.update(1)
-                continue
-
-            img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["original"]
-            # SSRF: validate returned image URL before download
-            validated_img_url = validate_source_url(img_url)
-            p = out / f"scene_{i + 1:02d}.png"
-            img_req = urllib.request.Request(validated_img_url, headers={"User-Agent": "Video.AI"})
-            with urllib.request.urlopen(img_req, timeout=30) as response:
-                # Content-type check when header is present
-                ct = response.headers.get("Content-Type", "")
-                if ct and not ct.startswith("image/"):
-                    raise ValueError(f"Pexels returned non-image content-type: {ct}")
-                data = response.read(max_download_bytes + 1)
-                if len(data) > max_download_bytes:
-                    raise ValueError(f"Pexels image too large: {len(data)} bytes")
-            with open(str(p), "wb") as out_file:
-                out_file.write(data)
-            images.append(p)
-            pbar.update(1)
-
-    log.info(f"Pexels: {len(images)} images")
-    return images

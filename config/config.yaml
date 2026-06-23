@@ -56,8 +56,6 @@ video:
   ken_burns: light
   audio_crossfade_ms: 200
   generate_thumbnail: true
-  motion_engine: none
-  motion_seconds_per_image: 3
 script:
   words_per_segment: 100
   min_words: 20
@@ -69,9 +67,6 @@ script:
   tts_words_per_minute_hi: 100
   tts_words_per_minute_en: 150
   writer_max_tokens: 1024
-  critic_enabled: true
-  critic_threshold: 60
-  critic_max_rewrites: 2
   uncapped_scaling: false
 characters:
   protagonist:
@@ -202,7 +197,6 @@ cache:
   cache_invented_story: true
 performance:
   max_workers: 1
-  checkpoint_interval: 1
   whisper_model: tiny
   whisper_model_final: base
   ffmpeg_threads: 8
