@@ -38,6 +38,38 @@ git apply (not --unidiff-zero):
     # diff cannot carry, so the patch only removes its registration line.
     git add -A && git commit -m "Phase 7c part 2: remove residual Layered V3 references"
 
+The Phase 7d patches below carry normal context; apply them with plain
+git apply (not --unidiff-zero):
+
+    git apply patches/phase7d_audio_proxy.patch
+    git apply patches/phase7d_segment_runner.patch
+    git apply patches/phase7d_config_yaml.patch
+    git apply patches/phase7d_config_schemas.patch
+    git apply patches/phase7d_pipeline_long.patch
+    git apply patches/phase7d_bootstrap_pipeline.patch
+    git apply patches/phase7d_worker.patch
+    git apply patches/phase7d_local_ui.patch
+    git apply patches/phase7d_studio_tui.patch
+    git apply patches/phase7d_studio_tui_help.patch
+    git apply patches/phase7d_rust_worker.patch
+    git apply patches/phase7d_dashboard_create_job.patch
+    git apply patches/phase7d_test_phase0_fallbacks.patch
+    git apply patches/phase7d_test_job_system.patch
+    git apply patches/phase7d_test_local_ui_api.patch
+    git apply patches/phase7d_test_bootstrap_source.patch
+    git apply patches/phase7d_test_segment_runner_extended.patch
+    git apply patches/phase7d_test_segment_runner_helpers.patch
+    git apply patches/phase7d_test_audio_proxy.patch
+    git apply patches/phase7d_codebase_onboarding.patch
+    # Manually delete the now-unused rvc_convert function body from
+    # audio/audio_proxy.py (between get_audio_duration and the engine
+    # capability profiles section); the patch only removes its __all__ export.
+    # Manually edit rules/common/code-tour.md: change the audio module-map
+    # entry from "TTS, RVC, SFX" to "TTS, SFX" (it uses a non-ASCII em-dash
+    # a unified diff cannot carry reliably). utils/rvc_worker.py does not
+    # exist, so no git rm is required.
+    git add -A && git commit -m "Phase 7d: remove RVC voice conversion"
+
 ## Phase 5 - research consolidation
 
 agents/director_agent.py: research_story() now delegates to
@@ -156,3 +188,47 @@ normal (non-zero) context; apply them with plain git apply (not --unidiff-zero).
     Layers/Layered menu entries. The Composition Mode selector now offers only
     One Pass. The composition_mode plumbing is intentionally kept (one_pass is
     a valid backend value).
+
+## Phase 7d - remove RVC voice conversion
+
+RVC (retrieval-based voice conversion) was an opt-in post-TTS step exposed
+through the skip_rvc flag, the rvc config block, and the
+audio_proxy.rvc_convert helper. Phase 7d removes that surface across the Python
+pipeline, the Rust worker, the dashboard, the config, and the tests so the
+audio path, the CLI flags, and the schema no longer advertise it.
+
+These patches carry normal context; apply them with plain git apply (not
+--unidiff-zero), in the order listed in the Applying section above.
+
+  - phase7d_audio_proxy.patch / phase7d_segment_runner.patch: dropped
+    rvc_convert from audio/audio_proxy.py's __all__ export and the skip_rvc
+    plumbing from core/segment_runner.py.
+  - phase7d_config_yaml.patch / phase7d_config_schemas.patch: removed the rvc
+    block from config/config.yaml and the RvcConfig class plus the rvc field
+    from config/config_schemas.py.
+  - phase7d_pipeline_long.patch / phase7d_bootstrap_pipeline.patch: removed the
+    skip_rvc argument from the long-pipeline and bootstrap entry points and the
+    --skip-rvc CLI flag.
+  - phase7d_worker.patch / phase7d_local_ui.patch / phase7d_studio_tui.patch /
+    phase7d_studio_tui_help.patch: removed skip_rvc from the job worker command
+    builder, the local UI API, and the studio TUI (including its help text).
+  - phase7d_rust_worker.patch (rust/worker/src/main.rs): dropped skip_rvc from
+    the supported-argument passthrough filter.
+  - phase7d_dashboard_create_job.patch
+    (dashboard/src/components/CreateJobPanel.jsx): removed the Skip RVC toggle,
+    its state, and the skip_rvc payload field.
+  - phase7d_test_*.patch: removed skip_rvc kwargs and dict entries and the RVC
+    unit tests from the affected test modules so the suite matches the new
+    signatures.
+  - phase7d_codebase_onboarding.patch (rules/common/codebase-onboarding.md):
+    dropped RVC from the audio/ directory description.
+
+Manual edits the patches cannot carry:
+  - Delete the now-unused rvc_convert function body from audio/audio_proxy.py
+    (between get_audio_duration and the engine capability profiles section).
+    The patch only removes the __all__ export; deleting the multi-line body is
+    left as a manual step.
+  - Edit rules/common/code-tour.md: in the architecture module map, change the
+    audio entry from "TTS, RVC, SFX" to "TTS, SFX". That line uses a
+    non-ASCII em-dash a unified diff cannot carry reliably.
+  - utils/rvc_worker.py does not exist, so no git rm is required.
