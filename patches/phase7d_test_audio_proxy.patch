@@ -1,0 +1,65 @@
+--- a/tests/test_audio_proxy.py
++++ b/tests/test_audio_proxy.py
+@@ -1,4 +1,4 @@
+-"""test_audio_proxy.py - audio_proxy normalize, dispatch, RVC, translate, capabilities."""
++"""test_audio_proxy.py - audio_proxy normalize, dispatch, translate, capabilities."""
+ 
+ import json
+ import subprocess
+@@ -11,56 +11,6 @@
+     assert out == "hello world"
+ 
+ 
+-def test_rvc_convert_disabled_returns_original(tmp_path: Path):
+-    src = tmp_path / "src.wav"
+-    src.write_bytes(b"RIFF")
+-    with patch("audio.audio_proxy.load_config", return_value={"rvc": {"enabled": False}}):
+-        out = audio_proxy.rvc_convert(src)
+-    assert out == src
+-
+-
+-def test_rvc_convert_success(tmp_path: Path):
+-    src = tmp_path / "src.wav"
+-    src.write_bytes(b"RIFF")
+-    model = tmp_path / "model.pth"
+-    model.write_bytes(b"x")
+-    out_dir = tmp_path / "out"
+-    with (
+-        patch(
+-            "audio.audio_proxy.load_config",
+-            return_value={"rvc": {"enabled": True, "model_path": str(model), "pitch_shift": 0}},
+-        ),
+-        patch("subprocess.run") as run_mock,
+-    ):
+-        run_mock.return_value = subprocess.CompletedProcess(
+-            args=[],
+-            returncode=0,
+-            stdout=json.dumps({"status": "success", "wav_path": "x"}),
+-            stderr="",
+-        )
+-        out = audio_proxy.rvc_convert(src, output_dir=out_dir)
+-    assert out.parent == out_dir
+-
+-
+-def test_rvc_convert_failure_returns_original(tmp_path: Path):
+-    src = tmp_path / "src.wav"
+-    src.write_bytes(b"RIFF")
+-    model = tmp_path / "model.pth"
+-    model.write_bytes(b"x")
+-    with (
+-        patch(
+-            "audio.audio_proxy.load_config",
+-            return_value={"rvc": {"enabled": True, "model_path": str(model)}},
+-        ),
+-        patch("subprocess.run") as run_mock,
+-    ):
+-        run_mock.return_value = subprocess.CompletedProcess(
+-            args=[], returncode=1, stdout="", stderr="rvc crashed"
+-        )
+-        out = audio_proxy.rvc_convert(src)
+-    assert out == src
+-
+-
+ def test_get_audio_duration_re_export(tmp_path: Path):
+     p = tmp_path / "x.wav"
+     p.write_bytes(b"RIFF")

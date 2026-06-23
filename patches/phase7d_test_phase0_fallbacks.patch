@@ -1,0 +1,10 @@
+--- a/tests/test_phase0_fallbacks.py
++++ b/tests/test_phase0_fallbacks.py
+@@ -2,7 +2,6 @@
+         dry_run=True,
+         director_mode=False,
+         preview_mode=False,
+-        skip_rvc=True,
+         words_per_seg=100,
+         seg_min=2,
+         shared_prompt_executor=MagicMock(),
