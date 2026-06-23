@@ -700,30 +700,74 @@ class DirectorAgent:
     # ── Research & Analysis ──
 
     def research_story(self, topic: str) -> dict:
-        """Search the web for background on this topic."""
+        """Research background context for ``topic`` via the consolidated researcher.
+
+        Delegates to :func:`utils.researcher.research_topic`, which honors the
+        ``research.*`` config block (sources, budget, per-source limit, RSS
+        feeds, User-Agent). The returned ``list[ResearchItem]`` is adapted into
+        the dict shape the Director's downstream phases expect:
+        ``{topic, combined_summary, result_count, raw_results}``.
+
+        Replaces the legacy ``utils.web_search`` path (now deprecated).
+        """
 
         log.info(f"[DIRECTOR] Phase 1/5: Researching '{topic}'...")
 
+        config = self.llm_config if isinstance(self.llm_config, dict) else {}
+
         try:
-            from utils.web_search import search_story_web
-
-            result = search_story_web(topic)
-
-            summary = result.get("combined_summary", topic)
-
-            raw = result.get("wikipedia_results", []) + result.get("ddg_results", [])
-
+            from utils.researcher import research_topic
+        except ImportError:
+            log.warning("[DIRECTOR] researcher module not available, using empty research")
             return {
                 "topic": topic,
-                "combined_summary": summary,
-                "result_count": len(raw),
-                "raw_results": raw,
+                "combined_summary": topic,
+                "result_count": 0,
+                "raw_results": [],
             }
 
-        except ImportError:
-            log.warning("[DIRECTOR] web_search module not available, using empty research")
+        try:
+            items = research_topic(topic, config)
+        except Exception as exc:  # noqa: BLE001 - research must never break the pipeline
+            log.warning(f"[DIRECTOR] Research failed ({exc}); using empty research")
+            return {
+                "topic": topic,
+                "combined_summary": topic,
+                "result_count": 0,
+                "raw_results": [],
+            }
 
-            return {"topic": topic, "combined_summary": topic, "result_count": 0}
+        raw_results = [
+            {
+                "source": item.source_type,
+                "title": item.title,
+                "summary": item.text,
+                "url": item.url,
+                "relevance_score": item.relevance_score,
+            }
+            for item in items
+        ]
+
+        combined_parts = []
+        for entry in raw_results:
+            summary = (entry["summary"] or "").strip()
+            if not summary:
+                continue
+            label = (entry["source"] or "source").capitalize()
+            combined_parts.append(f"[{label}: {entry['title']}] {summary}")
+
+        combined_summary = "\n\n".join(combined_parts)
+        if len(combined_summary) > 4000:
+            combined_summary = combined_summary[:4000] + "..."
+        if not combined_summary:
+            combined_summary = topic
+
+        return {
+            "topic": topic,
+            "combined_summary": combined_summary,
+            "result_count": len(raw_results),
+            "raw_results": raw_results,
+        }
 
     def _vision_cache_path(self) -> "Path":
         """Path to the vision analysis cache file."""

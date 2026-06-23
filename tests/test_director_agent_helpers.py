@@ -776,29 +776,57 @@ def test_generate_hinglish_script_llm_exception_uses_fallback(agent):
 
 
 def test_research_story_success(agent):
-    """When web_search is available and returns results."""
-    fake_result = {
-        "combined_summary": "A summary of the topic",
-        "wikipedia_results": [{"title": "Wiki1"}],
-        "ddg_results": [{"title": "DDG1"}, {"title": "DDG2"}],
-    }
-    with patch("utils.web_search.search_story_web", return_value=fake_result):
+    """research_story delegates to the consolidated researcher and adapts items."""
+    from utils.researcher import ResearchItem
+
+    fake_items = [
+        ResearchItem(
+            title="Wiki1",
+            text="A summary of the topic",
+            url="https://example.org/wiki1",
+            source_type="wikipedia",
+            relevance_score=0.9,
+        ),
+        ResearchItem(
+            title="RSS1",
+            text="More background detail",
+            url="https://example.org/rss1",
+            source_type="rss",
+            relevance_score=0.5,
+        ),
+    ]
+    with patch("utils.researcher.research_topic", return_value=fake_items) as mock_research:
+        result = agent.research_story("my_topic")
+    mock_research.assert_called_once()
+    assert result["topic"] == "my_topic"
+    assert result["result_count"] == 2
+    assert len(result["raw_results"]) == 2
+    assert result["raw_results"][0]["source"] == "wikipedia"
+    assert result["raw_results"][0]["summary"] == "A summary of the topic"
+    assert result["raw_results"][0]["url"] == "https://example.org/wiki1"
+    assert "A summary of the topic" in result["combined_summary"]
+    assert "More background detail" in result["combined_summary"]
+
+
+def test_research_story_empty_results(agent):
+    """When the researcher returns nothing, combined_summary falls back to topic."""
+    with patch("utils.researcher.research_topic", return_value=[]):
         result = agent.research_story("my_topic")
     assert result["topic"] == "my_topic"
-    assert result["combined_summary"] == "A summary of the topic"
-    assert result["result_count"] == 3
-    assert len(result["raw_results"]) == 3
+    assert result["combined_summary"] == "my_topic"
+    assert result["result_count"] == 0
+    assert result["raw_results"] == []
 
 
 def test_research_story_import_error(agent):
-    """When web_search module is not importable, return empty research."""
+    """When the researcher module is not importable, return empty research."""
     import builtins
 
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "utils.web_search":
-            raise ImportError("no web_search")
+        if name == "utils.researcher":
+            raise ImportError("no researcher")
         return real_import(name, *args, **kwargs)
 
     with patch("builtins.__import__", side_effect=fake_import):
@@ -806,6 +834,7 @@ def test_research_story_import_error(agent):
     assert result["topic"] == "my_topic"
     assert result["combined_summary"] == "my_topic"  # falls back to topic
     assert result["result_count"] == 0
+    assert result["raw_results"] == []
 
 
 # ── analyze_with_research (cache hit branch) ─────────────────────────────────
