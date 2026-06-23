@@ -1,0 +1,10 @@
+--- a/rust/worker/src/main.rs
++++ b/rust/worker/src/main.rs
+@@ -1004,7 +1004,6 @@
+         "duration"
+             | "dry_run"
+             | "no_resume"
+-            | "skip_rvc"
+             | "file"
+             | "project"
+             | "series"

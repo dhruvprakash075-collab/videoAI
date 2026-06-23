@@ -1,0 +1,11 @@
+--- a/rules/common/codebase-onboarding.md
++++ b/rules/common/codebase-onboarding.md
+@@ -52,7 +52,7 @@
+ **Key Directories**
+ ```
+ agents/        CrewAI agent definitions
+-audio/         TTS, RVC, SFX
++audio/         TTS, SFX
+ config/        Config files and schemas
+ core/          Pipeline orchestration
+ dashboard/     React frontend

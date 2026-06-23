@@ -1,0 +1,10 @@
+--- a/tests/test_local_ui_api.py
++++ b/tests/test_local_ui_api.py
+@@ -1,7 +1,6 @@
+             "duration": 3,
+             "dry_run": True,
+             "no_resume": True,
+-            "skip_rvc": True,
+             "project": "myproj",
+             "series": True,
+             "director_mode": False,

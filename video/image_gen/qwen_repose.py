@@ -1,9 +1,9 @@
 """Qwen-Image-Edit two-pass character compositing helpers.
 
 This module is deliberately Python orchestration glue: it resolves the saved
-character reference, builds the edit instruction, patches a ComfyUI workflow,
-and copies the result back to the existing frame path. The expensive work runs
-inside ComfyUI/CUDA.
+character reference, builds the edit instruction, uploads the inputs into
+ComfyUI's input store, patches a ComfyUI workflow, and copies the result back
+to the existing frame path. The expensive work runs inside ComfyUI/CUDA.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,30 @@ _REQUIRED_WORKFLOW_PLACEHOLDERS = {
 _OPTIONAL_WORKFLOW_PLACEHOLDERS = {"__LIGHTNING_LORA__"}
 
 
+@dataclass
+class QwenEditResult:
+    """Outcome of a single Qwen-Image-Edit compositing attempt.
+
+    status is one of:
+      - "edited":  ComfyUI produced an image and it was copied to output.
+      - "cached":  a previously composited frame was reused (output copied).
+      - "skipped": the edit could not be attempted (missing base/reference or
+                   failed preflight); the original background is kept.
+      - "failed":  the edit was attempted but errored; the background is kept.
+
+    Only "edited"/"cached" mean the character was actually composited. The
+    output_path is the path callers should use for the frame.
+    """
+
+    status: str
+    output_path: str
+    reason: str = ""
+
+    @property
+    def composited(self) -> bool:
+        return self.status in ("edited", "cached")
+
+
 def _image_gen_cfg(config: dict) -> dict:
     if "image_gen" in config and isinstance(config.get("image_gen"), dict):
         return config.get("image_gen", {}) or {}
@@ -42,6 +67,19 @@ def _image_gen_cfg(config: dict) -> dict:
 def _qwen_cfg(config: dict) -> dict:
     img = _image_gen_cfg(config)
     return img.get("qwen_edit", {}) or {}
+
+
+def _comfyui_image_ref(upload_result: dict) -> str:
+    """Convert an upload_image response into a ComfyUI LoadImage ref.
+
+    ComfyUI's LoadImage references an uploaded input file by its filename, or
+    by ``subfolder/filename`` when the upload landed in a subfolder.
+    """
+    name = upload_result.get("name", "")
+    if not name:
+        raise ValueError("upload_image response missing 'name'")
+    subfolder = upload_result.get("subfolder", "") or ""
+    return f"{subfolder}/{name}" if subfolder else name
 
 
 def _sha256_file(path: Path) -> str:
@@ -283,20 +321,27 @@ def _replace_placeholders(value: Any, replacements: dict[str, Any]) -> Any:
 def _patch_qwen_workflow(
     workflow_path: Path,
     *,
-    base_image_path: Path,
-    character_image_path: Path,
+    base_image_ref: str,
+    character_image_ref: str,
     edit_prompt: str,
     output_path: Path,
     seed: int,
     config: dict,
 ) -> dict:
+    """Patch the Qwen workflow template with uploaded ComfyUI input refs.
+
+    base_image_ref and character_image_ref are ComfyUI LoadImage refs (a
+    filename or ``subfolder/filename`` that already exists in ComfyUI's input
+    store), NOT host filesystem paths. They are produced by uploading the
+    images first via ComfyUIClient.upload_image.
+    """
     qwen = _qwen_cfg(config)
     with workflow_path.open(encoding="utf-8") as f:
         workflow = json.load(f)
 
     replacements = {
-        "__BASE_IMAGE__": str(base_image_path),
-        "__CHARACTER_IMAGE__": str(character_image_path),
+        "__BASE_IMAGE__": base_image_ref,
+        "__CHARACTER_IMAGE__": character_image_ref,
         "__EDIT_PROMPT__": edit_prompt,
         "__FILENAME_PREFIX__": output_path.stem,
         "__MODEL_PATH__": qwen.get("model_path", ""),
@@ -314,6 +359,18 @@ def _patch_qwen_workflow(
         inputs = node.get("inputs", {}) or {}
         title = (node.get("_meta", {}) or {}).get("title", "").lower()
         class_type = node.get("class_type", "")
+        is_negative = "negative" in title
+
+        # Stage uploaded ComfyUI input refs into LoadImage nodes only, and only
+        # when the value is a string filename. Never clobber a node link (a
+        # list like ["3", 0]) that wires one node's output into another.
+        image_value = inputs.get("image")
+        if class_type == "LoadImage" and isinstance(image_value, str):
+            if "character" in title or "reference" in title:
+                inputs["image"] = character_image_ref
+            elif "background" in title or "base" in title:
+                inputs["image"] = base_image_ref
+
         if "seed" in inputs:
             inputs["seed"] = seed
         if "steps" in inputs:
@@ -335,19 +392,20 @@ def _patch_qwen_workflow(
                 inputs[lora_key] = qwen.get("lightning_lora", "")
         if "filename_prefix" in inputs:
             inputs["filename_prefix"] = output_path.stem
-        if "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")):
-            inputs["text"] = edit_prompt
-        if "prompt" in inputs and ("prompt" in title or "textencode" in class_type.lower()):
-            inputs["prompt"] = edit_prompt
-        if "image" in inputs and "background" in title:
-            inputs["image"] = str(base_image_path)
-        if "image" in inputs and ("character" in title or "reference" in title):
-            inputs["image"] = str(character_image_path)
+        # Only the positive prompt encoder receives the edit prompt. The
+        # negative encoder (title contains "negative") is left untouched so the
+        # instruction never leaks into the negative conditioning.
+        if not is_negative and "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")):
+            if isinstance(inputs.get("text"), str):
+                inputs["text"] = edit_prompt
+        if not is_negative and "prompt" in inputs and ("prompt" in title or "textencode" in class_type.lower()):
+            if isinstance(inputs.get("prompt"), str):
+                inputs["prompt"] = edit_prompt
 
     return patched
 
 
-def repose_character(
+def repose_character_detailed(
     base_image_path: str,
     char_key: str,
     edit_prompt: str,
@@ -356,30 +414,37 @@ def repose_character(
     project_id: str,
     *,
     seed: int = 0,
-) -> str:
-    """Return path to reposed image; on any failure return base_image_path unchanged."""
+) -> QwenEditResult:
+    """Composite the saved character into the background, reporting the outcome.
+
+    The result is truthful: status is only "edited"/"cached" when a composited
+    image was actually written to output_path. On any skip or failure the
+    original background is kept and output_path points at the base image.
+    """
     base_path = Path(base_image_path)
     output = Path(output_path)
     if not base_path.exists():
         log.warning("[qwen_edit] Base image missing, skipping: %s", base_path)
-        return str(base_path)
+        return QwenEditResult("skipped", str(base_path), "base image missing")
 
     missing = preflight_qwen_edit(config)
     if missing:
-        log.warning("[qwen_edit] Preflight failed; keeping base image. Missing: %s", "; ".join(missing))
-        return str(base_path)
+        reason = "preflight failed: " + "; ".join(missing)
+        log.warning("[qwen_edit] %s; keeping base image", reason)
+        return QwenEditResult("skipped", str(base_path), reason)
 
     reference_path, identity_hash, character = _ensure_reference_image(project_id, char_key, config)
     if not reference_path:
-        log.warning("[qwen_edit] No character reference for %s; keeping base image", char_key)
-        return str(base_path)
+        reason = f"no character reference for {char_key}"
+        log.warning("[qwen_edit] %s; keeping base image", reason)
+        return QwenEditResult("skipped", str(base_path), reason)
 
     full_prompt = build_qwen_edit_prompt(character, edit_prompt)
     cached = _cache_path(base_path, identity_hash or char_key, full_prompt, seed, config)
     if cached.exists():
         _copy_file(cached, output)
         log.info("[qwen_edit] Cache hit for %s -> %s", char_key, output)
-        return str(output)
+        return QwenEditResult("cached", str(output), "cache hit")
 
     try:
         from video.image_gen.comfyui_client import ComfyUIClient
@@ -392,17 +457,26 @@ def repose_character(
         if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
             raise RuntimeError(f"ComfyUI not running at {runtime.base_url}")
 
+        client = ComfyUIClient(
+            base_url=runtime.base_url,
+            timeout=qwen.get("timeout_seconds", comfy_cfg.get("timeout_seconds", 600)),
+        )
+
+        # Stage both inputs inside ComfyUI's input store so the LoadImage nodes
+        # can read them. LoadImage cannot read arbitrary host paths.
+        base_ref = _comfyui_image_ref(client.upload_image(base_path))
+        character_ref = _comfyui_image_ref(client.upload_image(reference_path))
+
         workflow_path = Path(qwen.get("workflow_path") or _DEFAULT_WORKFLOW)
         workflow = _patch_qwen_workflow(
             workflow_path,
-            base_image_path=base_path,
-            character_image_path=reference_path,
+            base_image_ref=base_ref,
+            character_image_ref=character_ref,
             edit_prompt=full_prompt,
             output_path=output,
             seed=seed,
             config=config,
         )
-        client = ComfyUIClient(base_url=runtime.base_url, timeout=qwen.get("timeout_seconds", comfy_cfg.get("timeout_seconds", 600)))
         generated = client.generate_image(
             workflow,
             output.parent,
@@ -411,14 +485,42 @@ def repose_character(
             timeout=qwen.get("timeout_seconds", comfy_cfg.get("timeout_seconds", 600)),
         )
         if not generated:
-            log.warning("[qwen_edit] ComfyUI returned no image; keeping base image")
-            return str(base_path)
+            reason = "ComfyUI returned no image"
+            log.warning("[qwen_edit] %s; keeping base image", reason)
+            return QwenEditResult("failed", str(base_path), reason)
 
         generated_path = Path(generated[0])
         _copy_file(generated_path, output)
         cached.parent.mkdir(parents=True, exist_ok=True)
         _copy_file(output, cached)
-        return str(output)
+        return QwenEditResult("edited", str(output), "")
     except Exception as e:
+        reason = str(e)
         log.warning("[qwen_edit] Generation failed for %s: %s — keeping base image", char_key, e)
-        return str(base_path)
+        return QwenEditResult("failed", str(base_path), reason)
+
+
+def repose_character(
+    base_image_path: str,
+    char_key: str,
+    edit_prompt: str,
+    output_path: str,
+    config: dict,
+    project_id: str,
+    *,
+    seed: int = 0,
+) -> str:
+    """Return path to reposed image; on any failure return base_image_path unchanged.
+
+    Thin wrapper over repose_character_detailed for callers that only need the
+    resulting frame path.
+    """
+    return repose_character_detailed(
+        base_image_path,
+        char_key,
+        edit_prompt,
+        output_path,
+        config,
+        project_id,
+        seed=seed,
+    ).output_path

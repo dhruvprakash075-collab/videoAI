@@ -100,6 +100,23 @@ def test_qwen_edit_schema_defaults_and_validation():
         validate_config({"image_gen": {"qwen_edit": {"unknown_key": True}}})
 
 
+def test_qwen_edit_trigger_is_closed_enum():
+    # any_character and disabled are the only accepted values
+    for trigger in ("any_character", "disabled"):
+        valid = validate_config({"image_gen": {"qwen_edit": {"trigger": trigger}}})
+        assert valid["image_gen"]["qwen_edit"]["trigger"] == trigger
+
+    with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
+        validate_config({"image_gen": {"qwen_edit": {"trigger": "sometimes"}}})
+
+
+def test_qwen_edit_dropped_resolution_keys_are_rejected():
+    # max_resolution and youtube_aspect were never read; extra=forbid rejects them
+    for removed in ("max_resolution", "youtube_aspect"):
+        with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
+            validate_config({"image_gen": {"qwen_edit": {removed: 1024}}})
+
+
 def test_helpers():
     # validate_or_default non-dict
     assert isinstance(validate_or_default(None, VisionDocument), VisionDocument)
