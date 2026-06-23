@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Folder, Gauge, Layers, Server, Settings2, Sliders, Type, Mic2, Workflow, X } from 'lucide-react';
+import { Folder, Gauge, Server, Settings2, Sliders, Type, Mic2, Workflow, X } from 'lucide-react';
 import { API_BASE } from '../lib/api.js';
 import ToggleRow from './ToggleRow.jsx';
 
@@ -15,19 +15,6 @@ const DEFAULT_CONFIG = {
   maxImagesPerSegment: 6,
   imageBackend: 'bonsai',
   compositionMode: 'one_pass',
-  layeredV3: {
-    approvalMode: 'hybrid',
-    characterThreshold: 0.3,
-    closeupThreshold: 0.8,
-    maxCharacters: 2,
-    fallbackMode: 'one_pass',
-    workflows: {
-      characterSheet: '',
-      background: '',
-      characterPose: '',
-      compositeRefine: '',
-    },
-  },
   comfyUiAdvanced: {
     autoStart: true,
     server: 'http://127.0.0.1:8188',
@@ -58,18 +45,11 @@ const BACKEND_OPTIONS = [
 
 const COMPOSITION_OPTIONS = [
   { value: 'one_pass', label: 'One Pass' },
-  { value: 'layered_v3', label: 'Layered v3' },
 ];
 
 const FALLBACK_OPTIONS = [
   { value: 'bonsai', label: 'Bonsai' },
   { value: 'none', label: 'None' },
-];
-
-const APPROVAL_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'hybrid', label: 'Hybrid (CLI auto, Dashboard manual)' },
-  { value: 'manual', label: 'Manual' },
 ];
 
 const SAMPLER_OPTIONS = ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_sde', 'ddim'];
@@ -92,16 +72,6 @@ fetch(`${API_BASE}/api/config`, { signal: controller.signal })
             ...prev,
             ...data,
             compositionMode: data.compositionMode || 'one_pass',
-            layeredV3: {
-              ...DEFAULT_CONFIG.layeredV3,
-              ...(prev.layeredV3 || {}),
-              ...(data.layeredV3 || {}),
-              workflows: {
-                ...DEFAULT_CONFIG.layeredV3.workflows,
-                ...((prev.layeredV3 || {}).workflows || {}),
-                ...((data.layeredV3 || {}).workflows || {}),
-              },
-            },
             comfyUiAdvanced: {
               ...DEFAULT_CONFIG.comfyUiAdvanced,
               ...prev.comfyUiAdvanced,
@@ -126,20 +96,6 @@ const update = (patch) => setConfig((prev) => ({ ...prev, ...patch }));
         ...patch,
       },
     }));
-  const updateLayeredV3 = (patch) =>
-    setConfig((prev) => ({
-      ...prev,
-      layeredV3: {
-        ...DEFAULT_CONFIG.layeredV3,
-        ...(prev.layeredV3 || {}),
-        workflows: {
-          ...DEFAULT_CONFIG.layeredV3.workflows,
-          ...((prev.layeredV3 || {}).workflows || {}),
-          ...(patch.workflows || {}),
-        },
-        ...patch,
-      },
-    }));
 
   const handleSave = async () => {
     setSaving(true);
@@ -155,23 +111,6 @@ formData.append('voice_engine', config.voiceEngine);
       formData.append('max_images_per_segment', config.maxImagesPerSegment);
       formData.append('image_backend', config.imageBackend);
       formData.append('composition_mode', config.compositionMode || 'one_pass');
-      const lv3 = {
-        ...DEFAULT_CONFIG.layeredV3,
-        ...(config.layeredV3 || {}),
-        workflows: {
-          ...DEFAULT_CONFIG.layeredV3.workflows,
-          ...((config.layeredV3 || {}).workflows || {}),
-        },
-      };
-      formData.append('layered_v3_approval_mode', lv3.approvalMode);
-      formData.append('layered_v3_character_threshold', lv3.characterThreshold);
-      formData.append('layered_v3_closeup_threshold', lv3.closeupThreshold);
-      formData.append('layered_v3_max_characters', lv3.maxCharacters);
-      formData.append('layered_v3_fallback_mode', lv3.fallbackMode);
-      formData.append('layered_v3_wf_character_sheet', lv3.workflows?.characterSheet || '');
-      formData.append('layered_v3_wf_background', lv3.workflows?.background || '');
-      formData.append('layered_v3_wf_character_pose', lv3.workflows?.characterPose || '');
-      formData.append('layered_v3_wf_composite_refine', lv3.workflows?.compositeRefine || '');
       formData.append('comfyui_auto_start', String(comfyUi.autoStart));
       formData.append('comfyui_server', comfyUi.server);
       formData.append('comfyui_host', comfyUi.host);
@@ -215,14 +154,12 @@ formData.append('voice_engine', config.voiceEngine);
 <div className="p-8 flex-1 overflow-y-auto flex flex-col gap-10">
         {activeMenu === 'general' ? (
           <GeneralSettings config={config} update={update} />
-        ) : activeMenu === 'comfyui' ? (
+        ) : (
           <ComfyUiAdvanceSettings
             config={config}
             update={update}
             updateComfyUi={updateComfyUi}
           />
-        ) : (
-          <LayeredSettings config={config} updateLayeredV3={updateLayeredV3} />
         )}
       </div>
 
@@ -243,7 +180,7 @@ formData.append('voice_engine', config.voiceEngine);
 function SettingsMenu({ activeMenu, onChange }) {
   return (
     <div className="px-8 pt-5">
-      <div className="grid grid-cols-3 gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-1">
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-1">
         <MenuButton
           active={activeMenu === 'general'}
           label="General"
@@ -253,11 +190,6 @@ function SettingsMenu({ activeMenu, onChange }) {
           active={activeMenu === 'comfyui'}
           label="Comfy UI"
           onClick={() => onChange('comfyui')}
-        />
-        <MenuButton
-          active={activeMenu === 'layered'}
-          label="Layered"
-          onClick={() => onChange('layered')}
         />
       </div>
     </div>
@@ -304,14 +236,6 @@ function GeneralSettings({ config, update }) {
           options={COMPOSITION_OPTIONS}
           onChange={(value) => update({ compositionMode: value })}
         />
-        {config.compositionMode === 'layered_v3' && (
-          <div className="p-3 rounded-xl border border-yellow-900/40 bg-yellow-950/10">
-            <p className="text-xs text-yellow-300 leading-relaxed">
-              <strong>Layered v3</strong> requires ComfyUI with IPAdapter Plus, Impact Pack, and ControlNet Aux installed.
-              See <span className="font-mono text-yellow-200">docs/layered_v3_setup.md</span> for setup instructions.
-            </p>
-          </div>
-        )}
         <ToggleRow
           title="Uncapped Scaling"
           description="Allow Director AI to dictate exact number of images per segment."
@@ -476,91 +400,6 @@ function ComfyUiAdvanceSettings({ config, update, updateComfyUi }) {
           description="Open ComfyUI's browser window when the server starts."
           value={comfyUi.openBrowser}
           onChange={(value) => updateComfyUi({ openBrowser: value })}
-        />
-      </Section>
-    </>
-  );
-}
-
-function LayeredSettings({ config, updateLayeredV3 }) {
-  const lv3 = {
-    ...DEFAULT_CONFIG.layeredV3,
-    ...(config.layeredV3 || {}),
-    workflows: {
-      ...DEFAULT_CONFIG.layeredV3.workflows,
-      ...((config.layeredV3 || {}).workflows || {}),
-    },
-  };
-
-  return (
-    <>
-      <Section icon={Layers} title="Layered Generation">
-        <SelectField
-          label="Approval Mode"
-          value={lv3.approvalMode}
-          options={APPROVAL_OPTIONS}
-          onChange={(value) => updateLayeredV3({ approvalMode: value })}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label="Char Threshold"
-            min={0}
-            max={1}
-            step={0.05}
-            value={lv3.characterThreshold}
-            onChange={(value) => updateLayeredV3({ characterThreshold: value })}
-          />
-          <NumberField
-            label="Closeup Threshold"
-            min={0}
-            max={1}
-            step={0.05}
-            value={lv3.closeupThreshold}
-            onChange={(value) => updateLayeredV3({ closeupThreshold: value })}
-          />
-        </div>
-        <NumberField
-          label="Max Characters Per Frame"
-          min={1}
-          max={4}
-          value={lv3.maxCharacters}
-          onChange={(value) => updateLayeredV3({ maxCharacters: value })}
-        />
-        <SelectField
-          label="Fallback Mode"
-          value={lv3.fallbackMode}
-          options={[
-            { value: 'one_pass', label: 'One Pass (ComfyUI workflow)' },
-            { value: 'error', label: 'Error (block if preflight fails)' },
-          ]}
-          onChange={(value) => updateLayeredV3({ fallbackMode: value })}
-        />
-      </Section>
-
-      <Section icon={Workflow} title="Layered Workflow Paths">
-        <p className="text-xs text-zinc-500 mb-3">
-          Leave blank to disable that pass. Workflow files must exist and load in ComfyUI.
-          See <span className="font-mono text-zinc-400">docs/layered_v3_setup.md</span>.
-        </p>
-        <TextField
-          label="Character Sheet Workflow"
-          value={lv3.workflows?.characterSheet || ''}
-          onChange={(value) => updateLayeredV3({ workflows: { characterSheet: value } })}
-        />
-        <TextField
-          label="Background Workflow"
-          value={lv3.workflows?.background || ''}
-          onChange={(value) => updateLayeredV3({ workflows: { background: value } })}
-        />
-        <TextField
-          label="Character Pose Workflow"
-          value={lv3.workflows?.characterPose || ''}
-          onChange={(value) => updateLayeredV3({ workflows: { characterPose: value } })}
-        />
-        <TextField
-          label="Composite Refine Workflow"
-          value={lv3.workflows?.compositeRefine || ''}
-          onChange={(value) => updateLayeredV3({ workflows: { compositeRefine: value } })}
         />
       </Section>
     </>

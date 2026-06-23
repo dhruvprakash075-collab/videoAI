@@ -705,8 +705,6 @@ async def get_ui_config():
     try:
         config = load_config()
         image_cfg = config.get("image_gen", {}) or {}
-        layered_cfg = image_cfg.get("layered_v3", {}) or {}
-        workflows = layered_cfg.get("workflows", {}) or {}
         return {
             "voiceEngine": config.get("tts", {}).get("engine", "omnivoice"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
@@ -715,19 +713,6 @@ async def get_ui_config():
             "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
             "imageBackend": image_cfg.get("backend", "bonsai"),
             "compositionMode": image_cfg.get("composition_mode", "one_pass"),
-            "layeredV3": {
-                "approvalMode": layered_cfg.get("approval_mode", "hybrid"),
-                "characterThreshold": layered_cfg.get("character_threshold", 0.3),
-                "closeupThreshold": layered_cfg.get("closeup_threshold", 0.8),
-                "maxCharacters": layered_cfg.get("max_characters", 2),
-                "fallbackMode": layered_cfg.get("fallback_mode", "one_pass"),
-                "workflows": {
-                    "characterSheet": workflows.get("character_sheet", ""),
-                    "background": workflows.get("background", ""),
-                    "characterPose": workflows.get("character_pose", ""),
-                    "compositeRefine": workflows.get("composite_refine", ""),
-                },
-            },
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
         }
     except Exception:
@@ -743,15 +728,6 @@ async def save_ui_config(
     max_images_per_segment: int = Form(...),
     image_backend: str | None = Form(None),
     composition_mode: str | None = Form(None),
-    layered_v3_approval_mode: str | None = Form(None),
-    layered_v3_character_threshold: float | None = Form(None),
-    layered_v3_closeup_threshold: float | None = Form(None),
-    layered_v3_max_characters: int | None = Form(None),
-    layered_v3_fallback_mode: str | None = Form(None),
-    layered_v3_wf_character_sheet: str | None = Form(None),
-    layered_v3_wf_background: str | None = Form(None),
-    layered_v3_wf_character_pose: str | None = Form(None),
-    layered_v3_wf_composite_refine: str | None = Form(None),
     comfyui_auto_start: str | None = Form(None),
     comfyui_server: str | None = Form(None),
     comfyui_host: str | None = Form(None),
@@ -796,56 +772,9 @@ async def save_ui_config(
 
         if composition_mode:
             cm = composition_mode.strip().lower()
-            if cm not in ("one_pass", "layered_v3"):
-                raise ValueError("composition_mode must be 'one_pass' or 'layered_v3'")
+            if cm != "one_pass":
+                raise ValueError("composition_mode must be 'one_pass'")
             image_cfg["composition_mode"] = cm
-
-        if any(v is not None for v in (
-            layered_v3_approval_mode,
-            layered_v3_character_threshold,
-            layered_v3_closeup_threshold,
-            layered_v3_max_characters,
-            layered_v3_fallback_mode,
-            layered_v3_wf_character_sheet,
-            layered_v3_wf_background,
-            layered_v3_wf_character_pose,
-            layered_v3_wf_composite_refine,
-        )):
-            lv3 = image_cfg.setdefault("layered_v3", {})
-            if layered_v3_approval_mode is not None:
-                am = layered_v3_approval_mode.strip().lower()
-                if am not in ("auto", "hybrid", "manual"):
-                    raise ValueError("layered_v3_approval_mode must be 'auto', 'hybrid', or 'manual'")
-                lv3["approval_mode"] = am
-            if layered_v3_character_threshold is not None:
-                val = float(layered_v3_character_threshold)
-                if val < 0 or val > 1:
-                    raise ValueError("character_threshold must be between 0 and 1")
-                lv3["character_threshold"] = val
-            if layered_v3_closeup_threshold is not None:
-                val = float(layered_v3_closeup_threshold)
-                if val < 0 or val > 1:
-                    raise ValueError("closeup_threshold must be between 0 and 1")
-                lv3["closeup_threshold"] = val
-            if layered_v3_max_characters is not None:
-                val = int(layered_v3_max_characters)
-                if val < 1 or val > 10:
-                    raise ValueError("max_characters must be between 1 and 10")
-                lv3["max_characters"] = val
-            if layered_v3_fallback_mode is not None:
-                fm = layered_v3_fallback_mode.strip().lower()
-                if fm not in ("one_pass", "error"):
-                    raise ValueError("fallback_mode must be 'one_pass' or 'error'")
-                lv3["fallback_mode"] = fm
-            wf = lv3.setdefault("workflows", {})
-            if layered_v3_wf_character_sheet is not None:
-                wf["character_sheet"] = layered_v3_wf_character_sheet.strip()
-            if layered_v3_wf_background is not None:
-                wf["background"] = layered_v3_wf_background.strip()
-            if layered_v3_wf_character_pose is not None:
-                wf["character_pose"] = layered_v3_wf_character_pose.strip()
-            if layered_v3_wf_composite_refine is not None:
-                wf["composite_refine"] = layered_v3_wf_composite_refine.strip()
 
         if comfyui_fallback_backend:
             fallback = comfyui_fallback_backend.strip().lower()

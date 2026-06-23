@@ -197,84 +197,6 @@ def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
     return "fail", f"supertonic voice JSON not found: {p}"
 
 
-def _check_layered_v3(config: dict) -> tuple[Status, str]:
-    """Check layered_v3 prerequisites: ComfyUI, workflows, custom nodes, checkpoints."""
-    img = config.get("image_gen", {}) or {}
-    composition_mode = img.get("composition_mode", "one_pass")
-    if composition_mode != "layered_v3":
-        return "skip", f"composition_mode is '{composition_mode}', not layered_v3"
-
-    comfy_cfg = img.get("comfyui", {}) or {}
-    lv3 = img.get("layered_v3", {}) or {}
-    workflows = lv3.get("workflows", {}) or {}
-
-    errors: list[str] = []
-
-    host = comfy_cfg.get("host", "127.0.0.1")
-    port = comfy_cfg.get("port", 8188)
-    try:
-        import urllib.error
-        import urllib.request
-
-        from utils.url_security import validate_service_base_url
-
-        comfy_url = validate_service_base_url(f"http://{host}:{port}")
-        url = f"{comfy_url}/system_stats"
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            if resp.status >= 400:
-                errors.append(f"ComfyUI returned status {resp.status}")
-    except (urllib.error.URLError, TimeoutError):
-        errors.append(f"ComfyUI not reachable at http://{host}:{port}/")
-    except Exception as e:
-        errors.append(f"ComfyUI probe failed: {e}")
-
-    workflow_names = {
-        "character_sheet": workflows.get("character_sheet", ""),
-        "background": workflows.get("background", ""),
-        "character_pose": workflows.get("character_pose", ""),
-        "composite_refine": workflows.get("composite_refine", ""),
-    }
-    for name, path in workflow_names.items():
-        if path and not Path(path).exists():
-            errors.append(f"workflow file not found [{name}]: {path}")
-
-    comfy_root = Path(comfy_cfg.get("root", "external/ComfyUI"))
-    custom_nodes_dir = comfy_root / "custom_nodes"
-    required_nodes = {
-        "IPAdapter Plus": custom_nodes_dir / "ComfyUI_IPAdapter_plus",
-        "Impact Pack": custom_nodes_dir / "ComfyUI-Impact-Pack",
-        "ControlNet Aux": custom_nodes_dir / "comfyui_controlnet_aux",
-    }
-    missing_nodes = [n for n, p in required_nodes.items() if not p.exists()]
-    if missing_nodes:
-        errors.append(
-            f"missing ComfyUI custom nodes: {', '.join(missing_nodes)}. "
-            f"See docs/layered_v3_setup.md for installation instructions."
-        )
-
-    ipadapter_dir = comfy_root / "models" / "ipadapter"
-    required_models = {
-        "ip-adapter-plus_sd15.bin": ipadapter_dir / "ip-adapter-plus_sd15.bin",
-        "ip-adapter-plus-fullface_sd15.bin": ipadapter_dir / "ip-adapter-plus-fullface_sd15.bin",
-    }
-    missing_models = [n for n, p in required_models.items() if not p.exists()]
-    if missing_models:
-        errors.append(
-            f"missing IPAdapter models: {', '.join(missing_models)}. Place in: {ipadapter_dir}"
-        )
-
-    if errors:
-        fallback = lv3.get("fallback_mode", "")
-        if fallback == "one_pass":
-            return (
-                "warn",
-                f"layered_v3 preflight failed ({len(errors)} issues); will fall back to one_pass. Issues:\n"
-                + "\n".join(f"  - {e}" for e in errors),
-            )
-        return "fail", "layered_v3 preflight failed:\n" + "\n".join(f"  - {e}" for e in errors)
-
-    return "ok", "layered_v3 preflight passed (ComfyUI, workflows, nodes, models all present)"
-
 
 def _check_qwen_edit(config: dict) -> tuple[Status, str]:
     """Check Qwen-Image-Edit only when the optional mode is enabled."""
@@ -390,7 +312,6 @@ def run_preflight(
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
-        _timed(lambda: _check_layered_v3(config), name="layered_v3"),
         _timed(lambda: _check_qwen_edit(config), name="qwen_edit"),
         _timed(_check_ffmpeg, name="ffmpeg"),
         _timed(lambda: _check_playwright(config), name="playwright"),

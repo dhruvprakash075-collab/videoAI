@@ -333,17 +333,6 @@ class UpscalerConfig(BaseModel):
     target_height: int = 1080
 
 
-class LayeredV3Config(BaseModel):
-    model_config = {"extra": "forbid"}
-    approval_mode: str = "auto"
-    character_threshold: float = 0.3
-    closeup_threshold: float = 0.8
-    max_characters: int = 2
-    fallback_mode: str = "one_pass"
-    workflows: dict[str, str] = Field(default_factory=dict)
-    character_dir: str = "studio_projects/{project}/characters"
-
-
 class QwenEditConfig(BaseModel):
     model_config = {"extra": "forbid"}
     enabled: bool = False
@@ -385,7 +374,6 @@ class ImageGenConfig(BaseModel):
     fallback_backend: str = "bonsai"
     composition_mode: str = "one_pass"
     qwen_edit: QwenEditConfig = Field(default_factory=QwenEditConfig)
-    layered_v3: LayeredV3Config = Field(default_factory=LayeredV3Config)
 
 
 class MusicConfig(BaseModel):

@@ -25,7 +25,6 @@ def _mock_side_effecting_preflight_checks():
         ("utils.preflight._check_vram", ("skip", "mocked")),
         ("utils.preflight._check_disk", ("ok", "mocked")),
         ("utils.preflight._check_supertonic_voice", ("skip", "mocked")),
-        ("utils.preflight._check_layered_v3", ("skip", "mocked")),
         ("utils.preflight._check_qwen_edit", ("skip", "mocked")),
         ("utils.preflight._check_ffmpeg", ("ok", "mocked")),
         ("utils.preflight._check_playwright", ("skip", "mocked")),
