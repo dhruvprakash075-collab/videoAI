@@ -189,7 +189,7 @@ _HELP_TEXT = """\
   Quit              Ctrl+Q  or  Ctrl+C
 
   Run Options (expand the panel above the input):
-    Duration (min), Resume, Skip-RVC, Director mode,
+    Duration (min), Resume, Director mode,
     Preview mode, Project name, Story file path
 
   Tip: run via TUI.bat — not the embedded editor terminal.
@@ -551,7 +551,6 @@ class StudioTUI(App):
         # Phase 2 option state
         self._opt_duration: str = ""
         self._opt_resume: bool = True
-        self._opt_skip_rvc: bool = False
         self._opt_director: bool = False
         self._opt_preview: bool = False
         self._opt_project: str = ""
@@ -584,8 +583,6 @@ class StudioTUI(App):
                             with Horizontal(id="opts_row2"):
                                 yield Label("Resume", classes="opt_label")
                                 yield Switch(value=True, id="opt_resume")
-                                yield Label("Skip-RVC", classes="opt_label")
-                                yield Switch(value=False, id="opt_skip_rvc")
                                 yield Label("Director", classes="opt_label")
                                 yield Switch(value=False, id="opt_director")
                                 yield Label("Preview", classes="opt_label")
@@ -837,8 +834,6 @@ class StudioTUI(App):
             kwargs["duration_min"] = dur
         if not self._opt_resume:
             kwargs["resume"] = False
-        if self._opt_skip_rvc:
-            kwargs["skip_rvc"] = True
         if self._opt_director:
             kwargs["director_mode"] = True
         if self._opt_preview:
@@ -906,8 +901,6 @@ class StudioTUI(App):
         sid = event.switch.id
         if sid == "opt_resume":
             self._opt_resume = event.value
-        elif sid == "opt_skip_rvc":
-            self._opt_skip_rvc = event.value
         elif sid == "opt_director":
             self._opt_director = event.value
         elif sid == "opt_preview":

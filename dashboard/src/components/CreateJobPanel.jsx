@@ -26,7 +26,6 @@ export default function CreateJobPanel({ onJobQueued }) {
   const [dryRun, setDryRun] = useState(true);
   const [preview, setPreview] = useState(false);
   const [evalModels, setEvalModels] = useState(false);
-  const [skipRvc, setSkipRvc] = useState(true);
   const [noResume, setNoResume] = useState(true);
   const [yes, setYes] = useState(false);
   const [skipPreflight, setSkipPreflight] = useState(false);
@@ -46,7 +45,6 @@ export default function CreateJobPanel({ onJobQueued }) {
       duration,
       dry_run: dryRun,
       no_resume: noResume,
-      skip_rvc: skipRvc,
     };
     if (runMode) payload.run_mode = runMode;
     if (directorMode) payload.director_mode = true;
@@ -294,7 +292,6 @@ export default function CreateJobPanel({ onJobQueued }) {
             <ToggleRow label="Director Mode" value={directorMode} onChange={setDirectorMode} />
             <ToggleRow label="Series Mode" value={series} onChange={setSeries} />
             <ToggleRow label="Eval Models" value={evalModels} onChange={setEvalModels} />
-            <ToggleRow label="Skip RVC" value={skipRvc} onChange={setSkipRvc} />
             <ToggleRow label="No Resume" value={noResume} onChange={setNoResume} />
             <ToggleRow label="Auto-Accept (--yes)" value={yes} onChange={setYes} />
             <ToggleRow label="Skip Preflight" value={skipPreflight} onChange={setSkipPreflight} />

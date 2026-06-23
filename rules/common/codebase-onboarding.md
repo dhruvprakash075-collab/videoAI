@@ -52,7 +52,7 @@ Gather raw signals without reading every file:
 **Key Directories**
 ```
 agents/        CrewAI agent definitions
-audio/         TTS, RVC, SFX
+audio/         TTS, SFX
 config/        Config files and schemas
 core/          Pipeline orchestration
 dashboard/     React frontend

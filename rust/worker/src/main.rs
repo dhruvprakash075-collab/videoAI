@@ -1004,7 +1004,6 @@ fn is_supported_arg(key: &str) -> bool {
         "duration"
             | "dry_run"
             | "no_resume"
-            | "skip_rvc"
             | "file"
             | "project"
             | "series"

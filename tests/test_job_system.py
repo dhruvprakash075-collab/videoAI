@@ -292,7 +292,6 @@ class TestWorker:
             "topic": "Test",
             "request_json": json.dumps({
                 "dry_run": True,
-                "skip_rvc": False,
                 "no_resume": True,
                 "yes": True,
             }),
@@ -302,7 +301,6 @@ class TestWorker:
         assert "--dry-run" in cmd_str
         assert "--no-resume" in cmd_str
         assert "--yes" in cmd_str
-        assert "--skip-rvc" not in cmd_str
 
     def test_build_command_with_topic_from_request(self):
         """Test topic comes from request_json if available."""

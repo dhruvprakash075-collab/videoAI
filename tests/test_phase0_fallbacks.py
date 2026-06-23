@@ -120,7 +120,6 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
         dry_run=True,
         director_mode=False,
         preview_mode=False,
-        skip_rvc=True,
         words_per_seg=100,
         seg_min=2,
         shared_prompt_executor=MagicMock(),

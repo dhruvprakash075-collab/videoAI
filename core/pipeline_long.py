@@ -118,7 +118,6 @@ def run_long_pipeline(
     topic: str,
     project_name: str | None = None,
     resume: bool = True,
-    skip_rvc: bool = False,
     dry_run: bool = False,
     fast_dry_run: bool = False,
     duration_min: int | None = None,
@@ -529,7 +528,6 @@ def run_long_pipeline(
             fast_dry_run=fast_dry_run,
             director_mode=director_mode,
             preview_mode=preview_mode,
-            skip_rvc=skip_rvc,
             words_per_seg=words_per_seg,
             seg_min=seg_min,
             shared_prompt_executor=_shared_prompt_executor,
@@ -657,7 +655,6 @@ if __name__ == "__main__":
         help="Skip LLM script generation too (stub scripts, no TTS/images/video)",
     )
     parser.add_argument("--no-resume", action="store_true", help="Start fresh (ignore checkpoints)")
-    parser.add_argument("--skip-rvc", action="store_true", help="Skip RVC voice conversion")
     parser.add_argument(
         "--project",
         default=None,
@@ -700,7 +697,6 @@ if __name__ == "__main__":
             topic=topic_text,
             project_name=args.project,
             resume=not args.no_resume,
-            skip_rvc=args.skip_rvc,
             dry_run=args.dry_run or args.fast_dry_run,
             fast_dry_run=args.fast_dry_run,
             duration_min=args.duration,

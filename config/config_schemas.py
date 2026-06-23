@@ -413,11 +413,6 @@ class AudioFxConfig(BaseModel):
     target_lufs: int = -14
 
 
-class RvcConfig(BaseModel):
-    model_config = {"extra": "forbid"}
-    enabled: bool = False
-
-
 class AlignmentConfig(BaseModel):
     model_config = {"extra": "forbid"}
     enabled: bool = True
@@ -561,7 +556,6 @@ SECTION_MODELS: dict[str, type[BaseModel]] = {
     "narrator": NarratorConfig,
     "cache": CacheConfig,
     "audio_fx": AudioFxConfig,
-    "rvc": RvcConfig,
 }
 
 

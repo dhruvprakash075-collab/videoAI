@@ -46,7 +46,6 @@ def mock_dependencies(tmp_path):
         "dry_run": True,
         "director_mode": False,
         "preview_mode": False,
-        "skip_rvc": True,
         "words_per_seg": 50,
         "seg_min": 2,
         "shared_prompt_executor": MagicMock(),

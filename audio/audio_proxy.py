@@ -1042,7 +1042,6 @@ get_tts_capabilities = tts_capabilities
 __all__ = [
     "get_audio_duration",
     "normalize_tts_engine",
-    "rvc_convert",
     "shutdown_omnivoice_worker",
     "shutdown_supertonic_worker",
     "translate_hinglish",

@@ -331,7 +331,6 @@ class TestJobsExtension:
             "duration": 3,
             "dry_run": True,
             "no_resume": True,
-            "skip_rvc": True,
             "project": "myproj",
             "series": True,
             "director_mode": False,

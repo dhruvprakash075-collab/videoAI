@@ -203,7 +203,6 @@ def _build_parser():
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview without generating video")
     parser.add_argument("--no-resume", action="store_true", help="Start fresh (ignore checkpoints)")
-    parser.add_argument("--skip-rvc", action="store_true", help="Skip RVC voice conversion")
     parser.add_argument(
         "--project", default=None, help="Project series name from projects/ directory"
     )
@@ -391,7 +390,6 @@ def _run_batch(args, run_long_pipeline, topics, source_chunks):
                 topic=_btopic,
                 project_name=args.project,
                 resume=not args.no_resume,
-                skip_rvc=args.skip_rvc,
                 dry_run=args.dry_run,
                 duration_min=args.duration,
                 director_mode=args.director_mode,
@@ -447,7 +445,6 @@ def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks
             topic=topic_text,
             project_name=args.project,
             resume=not args.no_resume,
-            skip_rvc=args.skip_rvc,
             dry_run=args.dry_run,
             duration_min=args.duration,
             director_mode=args.director_mode,

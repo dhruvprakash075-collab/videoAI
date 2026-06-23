@@ -285,7 +285,6 @@ class TestEndToEndMock:
                 topic=topic,
                 project_name=None,
                 resume=True,
-                skip_rvc=False,
                 dry_run=True,
                 duration_min=None,
                 director_mode=False,
