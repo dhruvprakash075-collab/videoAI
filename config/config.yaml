@@ -173,18 +173,6 @@ image_gen:
     poll_seconds: 1.0
     required_custom_nodes:
       - ComfyUI-nunchaku
-  layered_v3:
-    approval_mode: auto
-    character_threshold: 0.3
-    closeup_threshold: 0.8
-    max_characters: 2
-    fallback_mode: one_pass
-    workflows:
-      character_sheet: ""
-      background: ""
-      character_pose: ""
-      composite_refine: ""
-    character_dir: studio_projects/{project}/characters
 subtitles:
   format: classic
   font: Nirmala UI

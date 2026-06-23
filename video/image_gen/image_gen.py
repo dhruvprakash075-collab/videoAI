@@ -162,31 +162,6 @@ def generate_images(
                 qwen_trigger,
             )
 
-    if backend == "comfyui" and composition_mode == "layered_v3":
-        try:
-            from video.image_gen.layered_v3 import generate_layered_images
-
-            return generate_layered_images(
-                prompt_list,
-                output_dir,
-                cfg,
-                char_presence=char_presence,
-                project_id=project_id or "",
-            )
-        except Exception as e:
-            log.warning(f"[image_gen] Layered v3 failed: {e}")
-            fallback = cfg.get("fallback_backend", "bonsai")
-            if fallback == "bonsai":
-                log.info("[image_gen] Falling back to Bonsai after layered_v3 error")
-                return _bonsai(
-                    prompt_list,
-                    output_dir,
-                    cfg,
-                    char_presence=char_presence,
-                    project_id=project_id or "",
-                )
-            raise
-
     if backend == "comfyui":
         try:
             return _comfyui(
