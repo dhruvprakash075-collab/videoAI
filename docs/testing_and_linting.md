@@ -12,7 +12,7 @@ All tests run locally using mock-heavy patterns — no GPU, Ollama server, or ex
   ```powershell
   venv\Scripts\python.exe -m pytest tests/ -q
   ```
-  **Current status**: **1,682 passing tests**, 0 skipped, 0 failing (verified 2026-06-08).
+  **Current status**: **1,888 passing tests**, 5 skipped, 0 failing (verified 2026-06-25).
   Runtime: ~3 minutes on warm cache. **Clean exit** — no access violation, no PermissionError traceback.
 
   > **Windows note**: The old `PermissionError: [WinError 5]` about `pytest-current`
@@ -25,7 +25,7 @@ All tests run locally using mock-heavy patterns — no GPU, Ollama server, or ex
   ```
 
 ### Test Suite Inventory
-The `tests/` directory contains **83 `test_*.py` modules** plus **2 `manual_integration_test_*.py`** files.
+The `tests/` directory contains **81 `test_*.py` modules**.
 Key test modules include:
 - `test_ollama_client.py` — B1 breaker state machine
 - `test_crewai_breaker.py` — guarded_crewai_kickoff and BreakerOpen contract
@@ -33,23 +33,9 @@ Key test modules include:
 - `test_critic.py` (51 tests) — 5-dim rubric + rewrite loop
 - `test_segment_runner_helpers.py` — per-segment loop logic
 - `test_2026_06_fixes.py` (25 tests) — regression coverage for P5-1..4, P4-8, P4-23
-- Supertonic 3 TTS (CPU ONNX) is integrated in `audio/supertonic_worker.py` and
-  dispatched via `audio/audio_proxy.py::tts_generate()` (engine = `supertonic`).
-  Not yet covered by pytest — end-to-end smoke test in `docs/AGENTS.md`
-  § "Supertonic 3 TTS integration".
-- **Bonsai 4B image gen (2026-06-04)** is covered by:
-  - `test_image_gen.py` (19 tests) — OOM ledger, `unload_bonsai_pipeline`,
-    `_prompt_cache_key` (incl. `master_portrait_hash` invalidation),
-    `_resolve_dominant_char`, `generate_images` dispatch.
-  - `test_image_gen_extended.py` (6 tests) — IP-Adapter attach, lazy
-    portrait trigger, skip-when-portrait-exists, cache-key
-    portrait-change invalidation, model-change pipe reload, OOM
-    event recording.
-  - `test_pre_production.py` (3 new tests) — `generate_master_portrait`
-    dry-run, no-prompt fallback, no-candidates → None.
-  - `test_pre_production_extended.py` (1 new test) — portrait edge cases.
-  - **NOT** in pytest: full Bonsai inference (requires 4B model on HF +
-    gemlite kernel + ~3.5 GB VRAM). End-to-end smoke is manual.
+- Supertonic 3 TTS (CPU ONNX) is tested via `test_audio_proxy_extended.py`.
+- **ComfyUI image gen** is covered by `test_image_gen.py`, `test_comfyui.py`,
+  `test_qwen_repose.py`, `test_qwen_spike_check.py`.
 
 ### Important Notes
 - **16 warnings** appear (torch jit deprecation, pydub audioop deprecation, CUDA expandable_segments) — all harmless.

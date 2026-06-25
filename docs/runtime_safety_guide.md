@@ -6,7 +6,7 @@ To guarantee stable local execution on consumer hardware with **6GB VRAM** limit
 
 ## 1. VRAM & GPU Model Eviction
 
-Bonsai 4B (image generation, ~3.5GB peak), Supertonic 3 / OmniVoice (voice rendering — Supertonic is CPU-only so does not need eviction), and local LLMs (Ollama) cannot reside in VRAM simultaneously without causing Out-of-Memory (OOM) failures.
+ComfyUI / DreamShaper_8 (image generation, ~3-4GB peak), Supertonic 3 / OmniVoice (voice rendering — Supertonic is CPU-only so does not need eviction), and local LLMs (Ollama) cannot reside in VRAM simultaneously without causing Out-of-Memory (OOM) failures.
 
 ### Two-Stage Eviction Process (`core/segment_runner.py`)
 
@@ -23,13 +23,13 @@ After eviction, the system polls `torch.cuda.mem_get_info()` in a loop, waiting 
 
 | Slot Type | Limit | Timeout | Used For |
 |---|---|---|---|
-| `"heavy"` | **1 active** | **1800s** (30 min) | ComfyUI/Bonsai image gen, OmniVoice TTS |
+| `"heavy"` | **1 active** | **1800s** (30 min) | ComfyUI image gen, OmniVoice TTS |
 | `"light"` | **16 active** | **60s** | Video rendering, assembler |
 
 * **GPU Task Slots**: `global_scheduler.task("heavy", ...)` restricts concurrent heavy GPU processes to **1**. A task that hangs past 1800s surfaces a `TimeoutError`.
 * **Agent Lock**: `utils.concurrency.crewai_lock` is an **`RLock`** (not a plain Lock — P3-14 fix) that serializes all CrewAI `crew.kickoff()` executions to prevent litellm executor corruption from concurrent calls.
 
-> **Rule**: Any ComfyUI/Bonsai image generation or heavy TTS must go through `global_scheduler.task("heavy", ...)`. Any render/assemble task uses `global_scheduler.task("light", ...)`.
+> **Rule**: Any ComfyUI image generation or heavy TTS must go through `global_scheduler.task("heavy", ...)`. Any render/assemble task uses `global_scheduler.task("light", ...)`.
 
 ---
 
@@ -60,28 +60,19 @@ except BreakerOpen as e:
 
 ---
 
-## 4. Bonsai Image OOM Recovery Ladder (D1, 2026-06-04)
+## 4. ComfyUI Image OOM Protection
 
-When Bonsai 4B runs out of VRAM during image generation,
-`video/image_gen/image_gen.py` implements a 2-tier automatic recovery
-(reduced from SD's 3-tier — Bonsai is sequential-VRAM only and does
-not benefit from CPU offload on a 6GB card):
+Image generation uses **ComfyUI** (Stable Diffusion via DreamShaper_8).
+VRAM protection is handled by the heavy-task scheduler
+(`global_scheduler.task("heavy", ...)` ensures only one GPU task runs
+at a time) and the VRAM polling loop (Section 1). Preflight checks
+VRAM before starting the image phase; if free VRAM is below the
+`vram_sd_threshold_gb` (4.5 GB), SD loading is gated until eviction
+completes.
 
-| Tier | Action |
-|---|---|
-| 1 (default) | Normal Bonsai call, `steps=4` (configurable) |
-| 2 (fallback) | Retry with `max(2, steps * 0.5)` steps |
-| skip + log | Both tiers OOM → record event in `oom_report.json`, emit placeholder frame, continue with next frame |
-
-OOM reports are written to `studio_outputs/*/oom_report.json`
-(accessible via `image_gen.get_oom_report()`) and the frame cache key
-is invalidated so retry-on-resume can regenerate.
-
-**Note:** The previous 3-tier SD ladder (reduce steps → CPU offload →
-512×512) is **deprecated**. Bonsai's gemlite kernel is already VRAM-
-optimized for 4-bit ternary inference and the 3rd tier was never
-reached in practice. Sequential VRAM (no `enable_model_cpu_offload()`)
-is enforced because peak is only ~3.5GB on RTX 4050 6GB.
+ComfyUI itself is auto-started by the pipeline when needed (config:
+`images.comfyui.auto_start: true`) and unloaded after each image batch
+to release VRAM for subsequent segments.
 
 ---
 
