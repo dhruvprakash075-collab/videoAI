@@ -13,7 +13,7 @@ const DEFAULT_CONFIG = {
   dynamicSubtitles: true,
   uncappedScaling: false,
   maxImagesPerSegment: 6,
-  imageBackend: 'bonsai',
+  imageBackend: 'comfyui',
   compositionMode: 'one_pass',
   comfyUiAdvanced: {
     autoStart: true,
@@ -34,21 +34,20 @@ const DEFAULT_CONFIG = {
     pollSeconds: 1,
     unloadAfterBatch: true,
     openBrowser: false,
-    fallbackBackend: 'bonsai',
+    fallbackBackend: 'none',
   },
 };
 
 const BACKEND_OPTIONS = [
-  { value: 'bonsai', label: 'Bonsai' },
   { value: 'comfyui', label: 'ComfyUI' },
 ];
 
 const COMPOSITION_OPTIONS = [
   { value: 'one_pass', label: 'One Pass' },
+  { value: 'qwen_edit', label: 'Qwen Edit (resource gated)' },
 ];
 
 const FALLBACK_OPTIONS = [
-  { value: 'bonsai', label: 'Bonsai' },
   { value: 'none', label: 'None' },
 ];
 

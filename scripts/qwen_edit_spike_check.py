@@ -87,14 +87,14 @@ def analyze_config(config: dict[str, Any]) -> list[Check]:
 
     checks = [
         Check(
-            "default composition mode",
-            composition_mode == "one_pass",
-            f"composition_mode={composition_mode!r}; committed config must stay 'one_pass'",
+            "resource-gated composition mode",
+            composition_mode == "qwen_edit",
+            f"composition_mode={composition_mode!r}; expected 'qwen_edit'",
         ),
         Check(
-            "default Qwen disabled",
-            not enabled,
-            f"qwen_edit.enabled={enabled!r}; committed config must stay false",
+            "Qwen enabled",
+            enabled,
+            f"qwen_edit.enabled={enabled!r}; expected true with live resource gates",
         ),
     ]
 
@@ -147,7 +147,7 @@ Machine:
 - Steps: 8
 
 Normal mode:
-- Qwen disabled on committed config: pass/fail
+- Qwen enabled with live RAM/VRAM admission gates: pass/fail
 - Existing focused tests: pass/fail
 - Targeted Ruff: pass/fail
 

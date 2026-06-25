@@ -170,11 +170,7 @@ ignore = [
     "PLR0915",
     "F401",   # optional textual API checks
 ]
-"train_lora.py" = [
-    "E402",
-    "T201",
-    "N812",   # `from torchvision import transforms as T` is the torch convention
-]
+
 "utils/*.py" = ["E402"]
 "audio/*.py" = ["E402"]
 "video/**/*.py" = ["E402"]
@@ -286,43 +282,5 @@ show_missing = true
 skip_covered = false
 precision = 1
 sort = "Cover"
-
-[tool.mypy]
-python_version = "3.10"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-    "tests.manual_integration_test_b",
-    "tests.manual_integration_test",
-    "tests.conftest",
-    "manual_integration_test_b",
-    "manual_integration_test",
-    "conftest",
-    "utils.retry_manager",
-    "utils.emotion_control",
-
-    "utils.media_analyzer",
-    "scripts.map_codebase",
-    "utils.concurrency",
-    "utils.source_splitter",
-    "utils.context_manager",
-    "utils.source_loader",
-    "utils.story_planner",
-    "utils.web_search",
-    "utils.utils",
-    "utils.local_ui",
-    "video.image_gen.image_gen",
-    "video.renderer.assembler",
-    "core.pre_production",
-    "core.segment_runner",
-    "core.post_production",
-    "core.pipeline_long",
-    "jobs.job_store",
-    "memory.project_store",
-    "agents.ui_state",
-    "agents.director_agent",
-]
-ignore_errors = true
 
 

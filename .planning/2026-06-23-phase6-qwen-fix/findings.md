@@ -1,0 +1,26 @@
+# Findings
+
+- ComfyUI starts successfully and serves `127.0.0.1:8188`.
+- Live node registry confirms `NunchakuQwenImageDiTLoader` exists; `NunchakuZImageDiTLoader` does not.
+- The actual Qwen request is rejected before inference because workflow node `3` lacks required `resolution_steps`.
+- Current ComfyUI defines `resolution_steps` as an integer with default/minimum `1`.
+- Qwen workflow node `6` keeps `20` transformer blocks on GPU. The loader's safe default is `1`; lower is appropriate for the explicit 5 GiB ceiling.
+- Installed versions are `ComfyUI-nunchaku 1.2.1` and `nunchaku 1.0.0+torch2.9`; the custom node declares `nunchaku 1.0.1` variants.
+- The `convert_fp16` failure is isolated to the optional Z-Image import and does not block Qwen node registration.
+- `ComfyUIClient._request` parses the HTTP body, raises `ComfyUIError` inside the parsing `try`, then catches that error and replaces it with the generic HTTP reason.
+- Repository config leaves `qwen_edit.model_path` empty even though the model exists locally.
+- The initial `hero` skip was resolved by project metadata pointing to the existing master portrait.
+- The observed 73 MiB peak is not an inference result because validation failed before model loading.
+- The project has no separate scene image; only `hero/master.png` exists. Reusing it as the background would not prove character insertion.
+- Pillow 12.2.0 and safetensors 0.8.0 are already installed, so fixture generation and model-header checks need no dependency.
+- The machine currently has 15.29 GiB total RAM but only 2.34 GiB free. Inference is unsafe until resources are freed and commit headroom is checked.
+- Local Qwen assets are approximately 10.73 GiB (diffusion), 8.74 GiB (text encoder), and 0.24 GiB (VAE), totaling 19.71 GiB.
+- Drive C currently has 39.75 GiB free.
+- ComfyUI supports `--reserve-vram`, `--lowvram`, `--cpu-vae`, `--disable-smart-memory`, `--cache-none`, `--disable-pinned-memory`, and `--disable-api-nodes`; these can enforce the conservative acceptance profile without code.
+- The pip cache contains no Nunchaku wheel.
+- Official Nunchaku releases contain the exact Windows CPython 3.11 / CUDA 12.8 / Torch 2.9 wheel for version 1.2.1, matching the custom node version.
+- Internet search tooling returned HTTP 403; the official GitHub Releases API was used instead to inspect release asset names.
+- Implementation audit found the first acceptance script unsafe: wrong module/API, CPython 3.11 wheel on a CPython 3.12 ComfyUI environment, no watchdog, ineffective dry-run, incomplete offline flags, and no guaranteed cleanup.
+- The correct wheel platform is CPython 3.12 / CUDA 12.8 / Torch 2.9. All package operations must use `external/ComfyUI/.venv/Scripts/python.exe`.
+- The current desktop session is not elevated. Firewall enforcement must fail closed before inference when elevation is unavailable.
+- CodeRabbit CLI is not installed, so the required review will use manual inspection and executable checks.

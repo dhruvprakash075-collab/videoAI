@@ -1,6 +1,7 @@
 """test_comfyui.py - Tests for ComfyUI integration."""
 
 import json
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -348,6 +349,43 @@ class TestUploadImage:
             with pytest.raises(ComfyUIError):
                 client.upload_image(image_file)
 
+    def test_http_400_preserves_node_errors(self):
+        """Phase 2: ComfyUIError must include node_errors from 400 responses."""
+        import urllib.error
+
+        client = ComfyUIClient(base_url="http://127.0.0.1:8188")
+        error_body = json.dumps({
+            "error": "Prompt outputs failed validation",
+            "node_errors": {
+                "3": {
+                    "errors": [
+                        {
+                            "type": "value_not_in_list",
+                            "message": "resolution_steps not in list",
+                            "details": "Got 5, required: [1, 2, 4]",
+                        }
+                    ],
+                    "class_type": "ImageScaleToTotalPixels",
+                }
+            },
+        }).encode()
+
+        http_error = urllib.error.HTTPError(
+            url="http://127.0.0.1:8188/prompt",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=BytesIO(error_body),
+        )
+
+        with patch("urllib.request.urlopen", side_effect=http_error):
+            with pytest.raises(ComfyUIError) as exc_info:
+                client.queue_prompt({"1": {"inputs": {}, "class_type": "Test"}})
+            msg = str(exc_info.value)
+            assert "400" in msg
+            assert "node_errors" in msg
+            assert "ImageScaleToTotalPixels" in msg
+
 
 class TestWorkflowPatcher:
     def test_load_workflow(self, tmp_path):
@@ -607,49 +645,13 @@ class TestBackendRouting:
         with patch.object(image_gen_module, "_comfyui") as mock_comfyui:
             mock_comfyui.return_value = [Path("test.png")]
 
-            config = {"image_gen": {"backend": "comfyui", "comfyui": {}, "fallback_backend": "bonsai"}}
+            config = {"image_gen": {"backend": "comfyui", "comfyui": {}, "fallback_backend": "none"}}
             result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
 
             mock_comfyui.assert_called_once()
             assert len(result) == 1
 
-    def test_generate_images_routes_to_bonsai(self):
-        import video.image_gen.image_gen as image_gen_module
-
-        with patch.object(image_gen_module, "_bonsai") as mock_bonsai:
-            mock_bonsai.return_value = [Path("test.png")]
-
-            config = {"image_gen": {"backend": "bonsai"}}
-            result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
-
-            mock_bonsai.assert_called_once()
-            assert len(result) == 1
-
-    def test_generate_images_falls_back_to_bonsai_on_comfyui_failure(self):
-        import video.image_gen.image_gen as image_gen_module
-
-        with (
-            patch.object(image_gen_module, "_comfyui") as mock_comfyui,
-            patch.object(image_gen_module, "_bonsai") as mock_bonsai,
-        ):
-
-            mock_comfyui.side_effect = Exception("ComfyUI failed")
-            mock_bonsai.return_value = [Path("fallback.png")]
-
-            config = {
-                "image_gen": {
-                    "backend": "comfyui",
-                    "comfyui": {},
-                    "fallback_backend": "bonsai",
-                }
-            }
-            result = image_gen_module.generate_images("test prompt", Path("/tmp"), config)
-
-            mock_comfyui.assert_called_once()
-            mock_bonsai.assert_called_once()
-            assert result[0].name == "fallback.png"
-
-    def test_generate_images_raises_when_fallback_disabled(self):
+    def test_generate_images_raises_when_comfyui_fails(self):
         import video.image_gen.image_gen as image_gen_module
 
         with patch.object(image_gen_module, "_comfyui") as mock_comfyui:

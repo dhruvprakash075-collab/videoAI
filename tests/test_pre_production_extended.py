@@ -42,29 +42,16 @@ def test_run_preflight_checks_edge_cases(monkeypatch):
 
 
 def test_generate_master_portrait_edge_cases(tmp_path, monkeypatch):
-    """Master portrait gen: short prompt skipped, no prompt falls back, all-fail returns None."""
+    """Master portrait gen: stubbed path returns None for non-dry-run, placeholder for dry_run."""
     from core.pre_production import generate_master_portrait
 
     fake_ps = MagicMock()
     fake_ps.get_character.return_value = {"name": "H", "visual_description": "long desc of hero"}
     monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
 
-    def fake_load_bonsai(model_id):
-        # All attempts raise -> generate_master_portrait returns None
-        def _raise(*a, **kw):
-            raise Exception("simulated gen fail")
-
-        pipe = MagicMock(side_effect=_raise)
-        pipe.load_ip_adapter = MagicMock()
-        return pipe
-
-    monkeypatch.setattr(
-        "video.image_gen.image_gen._load_bonsai_pipeline", fake_load_bonsai
-    )
-
     cfg = {"image_gen": {"steps": 4, "guidance_scale": 3.5}}
 
-    # char_non_visual: no portrait_prompt -> still attempts generation
+    # dry_run=False returns None (Bonsai removed)
     res1 = generate_master_portrait(
         "char_non_visual",
         "proj1",
@@ -72,17 +59,18 @@ def test_generate_master_portrait_edge_cases(tmp_path, monkeypatch):
         cfg,
         dry_run=False,
     )
-    assert res1 is None  # all candidates failed
+    assert res1 is None
 
-    # char_no_prompt: dict with no portrait_prompt/description -> no usable prompt
+    # dry_run=True returns a placeholder path
     res2 = generate_master_portrait(
         "char_no_prompt",
         "proj1",
-        {"name": "Empty"},  # nothing
+        {"name": "Empty"},
         cfg,
-        dry_run=False,
+        dry_run=True,
     )
-    assert res2 is None  # no prompt to generate from
+    assert res2 is not None
+    assert res2.exists()
 
 
 # Old test_run_studio_session_edge_cases removed (Bonsai uses lazy portrait gen)

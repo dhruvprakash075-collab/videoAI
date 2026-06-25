@@ -78,7 +78,7 @@ def _default_config() -> dict:
             "writer": "zephyr-writer",
         },
         "visual": {"num_scenes": 6, "style": "Gothic Horror, Dark Victorian Steampunk"},
-        "tts": {"lang": "hi", "slow": False},
+        "tts": {"lang": "hi"},
         "checkpoint": {"enabled": True, "dir": "studio_checkpoints"},
         "memory": {"memory_file": "studio_checkpoints/story_memory.json"},
         "video": {

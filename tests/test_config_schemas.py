@@ -78,6 +78,8 @@ def test_qwen_edit_schema_defaults_and_validation():
     assert isinstance(img.qwen_edit, QwenEditConfig)
     assert img.qwen_edit.enabled is False
     assert img.qwen_edit.backend == "nunchaku"
+    assert img.qwen_edit.min_available_ram_gib == 8.0
+    assert img.qwen_edit.min_free_vram_mib == 5000
 
     valid = validate_config(
         {
@@ -87,6 +89,8 @@ def test_qwen_edit_schema_defaults_and_validation():
                     "enabled": True,
                     "backend": "nunchaku",
                     "model_path": "models/qwen-image-edit.safetensors",
+                    "min_available_ram_gib": 8.0,
+                    "min_free_vram_mib": 5000,
                     "required_custom_nodes": ["ComfyUI-nunchaku"],
                 },
             }
@@ -94,6 +98,7 @@ def test_qwen_edit_schema_defaults_and_validation():
     )
     assert valid["image_gen"]["composition_mode"] == "qwen_edit"
     assert valid["image_gen"]["qwen_edit"]["enabled"] is True
+    assert valid["image_gen"]["qwen_edit"]["min_available_ram_gib"] == 8.0
     assert valid["image_gen"]["qwen_edit"]["required_custom_nodes"] == ["ComfyUI-nunchaku"]
 
     with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
@@ -269,3 +274,17 @@ def test_build_and_load_decision_record():
     invalid_raw = {"version": 1, "total_duration_min": "invalid-str"}
     rec_fallback = load_decision_record(invalid_raw, config)
     assert rec_fallback.total_duration_min.value == 15
+
+
+def test_removed_config_fields_are_rejected():
+    """Fields deleted in Plan 001 cleanup must be rejected by extra=forbid."""
+    for field in ("slow",):
+        with pytest.raises(FatalError, match="Config section 'tts' validation failed"):
+            validate_config({"tts": {field: True}})
+
+    for field in ("preview_steps", "oom_recovery"):
+        with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
+            validate_config({"image_gen": {field: True}})
+
+    with pytest.raises(FatalError, match="Config section 'audio_fx' validation failed"):
+        validate_config({"audio_fx": {"loudnorm_two_pass": True}})

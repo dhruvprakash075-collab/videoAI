@@ -34,20 +34,9 @@ def setup_run_logging(log_dir: Path) -> None:
     # Console handler
     import sys
 
-    class SafeStream:
-        def __init__(self, stream):
-            self.stream = stream
+    sys.stdout.reconfigure(errors='replace')  # ponytail: replaces SafeStream wrapper
 
-        def write(self, s):
-            try:
-                self.stream.write(s)
-            except UnicodeEncodeError:
-                self.stream.write(s.encode("ascii", "replace").decode("ascii"))
-
-        def flush(self):
-            self.stream.flush()
-
-    ch = logging.StreamHandler(SafeStream(sys.stdout))
+    ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 

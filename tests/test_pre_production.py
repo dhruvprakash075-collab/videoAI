@@ -301,30 +301,12 @@ def test_generate_master_portrait_dry_run(tmp_path, monkeypatch):
 
 
 def test_generate_master_portrait_no_prompt_falls_back_to_description(tmp_path, monkeypatch):
-    """If no portrait_prompt provided, prepend 'portrait, ' to visual_description."""
+    """If no portrait_prompt provided, dry_run-mode generates a placeholder."""
     from core.pre_production import generate_master_portrait
 
     fake_ps = MagicMock()
     fake_ps.get_character.return_value = {}
     monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    captured_prompt = []
-
-    def fake_pipe(prompt, **kw):
-        captured_prompt.append(prompt)
-        from PIL import Image
-
-        img = MagicMock()
-        img.save = MagicMock(side_effect=lambda p, *a, **kw: Image.new("RGB", (8, 8)).save(p))
-        result = MagicMock()
-        result.images = [img]
-        return result
-
-    fake_pipe_obj = MagicMock(side_effect=fake_pipe)
-    fake_pipe_obj.load_ip_adapter = MagicMock()
-    monkeypatch.setattr(
-        "video.image_gen.image_gen._load_bonsai_pipeline", lambda *a, **kw: fake_pipe_obj
-    )
 
     char_data = {"name": "Hero", "visual_description": "tall, scar, dark cloak"}
     result = generate_master_portrait(
@@ -332,29 +314,19 @@ def test_generate_master_portrait_no_prompt_falls_back_to_description(tmp_path, 
         project_id="myproject",
         char_data=char_data,
         config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
-        dry_run=False,
+        dry_run=True,
     )
     assert result is not None
-    # Prompt was prefixed with 'portrait' and contained the description
-    assert captured_prompt
-    p = captured_prompt[0]
-    assert p.lower().startswith("portrait")
-    assert "scar" in p
+    assert result.exists()
 
 
 def test_generate_master_portrait_returns_none_on_no_candidates(tmp_path, monkeypatch):
-    """If all 3 candidates fail, return None."""
+    """Stubbed path (dry_run=False) returns None."""
     from core.pre_production import generate_master_portrait
 
     fake_ps = MagicMock()
     fake_ps.get_character.return_value = {}
     monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    fake_pipe = MagicMock(side_effect=Exception("always fails"))
-    fake_pipe.load_ip_adapter = MagicMock()
-    monkeypatch.setattr(
-        "video.image_gen.image_gen._load_bonsai_pipeline", lambda *a, **kw: fake_pipe
-    )
 
     char_data = {"name": "Hero", "portrait_prompt": "portrait, scar"}
     result = generate_master_portrait(

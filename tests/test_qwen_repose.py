@@ -9,7 +9,6 @@ from video.image_gen.qwen_repose import (
     _patch_qwen_workflow,
     build_qwen_edit_prompt,
     preflight_qwen_edit,
-    repose_character,
     repose_character_detailed,
     validate_qwen_workflow_template,
 )
@@ -113,6 +112,28 @@ def test_validate_qwen_workflow_template_accepts_committed_template():
     issues = validate_qwen_workflow_template(workflow)
 
     assert issues == []
+
+
+def test_committed_workflow_has_resolution_steps():
+    """Phase 1: ImageScaleToTotalPixels must include resolution_steps for current ComfyUI."""
+    workflow = json.loads(
+        Path("config/comfyui/workflows/qwen_image_edit_api.json").read_text(encoding="utf-8")
+    )
+    scale_node = workflow["3"]
+    assert scale_node["class_type"] == "ImageScaleToTotalPixels"
+    assert scale_node["inputs"]["resolution_steps"] == 1
+
+
+def test_committed_workflow_has_hardware_safe_loader():
+    """Phase 1: NunchakuQwenImageDiTLoader must use 1 GPU block for 6 GB VRAM."""
+    workflow = json.loads(
+        Path("config/comfyui/workflows/qwen_image_edit_api.json").read_text(encoding="utf-8")
+    )
+    loader = workflow["6"]
+    assert loader["class_type"] == "NunchakuQwenImageDiTLoader"
+    assert loader["inputs"]["num_blocks_on_gpu"] == 1
+    assert loader["inputs"]["cpu_offload"] == "enable"
+    assert loader["inputs"]["use_pin_memory"] == "disable"
 
 
 def test_validate_qwen_workflow_template_reports_invalid_json(tmp_path: Path):
@@ -295,7 +316,7 @@ def test_repose_character_uses_cache_without_comfyui(tmp_path: Path):
         patch("video.image_gen.qwen_repose._cache_path", return_value=cached),
         patch("video.image_gen.comfyui_client.ComfyUIClient") as comfy_client,
     ):
-        result = repose_character(str(base), "hero", "place hero", str(output), config, "project")
+        result = repose_character_detailed(str(base), "hero", "place hero", str(output), config, "project").output_path
 
     assert result == str(output)
     assert output.read_bytes() == b"cached-png"
@@ -308,7 +329,7 @@ def test_repose_character_falls_back_to_base_when_preflight_fails(tmp_path: Path
     out = tmp_path / "scene_01.png"
     config = {"image_gen": {"qwen_edit": {"enabled": True, "model_path": ""}}}
 
-    result = repose_character(str(base), "hero", "place hero in scene", str(out), config, "project")
+    result = repose_character_detailed(str(base), "hero", "place hero in scene", str(out), config, "project").output_path
 
     assert result == str(base)
     assert base.read_bytes() == b"fake-png"
@@ -437,6 +458,7 @@ def test_comfyui_qwen_edit_records_degradation_without_rerouting(tmp_path: Path)
     with (
         patch.object(image_gen, "_comfyui", return_value=frames),
         patch.object(image_gen, "_free_comfyui_memory"),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch(
             "video.image_gen.qwen_repose.repose_character_detailed",
             side_effect=fake_detailed,
@@ -479,6 +501,7 @@ def test_comfyui_qwen_edit_skips_frames_below_threshold(tmp_path: Path):
     with (
         patch.object(image_gen, "_comfyui", return_value=frames),
         patch.object(image_gen, "_free_comfyui_memory"),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch(
             "video.image_gen.qwen_repose.repose_character_detailed",
             side_effect=fake_detailed,
@@ -511,6 +534,7 @@ def test_generate_images_qwen_mode_dispatches_two_pass(tmp_path: Path):
     }
     with (
         patch.object(image_gen, "_qwen_preflight_issues", return_value=[]),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch.object(image_gen, "_comfyui_qwen_edit", return_value=[]) as qwen,
     ):
         image_gen.generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")

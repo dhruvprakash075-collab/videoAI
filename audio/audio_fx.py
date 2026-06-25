@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import random
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -17,16 +19,6 @@ log = logging.getLogger(__name__)
 # To add more SFX: drop a WAV file in sfx/ and uncomment (or add) an entry here.
 _DEFAULT_SFX = {
     "thunder": "sfx/thunder.wav",
-    # Add more as you create the files:
-    # "wind":      "sfx/wind.wav",
-    # "rain":      "sfx/rain.wav",
-    # "heartbeat": "sfx/heartbeat.wav",
-    # "footsteps": "sfx/footsteps.wav",
-    # "door_creak":"sfx/door_creak.wav",
-    # "whisper":   "sfx/whisper.wav",
-    # "scream":    "sfx/scream.wav",
-    # "explosion": "sfx/explosion.wav",
-    # "bell":      "sfx/bell.wav",
 }
 
 # Check if sfx directory exists
@@ -110,21 +102,15 @@ def mix_sfx(
 
     if not matched_sfx:
         log.info("No matching SFX found — copying audio as-is")
-        import shutil
-
         shutil.copy(audio_path, output_path)
         return output_path
 
     # Build FFmpeg filter for SFX mixing
     # Use amix to overlay SFX at random positions
     try:
-        import random
-
         duration = get_audio_duration(audio_path)
         if duration <= 0:
             log.warning("Invalid audio duration — skipping SFX")
-            import shutil
-
             shutil.copy(audio_path, output_path)
             return output_path
 
@@ -189,8 +175,6 @@ def mix_sfx(
         result = subprocess.run(cmd, capture_output=True, check=False, timeout=120)
         if result.returncode != 0:
             log.warning(f"SFX mixing failed: {result.stderr.decode(errors='replace')[:100]}")
-            import shutil
-
             shutil.copy(audio_path, output_path)
             _record_sfx_degradation("SFX mix FFmpeg error")
             return output_path
@@ -199,15 +183,11 @@ def mix_sfx(
 
     except subprocess.TimeoutExpired:
         log.warning("SFX mixing timeout — using raw audio")
-        import shutil
-
         shutil.copy(audio_path, output_path)
         _record_sfx_degradation("SFX mix timeout")
         return output_path
     except Exception as e:
         log.warning(f"SFX mixing failed ({e}) — using raw audio")
-        import shutil
-
         shutil.copy(audio_path, output_path)
         _record_sfx_degradation(f"SFX mix exception: {str(e)[:80]}")
         return output_path
@@ -359,8 +339,6 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
             log.warning(
                 f"Audio mastering fallback failed, falling back to original copy: {stderr[-500:]}"
             )
-            import shutil
-
             shutil.copy(audio_path, output_path)
             _record_master_degradation("FFmpeg mastering error")
             return output_path
@@ -369,15 +347,11 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
         return output_path
     except subprocess.TimeoutExpired:
         log.warning("Audio mastering fallback timed out, falling back to original copy")
-        import shutil
-
         shutil.copy(audio_path, output_path)
         _record_master_degradation("mastering timeout")
         return output_path
     except Exception as e:
         log.warning(f"Audio mastering fallback failed ({e}), falling back to original copy")
-        import shutil
-
         shutil.copy(audio_path, output_path)
         _record_master_degradation(f"mastering exception: {str(e)[:80]}")
         return output_path

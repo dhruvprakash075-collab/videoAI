@@ -284,6 +284,22 @@ class TestWorker:
         assert "--image-backend" not in cmd_str
         assert "--comfyui-checkpoint" not in cmd_str
 
+    def test_build_command_excludes_director_mode(self):
+        """director_mode was removed in Plan 001; worker must not pass it."""
+        store = JobStore()
+        worker = Worker(store)
+        job = {
+            "topic": "Test",
+            "request_json": json.dumps({
+                "topic": "T",
+                "director_mode": True,
+                "dry_run": True,
+            }),
+        }
+        cmd = worker._build_command(job)
+        cmd_str = " ".join(cmd)
+        assert "--director-mode" not in cmd_str
+
     def test_build_command_bool_args(self):
         """Test bool args are handled correctly."""
         store = JobStore()

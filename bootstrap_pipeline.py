@@ -210,9 +210,6 @@ def _build_parser():
         "--series", action="store_true", help="Resume series without re-consultation"
     )
     parser.add_argument(
-        "--director-mode", action="store_true", help="Pause after each script for human review"
-    )
-    parser.add_argument(
         "--run-mode",
         choices=["project", "one_time"],
         default="one_time",
@@ -392,7 +389,6 @@ def _run_batch(args, run_long_pipeline, topics, source_chunks):
                 resume=not args.no_resume,
                 dry_run=args.dry_run,
                 duration_min=args.duration,
-                director_mode=args.director_mode,
                 series_mode=args.series,
                 preview_mode=args.preview,
                 words_per_segment=args.words_per_segment,
@@ -447,7 +443,6 @@ def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks
             resume=not args.no_resume,
             dry_run=args.dry_run,
             duration_min=args.duration,
-            director_mode=args.director_mode,
             series_mode=args.series,
             content_text=content_text,
             preview_mode=args.preview,

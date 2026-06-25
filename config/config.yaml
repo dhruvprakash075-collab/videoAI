@@ -14,7 +14,6 @@ visual:
   environment_frame_ratio: 0.4
 tts:
   lang: hi
-  slow: false
   engine: supertonic
   supertonic:
     voice: character_voices/dhruv_narration.json
@@ -119,15 +118,13 @@ ollama:
   breaker_cooldown_s: 30
 image_gen:
   backend: comfyui
-  bonsai_model: prism-ml/bonsai-image-ternary-4B-gemlite-2bit
+
   height: 768
   width: 1344
   steps: 30
   guidance_scale: 3.5
   ip_adapter_scale: 0.8
   lock_seed: true
-  preview_steps: 12
-  oom_recovery: true
   upscaler:
     model: none
     model_path: ""
@@ -154,18 +151,20 @@ image_gen:
     poll_seconds: 1.0
     auto_start_timeout: 60
     unload_after_batch: true
-  fallback_backend: bonsai
-  composition_mode: one_pass
+  fallback_backend: none
+  composition_mode: qwen_edit
   qwen_edit:
-    enabled: false
+    enabled: true
     backend: nunchaku
     workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
-    model_path: ""
+    model_path: "external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors"
     lightning_lora: ""
     steps: 8
     cfg: 1.0
     denoise: 0.6
-    vram_offload: false
+    vram_offload: true
+    min_available_ram_gib: 8.0
+    min_free_vram_mib: 5000
     trigger: any_character
     character_threshold: 0.05
     cache_dir: .qwen_edit_cache
@@ -199,7 +198,6 @@ audio_fx:
   # wind, rain, heartbeat, footsteps, door_creak, whisper, scream, explosion, bell.
   volume: 0.25
   program_loudnorm: true
-  loudnorm_two_pass: true
   target_lufs: -14
 music:
   enabled: false

@@ -44,7 +44,6 @@ def mock_dependencies(tmp_path):
 
         "resume": False,
         "dry_run": True,
-        "director_mode": False,
         "preview_mode": False,
         "words_per_seg": 50,
         "seg_min": 2,
@@ -80,7 +79,7 @@ def test_write_script_structured_writer_failure(mock_dependencies):
         mock_score_obj.suggestions = []
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         mock_crew.kickoff.assert_called()
@@ -100,7 +99,7 @@ def test_critic_node_reject_and_rewrite(mock_dependencies):
         patch("utils.validate_script", return_value=True),
         patch("utils.critic.score_script", side_effect=[score1, score2]),
     ):
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         # Crew should be kicked off twice (once for initial draft, once for rewrite)
@@ -124,7 +123,7 @@ def test_translate_node_word_count_trimming(mock_dependencies):
         mock_score_obj.total = 80
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         called_script = mock_sanitize.call_args[0][0]
@@ -149,7 +148,7 @@ def test_translate_node_translation_failure(mock_dependencies):
         mock_score_obj.total = 80
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
@@ -178,7 +177,7 @@ def test_tts_node_resume_cache(mock_dependencies):
         mock_score_obj.total = 80
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         for call in mock_dependencies["cp_mgr"].save.call_args_list:
@@ -211,7 +210,7 @@ def test_image_node_resume_cache(mock_dependencies):
         mock_score_obj.total = 80
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         mock_gen_img.assert_not_called()
@@ -233,7 +232,7 @@ def test_write_script_node_resume_cache(mock_dependencies):
         mock_score_obj.total = 80
         mock_score.return_value = mock_score_obj
 
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
         mock_crew.kickoff.assert_not_called()
 
@@ -248,7 +247,7 @@ def test_critic_node_llm_unavailable(mock_dependencies):
         patch("utils.validate_script", return_value=True),
         patch("utils.critic.score_script", return_value=None),
     ):
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
 
@@ -281,7 +280,7 @@ def test_segment_runner_graph_nodes_live(mock_dependencies):
         patch("torch.cuda.is_available", return_value=True),
         patch("torch.cuda.empty_cache"),
     ):
-        process_seg = make_process_segment(**mock_dependencies)
+        process_seg, *_ = make_process_segment(**mock_dependencies)
         process_seg(1)
 
         # Verify that render_with_assets was successfully called and stored

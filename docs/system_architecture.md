@@ -115,7 +115,6 @@ See `docs/voice_cloning.md` for the full pipeline. In short: any
 Runs `DreamShaper_8.safetensors` checkpoint via custom workflows.
 Supports multiple composition modes:
 - `one_pass` (default) — single T2I workflow
-- `layered_v3` — character sheet + background + character pose + composite passes
 - `qwen_edit` — two-pass: background → Qwen-Image-Edit character insertion
 
 ComfyUI config in `image_gen.comfyui` block: server, root, python venv, workflow path, checkpoint, steps, CFG.

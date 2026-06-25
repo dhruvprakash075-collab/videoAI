@@ -13,27 +13,6 @@ import time
 log = logging.getLogger("concurrency")
 
 
-class _Count(int):
-    """int subclass that is also callable, returning itself.
-
-    Lets callers use ``s.active_heavy_count`` as an int (e.g. ``> 0``) or
-    call it as a method (e.g. ``s.active_heavy_count()``) without TypeError.
-    ``__iadd__`` / ``__isub__`` preserve the ``_Count`` type so the callable
-    property survives ``self.active_heavy_count += 1``.
-    """
-
-    __slots__ = ()
-
-    def __call__(self):  # type: ignore[override]
-        return self
-
-    def __iadd__(self, other):
-        return _Count(int.__add__(self, other))
-
-    def __isub__(self, other):
-        return _Count(int.__sub__(self, other))
-
-
 class WorkloadScheduler:
     """Thread-safe workload scheduler for throttling high-GPU operations."""
 
@@ -41,8 +20,8 @@ class WorkloadScheduler:
         self.heavy_semaphore = threading.Semaphore(1)
         self.light_semaphore = threading.Semaphore(16)  # Match Ryzen 7 7840HS thread count (was 20)
         self.lock = threading.Lock()
-        self.active_heavy_count = _Count(0)
-        self.active_light_count = _Count(0)
+        self.active_heavy_count = 0
+        self.active_light_count = 0
 
     @contextlib.contextmanager
     def task(self, weight: str, task_name: str = "Task"):

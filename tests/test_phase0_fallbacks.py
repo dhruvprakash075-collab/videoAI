@@ -103,7 +103,7 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
     }
     outline = [{"title": "Intro"}]
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config=cfg,
         outline=outline,
@@ -118,7 +118,6 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
         writer_agent=MagicMock(),
         resume=False,
         dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,

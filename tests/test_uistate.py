@@ -230,3 +230,12 @@ def test_segment_manifests_thread_safety():
     assert len(manifests) == 2
     assert {"title": "Part 1", "status": "success"} in manifests
     assert {"title": "Part 2", "status": "error"} in manifests
+
+
+def test_uistate_auto_accept_default():
+    """UIState.auto_accept defaults to False (set to True by TUI on run start)."""
+    UIState.auto_accept = False
+    assert UIState.auto_accept is False
+    # TUI sets it to True before starting the pipeline
+    UIState.auto_accept = True
+    assert UIState.auto_accept is True

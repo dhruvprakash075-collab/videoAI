@@ -420,94 +420,6 @@ def test_retry_wrapper_preserves_existing_count():
     assert counts[1] == 3
 
 
-# ── _director_approval ───────────────────────────────────────────────────────
-
-
-def test_director_approval_returns_quit_when_aborted():
-    """When the global abort flag is set, returns __QUIT__."""
-    from core.segment_runner import _director_approval, set_director_abort
-
-    set_director_abort(True)
-    try:
-        result = _director_approval("script text", "p1; p2", 1, {})
-        assert result == "__QUIT__"
-    finally:
-        set_director_abort(False)
-
-
-def test_director_approval_ui_mode_accept(monkeypatch):
-    """In UI mode, accept (empty reply) returns the script unchanged."""
-    from agents.director_agent import UIState
-    from core.segment_runner import _director_approval
-
-    script = "Once upon a time, a hero rose to fight."
-    UIState.is_ui_mode = True
-    UIState.user_reply = ""  # empty → accept
-
-    def fake_wait(timeout=0):
-        return True
-
-    monkeypatch.setattr(UIState.pause_event, "wait", fake_wait)
-    result = _director_approval(script, "p1; p2", 1, {})
-    assert result == script
-    UIState.is_ui_mode = False
-
-
-def test_director_approval_ui_mode_retry(monkeypatch):
-    """In UI mode, 'retry' reply returns __RETRY__."""
-    from agents.director_agent import UIState
-    from core.segment_runner import _director_approval
-
-    UIState.is_ui_mode = True
-    UIState.user_reply = "retry"
-
-    def fake_wait(timeout=0):
-        return True
-
-    monkeypatch.setattr(UIState.pause_event, "wait", fake_wait)
-    result = _director_approval("script", "p1; p2", 1, {})
-    assert result == "__RETRY__"
-    UIState.is_ui_mode = False
-
-
-def test_director_approval_ui_mode_quit(monkeypatch):
-    """In UI mode, 'quit' reply returns __QUIT__ and sets the abort flag."""
-    from agents.director_agent import UIState
-    from core.segment_runner import _director_approval, get_director_abort, set_director_abort
-
-    UIState.is_ui_mode = True
-    UIState.user_reply = "quit"
-
-    def fake_wait(timeout=0):
-        return True
-
-    monkeypatch.setattr(UIState.pause_event, "wait", fake_wait)
-    try:
-        result = _director_approval("script", "p1; p2", 1, {})
-        assert result == "__QUIT__"
-        assert get_director_abort() is True
-    finally:
-        set_director_abort(False)
-        UIState.is_ui_mode = False
-
-
-def test_director_approval_ui_mode_timeout_auto_accepts(monkeypatch):
-    """In UI mode, if pause times out, auto-accept (return the script)."""
-    from agents.director_agent import UIState
-    from core.segment_runner import _director_approval
-
-    UIState.is_ui_mode = True
-
-    def fake_wait(timeout=0):
-        return False  # timeout
-
-    monkeypatch.setattr(UIState.pause_event, "wait", fake_wait)
-    script = "the script"
-    result = _director_approval(script, "p1; p2", 1, {})
-    assert result == script
-    UIState.is_ui_mode = False
-
-
 # ── _preview_gate ────────────────────────────────────────────────────────────
 
 
@@ -598,7 +510,7 @@ def test_make_process_segment_creates_closure(tmp_path):
     cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
     outline = [{"title": "Intro"}, {"title": "Body"}, {"title": "End"}]
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config=cfg,
         outline=outline,
@@ -615,7 +527,6 @@ def test_make_process_segment_creates_closure(tmp_path):
         resume=False,
         dry_run=True,
         fast_dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,
@@ -643,7 +554,7 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
     cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
     outline = [{"title": "Intro"}]
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config=cfg,
         outline=outline,
@@ -659,7 +570,6 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
 
         resume=False,
         dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,
@@ -693,7 +603,7 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
     cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
     outline = [{"title": "Intro"}]
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config=cfg,
         outline=outline,
@@ -709,7 +619,6 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
 
         resume=False,
         dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,
@@ -736,140 +645,6 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
     ):
         result = process_seg(1)
     assert result is None
-
-
-# ── Interactive inputs & CLI paths ───────────────────────────────────────────
-
-
-def test_director_approval_cli_accept(monkeypatch):
-    """In CLI mode, empty choice/accept returns original script."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *args: "")
-    script = "Original script"
-    res = _director_approval(script, "p1;p2", 1, {})
-    assert res == script
-
-
-def test_director_approval_cli_edit(monkeypatch):
-    """In CLI mode, choice 'e' edits script."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    inputs = ["e", "New script line 1", "New script line 2", "---DONE---"]
-    idx = 0
-
-    def mock_input(*args, **kwargs):
-        nonlocal idx
-        val = inputs[idx]
-        idx += 1
-        return val
-
-    monkeypatch.setattr("builtins.input", mock_input)
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "New script line 1\nNew script line 2"
-
-
-def test_director_approval_cli_edit_empty_then_accept(monkeypatch):
-    """In CLI mode, choice 'e' with empty content warning, then accepts."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    inputs = ["e", "   ", "---DONE---", ""]
-    idx = 0
-
-    def mock_input(*args, **kwargs):
-        nonlocal idx
-        val = inputs[idx]
-        idx += 1
-        return val
-
-    monkeypatch.setattr("builtins.input", mock_input)
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "original"
-
-
-def test_director_approval_cli_retry(monkeypatch):
-    """In CLI mode, choice 'r' returns __RETRY__."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *args: "r")
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "__RETRY__"
-
-
-def test_director_approval_cli_question(monkeypatch):
-    """In CLI mode, choice '?' asks question and returns __RETRY__."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    inputs = ["?", "Why this?", "r"]
-    idx = 0
-
-    def mock_input(*args, **kwargs):
-        nonlocal idx
-        val = inputs[idx]
-        idx += 1
-        return val
-
-    monkeypatch.setattr("builtins.input", mock_input)
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "__RETRY__"
-
-
-def test_director_approval_cli_question_empty_then_accept(monkeypatch):
-    """In CLI mode, choice '?' empty question returns to menu, then accepts."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    inputs = ["?", "", ""]
-    idx = 0
-
-    def mock_input(*args, **kwargs):
-        nonlocal idx
-        val = inputs[idx]
-        idx += 1
-        return val
-
-    monkeypatch.setattr("builtins.input", mock_input)
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "original"
-
-
-def test_director_approval_cli_quit(monkeypatch):
-    """In CLI mode, choice 'q' sets abort and returns __QUIT__."""
-    from core.segment_runner import _director_approval, get_director_abort, set_director_abort
-
-    set_director_abort(False)
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda *args: "q")
-    try:
-        res = _director_approval("original", "p1", 1, {})
-        assert res == "__QUIT__"
-        assert get_director_abort() is True
-    finally:
-        set_director_abort(False)
-
-
-def test_director_approval_cli_invalid_then_accept(monkeypatch):
-    """In CLI mode, invalid choice shows message and prompts again, then accepts."""
-    from core.segment_runner import _director_approval
-
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    inputs = ["invalid", ""]
-    idx = 0
-
-    def mock_input(*args, **kwargs):
-        nonlocal idx
-        val = inputs[idx]
-        idx += 1
-        return val
-
-    monkeypatch.setattr("builtins.input", mock_input)
-    res = _director_approval("original", "p1", 1, {})
-    assert res == "original"
 
 
 def test_preview_gate_cli_approve(monkeypatch):
@@ -1002,7 +777,7 @@ def test_process_segment_aborted_early(tmp_path):
     try:
         mp4s = [None]
         counter = [0]
-        process_seg = make_process_segment(
+        process_seg, *_ = make_process_segment(
             topic="test",
             config={},
             outline=[{"title": "Intro"}],
@@ -1018,7 +793,6 @@ def test_process_segment_aborted_early(tmp_path):
 
             resume=False,
             dry_run=True,
-            director_mode=False,
             preview_mode=False,
             words_per_seg=100,
             seg_min=2,
@@ -1048,7 +822,7 @@ def test_process_segment_no_ctx_mgr(tmp_path):
     mem_mock = MagicMock()
     mem_mock.load.return_value = []
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config={},
         outline=[{"title": "Intro"}],
@@ -1064,7 +838,6 @@ def test_process_segment_no_ctx_mgr(tmp_path):
 
         resume=False,
         dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,
@@ -1093,7 +866,7 @@ def test_process_segment_exception_handling_resume(tmp_path):
     ws_mock = MagicMock()
     ws_mock.to_prompt_block.side_effect = Exception("failed to load ws")
 
-    process_seg = make_process_segment(
+    process_seg, *_ = make_process_segment(
         topic="test",
         config={},
         outline=[{"title": "Intro"}],
@@ -1109,7 +882,6 @@ def test_process_segment_exception_handling_resume(tmp_path):
 
         resume=True,  # triggers skip rather than raise
         dry_run=True,
-        director_mode=False,
         preview_mode=False,
         words_per_seg=100,
         seg_min=2,

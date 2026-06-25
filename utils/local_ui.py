@@ -137,7 +137,7 @@ _COMFYUI_UI_DEFAULTS = {
     "pollSeconds": 1,
     "unloadAfterBatch": True,
     "openBrowser": False,
-    "fallbackBackend": "bonsai",
+    "fallbackBackend": "none",
 }
 
 
@@ -169,7 +169,7 @@ def _validate_job_request(req: dict):
         raise ValueError(
             f"run_mode must be one of {sorted(_VALID_RUN_MODES)}, got {rm!r}"
         )
-    for field in ("director_mode", "series"):
+    for field in ("series",):
         val = req.get(field)
         if val is not None and not isinstance(val, bool):
             raise ValueError(f"{field} must be a boolean, got {type(val).__name__} ({val!r})")
@@ -351,7 +351,6 @@ async def upload_script(
     no_resume: str | None = Form(None),
     project: str | None = Form(None),
     series: str | None = Form(None),
-    director_mode: str | None = Form(None),
     run_mode: str | None = Form(None),
     eval_models: str | None = Form(None),
     preview: str | None = Form(None),
@@ -396,10 +395,6 @@ async def upload_script(
             job_request["project"] = project
         if series is not None:
             job_request["series"] = _parse_job_form_bool(series, "series", False)
-        if director_mode is not None:
-            job_request["director_mode"] = _parse_job_form_bool(
-                director_mode, "director_mode", False
-            )
         if run_mode is not None:
             job_request["run_mode"] = run_mode
         if eval_models is not None:
@@ -453,7 +448,7 @@ async def create_job_endpoint(job_request: dict = Body(...)):
 
     Accepts all worker-supported fields:
       topic, duration, dry_run, no_resume, project, series,
-      director_mode, run_mode, eval_models, preview, skip_preflight,
+      run_mode, eval_models, preview, skip_preflight,
       preflight_only, words_per_segment, images_per_segment, segment_count,
       yes, topics_file, source, file, content_text
     """
@@ -708,7 +703,7 @@ async def get_ui_config():
             # P3-19: return the real saved value instead of always False
             "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),
             "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
-            "imageBackend": image_cfg.get("backend", "bonsai"),
+            "imageBackend": image_cfg.get("backend", "comfyui"),
             "compositionMode": image_cfg.get("composition_mode", "one_pass"),
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
         }
@@ -763,20 +758,21 @@ async def save_ui_config(
         image_cfg = config.setdefault("image_gen", {})
         if image_backend:
             image_backend = image_backend.strip().lower()
-            if image_backend not in {"bonsai", "comfyui"}:
-                raise ValueError("image_backend must be 'bonsai' or 'comfyui'")
+            if image_backend not in {"comfyui"}:
+                raise ValueError("image_backend must be 'comfyui'")
             image_cfg["backend"] = image_backend
 
         if composition_mode:
             cm = composition_mode.strip().lower()
-            if cm != "one_pass":
-                raise ValueError("composition_mode must be 'one_pass'")
+            if cm not in {"one_pass", "qwen_edit"}:
+                raise ValueError("composition_mode must be 'one_pass' or 'qwen_edit'")
             image_cfg["composition_mode"] = cm
+            image_cfg.setdefault("qwen_edit", {})["enabled"] = cm == "qwen_edit"
 
         if comfyui_fallback_backend:
             fallback = comfyui_fallback_backend.strip().lower()
-            if fallback not in {"bonsai", "none"}:
-                raise ValueError("comfyui_fallback_backend must be 'bonsai' or 'none'")
+            if fallback not in {"none"}:
+                raise ValueError("comfyui_fallback_backend must be 'none'")
             image_cfg["fallback_backend"] = fallback
 
         if any(

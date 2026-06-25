@@ -264,7 +264,9 @@ class TestWorkerStartupExceptions:
         w = audio_proxy._OmniVoiceWorker()
         fake_proc = MagicMock()
         fake_proc.poll.return_value = None
-        fake_proc.stdout.readline.return_value = '{"status": "error", "message": "init error"}\n'
+        # ponytail: side_effect returns one line then EOF so _enqueue_stdout thread
+        # terminates instead of looping forever and starving the next test's CPU.
+        fake_proc.stdout.readline.side_effect = ['{"status": "error", "message": "init error"}\n', ""]
 
         with (
             patch("pathlib.Path.exists", return_value=True),

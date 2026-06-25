@@ -698,8 +698,6 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
         "translator", cfg.get("models", {}).get("writer", "zephyr-writer")
     )
     host = cfg.get("ollama", {}).get("host", "http://localhost:11434")
-    f"{host.rstrip('/')}/api/generate"
-
     from config.config import get_language
 
     tts_lang = get_language(cfg)
@@ -768,7 +766,6 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
 def tts_generate(
     text: str,
     lang: str = "hi",
-    slow: bool = False,
     output_dir: Path | None = None,
     voice_sample: Path | None = None,
     speed: float | None = None,
@@ -778,7 +775,6 @@ def tts_generate(
     Args:
         text: Text to convert to speech
         lang: Language code ("hi" for Hindi, "en" for English, etc)
-        slow: Slow down speech (not used in current implementation)
         output_dir: Directory to save output WAV
         voice_sample: Voice sample for voice cloning
         speed: Per-call speed override (mood-based, from get_mood_rate). B9 fix.

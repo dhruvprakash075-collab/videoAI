@@ -728,7 +728,7 @@ class DirectorAgent:
 
         try:
             items = research_topic(topic, config)
-        except Exception as exc:  # noqa: BLE001 - research must never break the pipeline
+        except Exception as exc:  # research must never break the pipeline
             log.warning(f"[DIRECTOR] Research failed ({exc}); using empty research")
             return {
                 "topic": topic,

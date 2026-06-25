@@ -1,23 +1,19 @@
 """image_gen.py - Image generation.
 
-ComfyUI is the primary image backend (config image_gen.backend: comfyui).
-Bonsai 4B ternary (gemlite 2-bit, via diffusers) is the fallback backend used
-when ComfyUI fails. Character face consistency on the Bonsai path is achieved
-via IP-Adapter FLUX v2 (XLabs-AI/flux-ip-adapter-v2) referencing a per-character
-master portrait stored in the project store.
+ComfyUI is the image backend (config image_gen.backend: comfyui).
 
 Public surface:
 - generate_images(prompts, output_dir, config, char_presence=None)
-- unload_bonsai_pipeline()
-- unload_ip_adapter() (re-exported from ip_adapter)
 - get_oom_report(), clear_oom_events(), _record_oom_event()
 - _prompt_cache_key()
 - _maybe_upscale()
 """
 
-import contextlib
 import hashlib
 import logging
+import os
+import shutil
+import subprocess
 import threading
 from pathlib import Path
 
@@ -25,10 +21,6 @@ from tqdm import tqdm
 
 log = logging.getLogger(__name__)
 
-# ── Cached Bonsai pipeline (one process-wide instance) ────────────────
-_bonsai_pipe = None
-_bonsai_pipe_lock = threading.Lock()
-_bonsai_model_id: str | None = None  # tracks which model is loaded; reload if cfg changes
 # Module-level OOM event list — shared between portrait gen + frame gen.
 _oom_events: list = []
 _oom_events_lock = threading.Lock()
@@ -51,34 +43,7 @@ def clear_oom_events() -> None:
         _oom_events.clear()
 
 
-def unload_bonsai_pipeline() -> None:
-    """Unload the cached Bonsai pipeline from GPU to free VRAM."""
-    global _bonsai_pipe, _bonsai_model_id
-    if _bonsai_pipe is not None:
-        try:
-            del _bonsai_pipe
-            _bonsai_pipe = None
-            _bonsai_model_id = None
-            import gc
 
-            gc.collect()
-            import torch
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            log.info("[image_gen] Bonsai pipeline unloaded from GPU — VRAM freed")
-        except Exception as e:
-            log.warning(f"[image_gen] Could not fully unload Bonsai pipeline: {e}")
-    else:
-        log.debug("[image_gen] unload_bonsai_pipeline called but pipeline is already unloaded")
-
-
-# ── IP-Adapter re-export for convenience ───────────────────
-# (Most callers shouldn't have to import ip_adapter directly.)
-from video.image_gen.ip_adapter import (
-    get_ip_adapter,  # noqa: F401
-    unload_ip_adapter,  # noqa: F401
-)
 
 
 def _qwen_preflight_issues(cfg: dict) -> list[str]:
@@ -89,6 +54,85 @@ def _qwen_preflight_issues(cfg: dict) -> list[str]:
         return preflight_qwen_edit({"image_gen": cfg})
     except Exception as e:
         return [f"qwen_edit preflight raised: {e}"]
+
+
+def _available_ram_gib() -> float | None:
+    """Return currently available physical RAM using only the standard library."""
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = _MemoryStatus()
+            status.dwLength = ctypes.sizeof(status)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return None
+            return status.ullAvailPhys / (1024**3)
+
+        pages = os.sysconf("SC_AVPHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return pages * page_size / (1024**3)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _free_vram_mib() -> int | None:
+    """Return free VRAM for the first NVIDIA GPU, or None when unavailable."""
+    if not shutil.which("nvidia-smi"):
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        first = result.stdout.strip().splitlines()[0]
+        return int(first.strip())
+    except (IndexError, OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+
+def _qwen_resource_issues(cfg: dict) -> list[str]:
+    """Reject Qwen before allocation when this machine lacks safe headroom."""
+    qwen_cfg = cfg.get("qwen_edit", {}) or {}
+    min_ram = float(qwen_cfg.get("min_available_ram_gib", 8.0))
+    min_vram = int(qwen_cfg.get("min_free_vram_mib", 5000))
+    issues: list[str] = []
+
+    available_ram = _available_ram_gib()
+    if available_ram is None:
+        issues.append("available RAM could not be measured")
+    elif available_ram < min_ram:
+        issues.append(f"available RAM {available_ram:.2f} GiB is below {min_ram:.2f} GiB")
+
+    free_vram = _free_vram_mib()
+    if free_vram is None:
+        issues.append("free NVIDIA VRAM could not be measured")
+    elif free_vram < min_vram:
+        issues.append(f"free VRAM {free_vram} MiB is below {min_vram} MiB")
+
+    return issues
 
 
 def generate_images(
@@ -102,8 +146,7 @@ def generate_images(
 
     Args:
         prompts: Either a plain semicolon-separated string, or a tuple
-                 (prompts_str, neg_prompt_override). Bonsai ignores negative
-                 prompts — the override is accepted for compatibility only.
+                 (prompts_str, neg_prompt_override).
         output_dir: Directory to save generated PNG images.
         config: Full pipeline config dict.
         char_presence: Optional list of per-frame character weight dicts.
@@ -119,14 +162,14 @@ def generate_images(
     else:
         prompt_list = [str(prompts).strip()]
 
-    backend = cfg.get("backend", "bonsai")
+    backend = cfg.get("backend", "comfyui")
     composition_mode = cfg.get("composition_mode", "one_pass")
 
     if backend == "comfyui" and composition_mode == "qwen_edit":
         qwen_cfg = cfg.get("qwen_edit", {}) or {}
         qwen_trigger = qwen_cfg.get("trigger", "any_character")
         if qwen_cfg.get("enabled", False) and qwen_trigger != "disabled":
-            qwen_issues = _qwen_preflight_issues(cfg)
+            qwen_issues = _qwen_preflight_issues(cfg) + _qwen_resource_issues(cfg)
             if qwen_issues:
                 log.warning(
                     "[image_gen] qwen_edit preflight failed; using one_pass ComfyUI. Issues: %s",
@@ -143,16 +186,6 @@ def generate_images(
                     )
                 except Exception as e:
                     log.warning(f"[image_gen] Qwen edit failed: {e}")
-                    fallback = cfg.get("fallback_backend", "bonsai")
-                    if fallback == "bonsai":
-                        log.info("[image_gen] Falling back to Bonsai after qwen_edit error")
-                        return _bonsai(
-                            prompt_list,
-                            output_dir,
-                            cfg,
-                            char_presence=char_presence,
-                            project_id=project_id or "",
-                        )
                     raise
         else:
             log.info(
@@ -171,25 +204,8 @@ def generate_images(
             )
         except Exception as e:
             log.warning(f"[image_gen] ComfyUI failed: {e}")
-            fallback = cfg.get("fallback_backend", "bonsai")
-            if fallback == "bonsai":
-                log.info("[image_gen] Falling back to Bonsai")
-                return _bonsai(
-                    prompt_list,
-                    output_dir,
-                    cfg,
-                    char_presence=char_presence,
-                    project_id=project_id or "",
-                )
             raise
-    else:
-        return _bonsai(
-            prompt_list,
-            output_dir,
-            cfg,
-            char_presence=char_presence,
-            project_id=project_id or "",
-        )
+    raise ValueError(f"Unsupported image backend: {backend}")
 
 
 # ── CACHE HELPERS ────────────────────────────
@@ -212,7 +228,6 @@ def _master_portrait_hash_for_frame(char_key: str | None, ps=None) -> str:
         return ""
 
 
-# Module-level scratch for project_id (set by _bonsai at the start of each call).
 _current_project_id: str = ""
 
 
@@ -226,15 +241,7 @@ def _prompt_cache_key(
     throttled_steps: int | None = None,
     master_portrait_hash: str = "",
 ) -> str:
-    """Return an 8-char hex MD5 hash of prompt + generation parameters.
-
-    Bonsai-specific:
-    - `master_portrait_hash` is included so regenerating the master portrait
-      auto-invalidates all cached frames for that character.
-    - `model_id` is read from `bonsai_model` (Bonsai config) or `sd_model_path`
-      (legacy key, used as a fallback by callers that haven't migrated).
-    - `guidance_scale` default is 3.5 (Bonsai's tested sweet spot).
-    """
+    """Return an 8-char hex MD5 hash of prompt + generation parameters."""
     if isinstance(prompt, list):
         prompt = ";".join([str(p) for p in prompt])
     elif not isinstance(prompt, str):
@@ -243,7 +250,7 @@ def _prompt_cache_key(
     width = cfg.get("width", 1024)
     height = cfg.get("height", 1024)
     guidance_scale = cfg.get("guidance_scale", 3.5)
-    model_id = cfg.get("bonsai_model") or cfg.get("sd_model_path") or "bonsai"
+    model_id = cfg.get("sd_model_path") or "comfyui"
     effective_steps = throttled_steps if throttled_steps is not None else steps
     raw = (
         f"{prompt}|steps={effective_steps}|w={width}|h={height}"
@@ -253,330 +260,8 @@ def _prompt_cache_key(
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
 
 
-# ── BONSAI ──────────────────────────
 
 
-def _load_bonsai_pipeline(model_id: str):
-    """Load (or return cached) Bonsai pipeline. Thread-safe."""
-    global _bonsai_pipe, _bonsai_model_id
-    with _bonsai_pipe_lock:
-        if _bonsai_pipe is not None and _bonsai_model_id == model_id:
-            return _bonsai_pipe
-        if _bonsai_pipe is not None and _bonsai_model_id != model_id:
-            log.info(f"[Bonsai] Model changed ({_bonsai_model_id} -> {model_id}); reloading")
-            unload_bonsai_pipeline()
-        import torch  # local import; user may not have torch at import time
-
-        try:
-            from diffusers import DiffusionPipeline
-        except ImportError as e:
-            raise ImportError(
-                "pip install -U diffusers transformers accelerate gemlite hqq triton-windows"
-            ) from e
-
-        log.info(f"[Bonsai] Loading model: {model_id}")
-        pipe = DiffusionPipeline.from_pretrained(
-            model_id,
-            dtype=torch.bfloat16,
-            device_map="cuda",
-        )
-        _bonsai_pipe = pipe
-        _bonsai_model_id = model_id
-
-        # Attach IP-Adapter (best-effort; if it fails, frame gen still works
-        # for env frames and characters without a master portrait).
-        try:
-            from video.image_gen.ip_adapter import get_ip_adapter
-
-            get_ip_adapter().attach(pipe)
-        except Exception as e:
-            log.warning(f"[Bonsai] Could not attach IP-Adapter: {e} — face consistency disabled")
-
-        log.info("[Bonsai] Pipeline loaded")
-        return _bonsai_pipe
-
-
-def _resolve_dominant_char(char_presence: dict | None) -> tuple[str | None, float]:
-    """Return (char_key, weight) of the dominant character, or (None, 0.0).
-
-    Threshold: weight >= 0.3 means the frame is "about" that character.
-    """
-    return _resolve_dominant_char_at_threshold(char_presence, 0.3)
-
-
-def _resolve_dominant_char_at_threshold(
-    char_presence: dict | None,
-    threshold: float,
-) -> tuple[str | None, float]:
-    """Return dominant character using a caller-provided presence threshold."""
-    if not char_presence:
-        return None, 0.0
-    if not isinstance(char_presence, dict) or not char_presence:
-        return None, 0.0
-    best_key = max(char_presence, key=char_presence.get)
-    best_weight = float(char_presence[best_key])
-    if best_weight < threshold:
-        return None, 0.0
-    return best_key, best_weight
-
-
-def _bonsai(
-    prompts: list[str],
-    out: Path,
-    cfg: dict,
-    char_presence: list[dict[str, float]] | None = None,
-    project_id: str = "",
-) -> list[Path]:
-    """Run Bonsai inference. See generate_images() for arg docs."""
-    global _current_project_id
-    _current_project_id = project_id
-
-    import torch
-
-    model_id = cfg.get("bonsai_model", "prism-ml/bonsai-image-ternary-4B-gemlite-2bit")
-    pipe = _load_bonsai_pipeline(model_id)
-
-    # IP-Adapter scale is read from cfg (default 0.8, balanced).
-    ip_scale = float(cfg.get("ip_adapter_scale", 0.8))
-
-    images: list[Path] = []
-    cache_hits = 0
-    fresh_gen = 0
-
-    from memory.project_store import ProjectStore
-    ps = ProjectStore(project_id or "_default")
-
-    with tqdm(total=len(prompts), desc="  Bonsai", leave=False) as pbar:
-        for i, prompt in enumerate(prompts):
-            cp = {}
-            if isinstance(char_presence, list) and i < len(char_presence):
-                val = char_presence[i]
-                if isinstance(val, dict):
-                    cp = val
-
-            dom_char, dom_weight = _resolve_dominant_char(cp)
-
-            # ── Build the per-frame prompt ───────────────────────
-            # Prepend the dominant character's visual description as a second
-            # layer of consistency (alongside IP-Adapter). Bonsai gets no
-            # negative prompt by design.
-            frame_prompt = prompt
-            if dom_char:
-                try:
-                    entry = ps.get_character(dom_char) or {}
-                    desc = entry.get("visual_description", "")
-                    if desc:
-                        frame_prompt = f"{desc}, {prompt}"
-                except Exception as e:
-                    log.debug(f"[Bonsai] Could not load character description for {dom_char}: {e}")
-
-            # ── Seed resolution (copy of SD logic, simplified) ─────────
-            _seed = int(hashlib.md5(f"frame_{i}".encode()).hexdigest()[:8], 16) % (2**32)
-            try:
-                if torch.cuda.is_available() and dom_char:
-                    if dom_weight >= 0.3:
-                        _seed = int(hashlib.md5(dom_char.encode()).hexdigest()[:8], 16) % (
-                            2**32
-                        )
-                        _seed = (_seed + i * 7919) % (2**32)  # per-frame perturb
-                else:
-                    _seed = int(
-                        hashlib.md5(f"env_{i}_{prompt[:40]}".encode()).hexdigest()[:8], 16
-                    ) % (2**32)
-            except Exception as _seed_err:
-                log.debug(f"[Bonsai] Could not resolve seed: {_seed_err}")
-
-            # ── Throttle steps if VRAM is low (mirrors SD VRAM guard) ─
-            throttled_steps = int(cfg.get("steps", 4))
-            try:
-                if torch.cuda.is_available():
-                    free_vram, _total_vram = torch.cuda.mem_get_info()
-                    free_vram_gb = free_vram / (1024**3)
-                    if free_vram_gb < 1.5:
-                        torch.cuda.empty_cache()
-                        torch.cuda.synchronize()
-                        free_vram, _ = torch.cuda.mem_get_info()
-                        free_vram_gb = free_vram / (1024**3)
-                    if free_vram_gb < 1.2:
-                        throttled_steps = max(2, int(throttled_steps * 0.5))
-                        log.warning(
-                            f"[Bonsai] VRAM Guard: free={free_vram_gb:.2f}GB — throttling to {throttled_steps} steps"
-                        )
-            except Exception as e:
-                log.debug(f"[Bonsai] VRAM guard failed: {e}")
-
-            # ── Cache key (includes master portrait hash for invalidation) ─
-            master_hash = _master_portrait_hash_for_frame(dom_char, ps=ps)
-            cache_key = _prompt_cache_key(
-                f"{frame_prompt}|frame={i}",
-                cfg,
-                neg_prompt="",
-                lora_state="",
-                seed=_seed,
-                lora_fingerprint="",
-                throttled_steps=throttled_steps,
-                master_portrait_hash=master_hash,
-            )
-            cached_path = out / f"scene_{i + 1:02d}_{cache_key}.png"
-            if cached_path.exists():
-                log.info(f"[Bonsai] Cache hit: {cached_path.name}")
-                images.append(cached_path)
-                cache_hits += 1
-                pbar.update(1)
-                continue
-
-            # ── IP-Adapter: load master portrait if dominant char present
-            ip_embeds = None
-            ip_image_kwarg = None
-            if dom_char:
-                try:
-                    from video.image_gen.ip_adapter import get_ip_adapter
-
-                    master_path = ps.get_master_portrait_path(dom_char)
-                    if master_path:
-                        mgr = get_ip_adapter()
-                        mgr.set_scale(ip_scale)
-                        ip_embeds = mgr.pre_encode(dom_char, master_path)
-                        if ip_embeds is None:
-                            ip_image_kwarg = mgr.get_image(dom_char)
-                    else:
-                        # ── Lazy portrait generation (Phase 1 trigger) ───
-                        # No master portrait yet for this character. Generate
-                        # one now via the helper from pre_production, then
-                        # continue with this frame using the new portrait.
-                        log.info(
-                            f"[Bonsai] No master portrait for '{dom_char}' — generating one"
-                        )
-                        try:
-                            from core.pre_production import generate_master_portrait
-
-                            char_data = ps.get_character(dom_char) or {"name": dom_char}
-                            new_path = generate_master_portrait(
-                                char_key=dom_char,
-                                project_id=project_id or "_default",
-                                char_data=char_data,
-                                config={"image_gen": cfg},
-                            )
-                            if new_path:
-                                # Re-read from store (generate_master_portrait
-                                # already wrote the path + hash).
-                                master_path = ps.get_master_portrait_path(dom_char)
-                                if master_path:
-                                    mgr = get_ip_adapter()
-                                    mgr.set_scale(ip_scale)
-                                    ip_embeds = mgr.pre_encode(dom_char, master_path)
-                                    if ip_embeds is None:
-                                        ip_image_kwarg = mgr.get_image(dom_char)
-                        except Exception as e:
-                            log.warning(
-                                f"[Bonsai] Lazy portrait gen failed for {dom_char}: {e} — "
-                                "frame will be prompt-only"
-                            )
-                except Exception as e:
-                    log.debug(f"[Bonsai] IP-Adapter setup failed for {dom_char}: {e}")
-
-            # ── 2-Tier OOM-Resilient Inference ────────────────
-            # Tier 1: normal, Tier 2: half-steps, then skip.
-            img = None
-            _generator = None
-            try:
-                if torch.cuda.is_available() and _seed is not None:
-                    _generator = torch.Generator(device="cuda").manual_seed(_seed)
-            except Exception as _seed_err:
-                log.debug(f"[Bonsai] Could not set per-frame seed: {_seed_err}")
-
-            call_kwargs: dict = {
-                "prompt": frame_prompt,
-                "height": cfg.get("height", 1024),
-                "width": cfg.get("width", 1024),
-                "num_inference_steps": throttled_steps,
-                "guidance_scale": float(cfg.get("guidance_scale", 3.5)),
-            }
-            if _generator is not None:
-                call_kwargs["generator"] = _generator
-            if ip_embeds is not None:
-                call_kwargs["ip_adapter_image_embeds"] = ip_embeds
-            elif ip_image_kwarg is not None:
-                call_kwargs["ip_adapter_image"] = ip_image_kwarg
-
-            with contextlib.suppress(AttributeError):
-                pipe.set_ip_adapter_scale(ip_scale) if dom_char else None
-
-            try:
-                with torch.inference_mode():
-                    img = pipe(**call_kwargs).images[0]
-            except torch.cuda.OutOfMemoryError:
-                log.warning(
-                    f"[Bonsai][OOM] Tier 1 CUDA OOM on image {i + 1} — halving steps"
-                )
-                torch.cuda.empty_cache()
-                reduced_steps = max(2, int(throttled_steps * 0.5))
-                call_kwargs["num_inference_steps"] = reduced_steps
-                try:
-                    with torch.inference_mode():
-                        img = pipe(**call_kwargs).images[0]
-                    log.info(f"[Bonsai][OOM] Tier 2 recovered at {reduced_steps} steps")
-                    _record_oom_event(
-                        {
-                            "image_index": i + 1,
-                            "tier_failed": 1,
-                            "fallback_tier": 2,
-                            "steps_used": reduced_steps,
-                            "oom_fallback": False,
-                        }
-                    )
-                except torch.cuda.OutOfMemoryError:
-                    log.error(
-                        f"[Bonsai][OOM] All CUDA tiers failed for image {i + 1} — "
-                        "CPU inference not viable for 4B model, skipping frame"
-                    )
-                    _record_oom_event(
-                        {
-                            "image_index": i + 1,
-                            "tier_failed": 2,
-                            "fallback_tier": None,
-                            "steps_used": 0,
-                            "oom_fallback": True,
-                            "skipped": True,
-                        }
-                    )
-                    pbar.update(1)
-                    continue
-            except Exception as e:
-                log.exception(f"[Bonsai] Generation failed for image {i + 1}: {e}")
-                pbar.update(1)
-                continue
-
-            if img is None:
-                pbar.update(1)
-                continue
-
-            img = _maybe_upscale(img, cfg)
-            img.save(str(cached_path))
-            images.append(cached_path)
-            fresh_gen += 1
-            pbar.update(1)
-
-    total = cache_hits + fresh_gen
-    log.info(
-        f"[Bonsai] {total} images — {cache_hits} cached, {fresh_gen} generated fresh"
-    )
-    print(
-        f"[image_gen] Bonsai summary: {total} images | "
-        f"{cache_hits} cached (skipped) | {fresh_gen} generated fresh"
-    )
-
-    try:
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception as e:
-        log.debug(f"[Bonsai] CUDA cleanup failed: {e}")
-
-    # Bonsai is the fallback path only; free the 4B model so it does not stay
-    # resident in VRAM and starve the next sequential GPU task.
-    unload_bonsai_pipeline()
-
-    return images
 
 
 # ── UPSCALER ──────────────────────────
@@ -647,6 +332,25 @@ def _maybe_upscale(img, cfg: dict):
     except Exception as e:
         log.warning(f"[Upscale] Lanczos failed ({e}) — returning original")
         return img
+
+
+# ── DOMINANT CHARACTER RESOLUTION ────────────────────────────
+
+
+def _resolve_dominant_char_at_threshold(
+    char_presence: dict | None,
+    threshold: float,
+) -> tuple[str | None, float]:
+    """Return dominant character using a caller-provided presence threshold."""
+    if not char_presence:
+        return None, 0.0
+    if not isinstance(char_presence, dict) or not char_presence:
+        return None, 0.0
+    best_key = max(char_presence, key=char_presence.get)
+    best_weight = float(char_presence[best_key])
+    if best_weight < threshold:
+        return None, 0.0
+    return best_key, best_weight
 
 
 # ── COMFYUI ───────────────────────────
@@ -833,6 +537,15 @@ def _comfyui_qwen_edit(
         return images
 
     _free_comfyui_memory(cfg)
+
+    resource_issues = _qwen_resource_issues(cfg)
+    if resource_issues:
+        reason = "resource gate after background pass: " + "; ".join(resource_issues)
+        log.warning("[qwen_edit] %s; keeping all background frames", reason)
+        for i, cp in enumerate(char_presence or []):
+            if isinstance(cp, dict) and _resolve_dominant_char_at_threshold(cp, threshold)[0]:
+                _log_qwen_degradation(i, reason)
+        return [Path(image) for image in images]
 
     from video.image_gen.qwen_repose import repose_character_detailed
 

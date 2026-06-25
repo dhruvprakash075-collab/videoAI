@@ -71,7 +71,7 @@ class Blackboard:
     def write(self, patch: dict[str, Any]) -> None:
         """Merge patch into the blackboard and persist atomically."""
         with self._lock:
-            ctx = self._file_lock if self._file_lock else _NullCtx()
+            ctx = self._file_lock if self._file_lock else contextlib.nullcontext()
             with ctx:
                 current = self.read()
                 current.update(patch)
@@ -124,16 +124,6 @@ class Blackboard:
                 log.debug(f"[BLACKBOARD] Cleared: {self._path}")
             except Exception as e:
                 log.warning(f"[BLACKBOARD] Clear failed: {e}")
-
-
-class _NullCtx:
-    """No-op context manager used when filelock is unavailable."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        pass
 
 
 def get_blackboard(config: dict[str, Any], topic_slug: str = "") -> Blackboard:

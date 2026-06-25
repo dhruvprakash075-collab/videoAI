@@ -258,6 +258,14 @@ class TestArgparse:
         args = parser.parse_args([])
         assert args.source is None
 
+    def test_director_mode_arg_removed(self):
+        """--director-mode was removed in Plan 001; parser must reject it."""
+        from bootstrap_pipeline import run_pipeline_with_args
+
+        with patch("sys.argv", ["bootstrap_pipeline.py", "--topic", "t", "--director-mode"]):
+            with pytest.raises(SystemExit):
+                run_pipeline_with_args()
+
 
 # ── End-to-end mock: run_long_pipeline receives source_chunks ───────────────
 
@@ -287,7 +295,6 @@ class TestEndToEndMock:
                 resume=True,
                 dry_run=True,
                 duration_min=None,
-                director_mode=False,
                 series_mode=False,
                 content_text=content,
                 preview_mode=False,

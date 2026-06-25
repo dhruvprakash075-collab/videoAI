@@ -102,16 +102,9 @@ def _normalize_existing_path(path_value: str | None) -> Path | None:
     return None
 
 
-def _same_file(a: Path, b: Path) -> bool:
-    try:
-        return a.resolve() == b.resolve()
-    except Exception:
-        return str(a) == str(b)
-
-
 def _copy_file(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if _same_file(src, dst):
+    if src.resolve() == dst.resolve():
         return
     tmp = dst.with_suffix(dst.suffix + ".tmp")
     shutil.copyfile(src, tmp)
@@ -395,12 +388,10 @@ def _patch_qwen_workflow(
         # Only the positive prompt encoder receives the edit prompt. The
         # negative encoder (title contains "negative") is left untouched so the
         # instruction never leaks into the negative conditioning.
-        if not is_negative and "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")):
-            if isinstance(inputs.get("text"), str):
-                inputs["text"] = edit_prompt
-        if not is_negative and "prompt" in inputs and ("prompt" in title or "textencode" in class_type.lower()):
-            if isinstance(inputs.get("prompt"), str):
-                inputs["prompt"] = edit_prompt
+        if not is_negative and "text" in inputs and ("prompt" in title or class_type.endswith("TextEncode")) and isinstance(inputs.get("text"), str):
+            inputs["text"] = edit_prompt
+        if not is_negative and "prompt" in inputs and ("prompt" in title or "textencode" in class_type.lower()) and isinstance(inputs.get("prompt"), str):
+            inputs["prompt"] = edit_prompt
 
     return patched
 
@@ -500,27 +491,4 @@ def repose_character_detailed(
         return QwenEditResult("failed", str(base_path), reason)
 
 
-def repose_character(
-    base_image_path: str,
-    char_key: str,
-    edit_prompt: str,
-    output_path: str,
-    config: dict,
-    project_id: str,
-    *,
-    seed: int = 0,
-) -> str:
-    """Return path to reposed image; on any failure return base_image_path unchanged.
 
-    Thin wrapper over repose_character_detailed for callers that only need the
-    resulting frame path.
-    """
-    return repose_character_detailed(
-        base_image_path,
-        char_key,
-        edit_prompt,
-        output_path,
-        config,
-        project_id,
-        seed=seed,
-    ).output_path

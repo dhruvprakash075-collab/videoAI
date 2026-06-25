@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-import torch
+# ponytail: torch imported lazily in _load_model, _set_seed, _install_torchaudio_soundfile_patch
 
 
 def _maybe_align(wav_path: str) -> str | None:
@@ -67,6 +67,7 @@ def _install_torchaudio_soundfile_patch():
     call torchaudio.load (e.g. Whisper ASR for the reference clip).
     """
     try:
+        import torch as _torch
         import torchaudio
 
         def _sf_load(
@@ -83,7 +84,7 @@ def _install_torchaudio_soundfile_patch():
                 data = data[int(frame_offset) :]
             if num_frames is not None and num_frames > 0:
                 data = data[: int(num_frames)]
-            tensor = torch.from_numpy(data.copy())  # [T, C]
+            tensor = _torch.from_numpy(data.copy())  # [T, C]
             if channels_first:
                 tensor = tensor.T.contiguous()  # [C, T]
             return tensor, sr
@@ -94,18 +95,19 @@ def _install_torchaudio_soundfile_patch():
         return False
 
 
-# Install the patch at import time, before any omnivoice/transformers code runs.
-_TORCHAUDIO_PATCHED = _install_torchaudio_soundfile_patch()
+# ponytail: patch installed lazily in _load_model, before omnivoice import
 
 
 def _load_model():
     """Load the OmniVoice model once and return it."""
+    _install_torchaudio_soundfile_patch()
+    import torch as _torch
     from omnivoice import OmniVoice
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_map = "cuda:0" if device == "cuda" else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    return OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map=device_map, dtype=dtype)
+    _device = "cuda" if _torch.cuda.is_available() else "cpu"
+    _device_map = "cuda:0" if _device == "cuda" else "cpu"
+    _dtype = _torch.float16 if _device == "cuda" else _torch.float32
+    return OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map=_device_map, dtype=_dtype)
 
 
 def _gen_config(num_step, guidance_scale):
@@ -124,9 +126,10 @@ def _set_seed(seed):
     if seed is not None and seed != -1:
         random.seed(seed)
         np.random.seed(seed)
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
+        import torch as _torch
+        _torch.manual_seed(seed)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(seed)
 
 
 def _split_text_chunks(text: str, max_chars: int = 500):

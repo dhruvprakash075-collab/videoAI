@@ -53,6 +53,7 @@ describe('ControlPanel', () => {
     expect(screen.getByText('Voice Engine')).toBeInTheDocument();
     expect(screen.getByText('Visual Generation')).toBeInTheDocument();
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Qwen Edit \(resource gated\)/i })).toBeInTheDocument();
   });
 
   it('opens the separate Comfy UI settings menu', async () => {
@@ -202,7 +203,7 @@ describe('ControlPanel', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     const saveCall = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'POST');
     const body = saveCall[1].body;
-    expect(body.get('image_backend')).toBe('bonsai');
+    expect(body.get('image_backend')).toBe('comfyui');
     expect(body.get('comfyui_server')).toBe('http://127.0.0.1:9001');
     expect(body.get('comfyui_checkpoint')).toBe('future_model.safetensors');
     expect(body.get('comfyui_workflow_path')).toBe('config/comfyui/workflows/text_to_image_api.json');

@@ -1,7 +1,6 @@
 """test_audio_proxy.py - audio_proxy normalize, dispatch, translate, capabilities."""
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

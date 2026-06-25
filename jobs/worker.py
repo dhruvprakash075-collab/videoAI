@@ -110,7 +110,7 @@ class Worker:
         # Supported bootstrap_pipeline.py args (filter out job metadata keys)
         supported_args = {
             "duration", "dry_run", "no_resume", "file", "project",
-            "series", "director_mode", "run_mode", "eval_models", "preview",
+            "series", "run_mode", "eval_models", "preview",
             "skip_preflight", "preflight_only", "words_per_segment",
             "images_per_segment", "segment_count", "yes", "topics_file", "source"
         }

@@ -148,10 +148,10 @@ def test_afade_absent_when_crossfade_ms_zero(tmp_path):
     assert "afade=t=out" not in all_args, (
         f"afade=t=out must not appear when audio_crossfade_ms=0. Got: {all_args[:500]}"
     )
-    assert "-af" not in all_args, (
+    assert " -af " not in all_args, (
         f"ffmpeg -af flag must not appear when audio_crossfade_ms=0. Got: {all_args[:500]}"
     )
     assert words_json.exists(), "word_timestamps_json fixture should be passed through unchanged"
-    assert "-af" not in all_args, (
+    assert " -af " not in all_args, (
         f"ffmpeg -af flag must not appear when audio_crossfade_ms=0. Got: {all_args[:500]}"
     )

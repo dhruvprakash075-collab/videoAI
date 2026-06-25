@@ -3,7 +3,6 @@
 Extracted from pipeline_long.py (Task 1: split god module). Owns the per-segment
 work that runs N times (one per segment):
 
-  • Director Mode human-in-loop approval gate
   • Preview gate (after segment 1 in --preview mode)
   • Script generation (W2: structured Ollama, CrewAI fallback)
   • Script review + revision
@@ -12,7 +11,6 @@ work that runs N times (one per segment):
   • WorldState update (B3)
   • TTS (Supertonic / OmniVoice) + SFX + mastering
   • Stable Diffusion image generation (OOM ladder)
-  • FramePack image-to-video motion (V1, opt-in)
   • FFmpeg MP4 assembly (Hyperframes renderer or fallback)
   • Checkpoint save
   • Memory write
@@ -39,7 +37,6 @@ from utils.url_security import build_validated_url, validate_service_base_url
 log = logging.getLogger(__name__)
 
 # Re-use the same locks as the orchestrator
-_director_lock = threading.Lock()
 _director_abort = False
 _director_abort_lock = threading.Lock()
 
@@ -60,6 +57,49 @@ def get_director_abort() -> bool:
     """Read the Director abort flag (public, for orchestrator to reset between runs)."""
     with _director_abort_lock:
         return _director_abort
+
+
+_pending_ollama_timer = None
+_pending_ollama_timer_lock = threading.Lock()
+
+
+def touch_ollama_active():
+    """Cancel any pending Ollama server stop (task still needs it)."""
+    global _pending_ollama_timer
+    with _pending_ollama_timer_lock:
+        if _pending_ollama_timer is not None:
+            _pending_ollama_timer.cancel()
+            _pending_ollama_timer = None
+
+
+def schedule_ollama_stop(config, delay: float = 3.0):
+    """Schedule Ollama server stop in `delay` seconds.
+
+    Automatically cancels any previously scheduled stop (debounce).
+    Only fires if no task calls touch_ollama_active() within the delay window.
+    """
+    global _pending_ollama_timer
+    touch_ollama_active()
+    import threading as _t
+    with _pending_ollama_timer_lock:
+        _pending_ollama_timer = _t.Timer(
+            delay,
+            lambda: stop_ollama_server(config, reason="debounced-timer"),
+        )
+        _pending_ollama_timer.daemon = True
+        _pending_ollama_timer.start()
+
+
+def _ollama_alive(config, timeout: float = 2.0) -> bool:
+    """Quick check if Ollama server is reachable (no process restart)."""
+    import urllib.error as _ue
+    import urllib.request as _ur
+    host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
+    try:
+        with _ur.urlopen(build_validated_url(host, "/api/tags"), timeout=timeout):
+            return True
+    except (ConnectionRefusedError, _ue.URLError, OSError):
+        return False
 
 
 # ── TTS length budgeting ──────────────────────────────────────────────
@@ -218,6 +258,67 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
         log.debug(f"[VRAM] Poll failed: {_ve}")
 
 
+def stop_ollama_server(config: dict, reason: str = "") -> None:
+    """Kill the Ollama server process to free ~1-2 GB RAM between staged batches.
+
+    The server must be restarted before the next batch's LLM calls.
+    """
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "ollama.exe"],
+                capture_output=True, timeout=5,
+            )
+        else:
+            subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True, timeout=5)
+        log.info(f"[Ollama] Server stopped{(' (' + reason + ')') if reason else ''} — RAM freed")
+    except Exception as e:
+        log.debug(f"[Ollama] Server stop failed (non-fatal): {e}")
+
+
+def start_ollama_server(config: dict, reason: str = "") -> bool:
+    """Start Ollama server in background and wait until it responds.
+
+    Returns True if server is reachable within the timeout.
+    """
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["ollama", "serve"],
+                creationflags=subprocess.DETACHED_PROCESS,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except Exception as e:
+        log.warning(f"[Ollama] Failed to start server: {e}")
+        return False
+
+    host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
+    import urllib.error as _ue
+    import urllib.request as _ur
+
+    for _i in range(20):
+        time.sleep(0.5)
+        try:
+            with _ur.urlopen(build_validated_url(host, "/api/tags"), timeout=2):
+                log.info(f"[Ollama] Server started{(' (' + reason + ')') if reason else ''}")
+                return True
+        except (ConnectionRefusedError, _ue.URLError, OSError):
+            continue
+    log.warning("[Ollama] Server started but not reachable after 10s — LLM calls may fail")
+    return False
+
+
 def log_vram_usage(label: str = "") -> None:
     """Log current CUDA VRAM usage (free / total GB). Safe to call if torch isn't available."""
     try:
@@ -268,121 +369,6 @@ def aggressive_vram_cleanup(global_scheduler) -> None:
         pass
     except Exception:
         pass
-
-
-# ── Director Mode approval gate ─────────────────────────────────
-
-
-def _director_approval(script: str, prompts: str, seg_num: int, config: dict) -> str:
-    """Director Mode: pause after script generation for user review.
-
-    TUI mode: pause via UIState.pause_event, read reply from UIState.user_reply.
-      'accept'/'ok'/empty → accept | 'retry' → retry | 'quit'/'q' → abort
-    CLI mode: ENTER accept, e edit, r retry, ? question, q quit.
-
-    Returns:
-        The (possibly edited) script, or a sentinel: "__RETRY__" / "__QUIT__".
-    """
-    from agents.director_agent import UIState
-
-    with _director_lock:
-        if _director_aborted():
-            return "__QUIT__"
-
-        prompt_summary = (
-            f"DIRECTOR MODE — Segment {seg_num}\n"
-            f"Script ({len(script)} chars):\n{script[:600]}{'...' if len(script) > 600 else ''}\n\n"
-            f"Image prompts: {len([p for p in prompts.split(';') if p.strip()])} total\n\n"
-            f"Reply: 'accept' or Enter to continue | 'retry' to regenerate | 'quit' to abort"
-        )
-
-        if UIState.is_ui_mode:
-            UIState.add_log(f"[DIRECTOR] Segment {seg_num} script ready for review.")
-            UIState.active_question = prompt_summary
-            UIState.status = "paused"
-            UIState.pause_event.clear()
-            timeout = int(os.environ.get("DIRECTOR_TIMEOUT", "0")) or 600
-            if not UIState.pause_event.wait(timeout=timeout):
-                log.warning(f"[DIRECTOR] Segment {seg_num} review timed out — auto-accepting")
-                UIState.status = "running"
-                UIState.active_question = None
-                return script
-            UIState.status = "running"
-            UIState.active_question = None
-            reply = (UIState.user_reply or "").strip().lower()
-            UIState.user_reply = None
-            if reply in ("q", "quit", "abort"):
-                log.info(f"[DIRECTOR] Segment {seg_num} — operator aborted pipeline")
-                set_director_abort(True)
-                return "__QUIT__"
-            if reply in ("r", "retry"):
-                log.info(f"[DIRECTOR] Segment {seg_num} — operator requested retry")
-                return "__RETRY__"
-            log.info(f"[DIRECTOR] Segment {seg_num} — operator accepted script")
-            return script
-
-        sep = "=" * 60
-        print(f"\n{sep}")
-        print(f"  DIRECTOR MODE — Segment {seg_num}")
-        print(sep)
-        print("\n--- GENERATED SCRIPT ---")
-        print(script)
-        print(
-            f"\n--- IMAGE PROMPTS ({len([p for p in prompts.split(';') if p.strip()])} total) ---"
-        )
-        for idx, p in enumerate([pp.strip() for pp in prompts.split(";") if pp.strip()], 1):
-            print(f"  [{idx}] {p[:120]}..." if len(p) > 120 else f"  [{idx}] {p}")
-        print()
-
-        while True:
-            choice = (
-                input("[Director] Accept (ENTER) | Edit (e) | Retry (r) | ? Question | q Quit: ")
-                .strip()
-                .lower()
-            )
-            if not choice:
-                return script
-            if choice == "e":
-                print(
-                    "\n--- EDITOR: Paste your revised script below. Type '---DONE---' on its own line when finished. ---\n"
-                )
-                lines = []
-                while True:
-                    line = input()
-                    if line.strip() == "---DONE---":
-                        break
-                    lines.append(line)
-                edited = "\n".join(lines).strip()
-                if not edited:
-                    print(
-                        "[Director] Edited script is empty. Please provide a valid script or choose another option."
-                    )
-                    continue
-                return edited
-            if choice == "r":
-                return "__RETRY__"
-            if choice == "?":
-                print(
-                    "\nAsk a question about the current segment. The Director will provide guidance.\n"
-                )
-                question = input("Your question: ").strip()
-                if not question:
-                    print("[Director] No question entered. Returning to menu.")
-                    continue
-                print(f'\n[Director AI] Noted your question: "{question}"')
-                print(
-                    "The writer will take this into account when regenerating (next pipeline run).\n"
-                )
-                return "__RETRY__"
-            if choice == "q":
-                print(
-                    "\n[Director Mode] Aborting entire pipeline... (remaining segments will skip)"
-                )
-                set_director_abort(True)
-                return "__QUIT__"
-            print(
-                "Invalid choice. Press ENTER to accept, 'e' to edit, 'r' to retry, '?' to ask a question, or 'q' to quit."
-            )
 
 
 def _preview_gate(mp4_path, config: dict) -> None:
@@ -461,7 +447,6 @@ def make_process_segment(
     resume: bool,
     dry_run: bool,
     fast_dry_run: bool = False,
-    director_mode: bool,
     preview_mode: bool,
     words_per_seg: int,
     seg_min: int,
@@ -1401,92 +1386,251 @@ def make_process_segment(
     builder = SegmentGraphBuilder(LocalGraphContext())
     graph = builder.build()
 
+    # ── Task-wise phase helpers (ponytail: sequential phases, checkpoint exchange) ──
+
+    def _build_segment_state(seg_idx: int) -> dict:
+        """Build initial state dict for a segment index, shared across all phases."""
+        plan = outline[seg_idx - 1] if seg_idx - 1 < len(outline) else outline[-1]
+        ws_block = world_state.to_prompt_block()
+        raw_entries = []
+        if ctx_mgr:
+            raw_entries = (
+                [
+                    {
+                        "segment": s["segment"],
+                        "summary": s["summary"],
+                        "script": s.get("script", ""),
+                    }
+                    for s in (mem._load_all().get(topic, {}).get("segments", []))
+                ]
+                if hasattr(mem, "_load_all")
+                else []
+            )
+            context = ctx_mgr.build_context_for_prompt(
+                memory_entries=raw_entries, world_state_block=ws_block, agent=None
+            )
+        else:
+            from memory import build_context
+            context = f"{ws_block}\n{build_context(mem.load(topic))}"
+
+        mem_data = {}
+        try:
+            mem_data = mem.read()
+            all_items = []
+            for scope_key in ("project", "story"):
+                items = mem_data.get("memory_items", {}).get(scope_key, [])
+                if isinstance(items, list):
+                    all_items.extend(items)
+            if all_items:
+                plan_cp = plan.get("char_presence", [])
+                chars_in_segment = set()
+                for frame_cp in plan_cp if isinstance(plan_cp, list) else [plan_cp]:
+                    if isinstance(frame_cp, dict):
+                        for cname in frame_cp:
+                            chars_in_segment.add(cname.lower().replace(" ", "_"))
+                blocks = []
+                for item in all_items:
+                    owner = (item.get("owner") or "").lower().replace(" ", "_")
+                    if owner and owner not in chars_in_segment:
+                        continue
+                    importance = item.get("importance", "medium")
+                    name = item.get("name", "")
+                    desc = item.get("description", "")
+                    lines = [f"- {name} ({importance}): {desc}"]
+                    for rule in item.get("visual_rules", []):
+                        lines.append(f"  Visual: {rule}")
+                    for rule in item.get("negative_rules", []):
+                        lines.append(f"  Avoid: {rule}")
+                    blocks.append("\n".join(lines))
+                if blocks:
+                    context += (
+                        "\n\n[Character Memory]\n"
+                        + "\n---\n".join(blocks)
+                        + "\n[/Character Memory]\n"
+                    )
+        except Exception as e:
+            log.warning(f"[DIRECTOR] Failed to inject memory items into context: {e}")
+            from agents.director_agent import UIState as _UIState
+            _UIState.add_degradation(seg_idx, "memory_context_injection", str(e))
+
+        state = {
+            "i": seg_idx,
+            "plan": plan,
+            "context": context,
+            "rewrites_attempted": 0,
+            "aborted": False,
+            "skip": False,
+            "memory_data": mem_data,
+        }
+        if source_chunks and 0 <= (seg_idx - 1) < len(source_chunks):
+            state["source_chunk"] = source_chunks[seg_idx - 1]
+        return state
+
+    _MAX_REWRITES = config.get("critic", {}).get("max_rewrites", 2)
+    _MAX_PHASE_RETRIES = int(config.get("performance", {}).get("max_segment_retries", 2))
+
+    def _retry_segment_phase(seg_idx: int, phase_fn: callable) -> None:
+        """Retry wrapper for a single segment-phase call (matches build_retry_wrapper pattern)."""
+        for _attempt in range(_MAX_PHASE_RETRIES + 1):
+            try:
+                phase_fn(seg_idx)
+                return
+            except Exception as _e:
+                if _attempt >= _MAX_PHASE_RETRIES:
+                    log.exception(
+                        f"Segment {seg_idx}: phase retry budget exhausted ({_MAX_PHASE_RETRIES} retries). Skipping."
+                    )
+                    try:
+                        from agents.director_agent import UIState as _UIS
+                        _UIS.add_degradation(seg_idx, "segment_skip", str(_e)[:100])
+                    except Exception:
+                        pass
+                    return
+                log.warning(f"Segment {seg_idx}: attempt {_attempt + 1}/{_MAX_PHASE_RETRIES} failed ({_e}), retrying...")
+
+    def run_scripts_phase(segment_indices: list[int]) -> None:
+        """Phase 1: write_script + critic for all segments in batch."""
+        for _si in segment_indices:
+            if _director_aborted():
+                break
+            _key = f"{topic}_seg{_si:02d}"
+            ck = cp_mgr.get(_key) if resume else None
+            if ck and "script" in ck:
+                continue
+
+            def _do(_si, _key=_key):
+                state = _build_segment_state(_si)
+                r = write_script_node(state)
+                state.update(r)
+                for _rw in range(_MAX_REWRITES + 1):
+                    r = critic_node(state)
+                    state.update(r)
+                    if state.get("critic_approved", True):
+                        break
+                    r = write_script_node(state)
+                    state.update(r)
+                cp_mgr.save(_key, "script", {"data": state.get("script", "")})
+
+            _retry_segment_phase(_si, _do)
+
+    def run_translations_phase(segment_indices: list[int]) -> None:
+        """Phase 2: translate + world_state update for all segments (SEQUENTIAL, order-dependent)."""
+        for _si in segment_indices:
+            if _director_aborted():
+                break
+            _key = f"{topic}_seg{_si:02d}"
+            ck = cp_mgr.get(_key) if resume else None
+            if ck and "devanagari_script" in ck and ck.get("world_state_applied"):
+                continue
+
+            def _do(_si, _key=_key):
+                state = _build_segment_state(_si)
+                ck = cp_mgr.get(f"{topic}_seg{_si:02d}")
+                if ck and "script" in ck:
+                    state["script"] = ck["script"]["data"]
+                result = translate_node(state)
+                state.update(result)
+                cp_mgr.save(_key, "devanagari_script", {
+                    "data": state.get("devanagari_script"),
+                    "script_for_tts": state.get("script_for_tts"),
+                })
+                cp_mgr.save(_key, "world_state_applied", {"done": True})
+
+            _retry_segment_phase(_si, _do)
+
+    def run_tts_phase(segment_indices: list[int]) -> None:
+        """Phase 3: TTS for all segments."""
+        for _si in segment_indices:
+            if _director_aborted():
+                break
+            _key = f"{topic}_seg{_si:02d}"
+            ck = cp_mgr.get(_key) if resume else None
+            if ck and "audio" in ck and Path(ck["audio"]["data"]).exists():
+                continue
+
+            def _do(_si):
+                state = _build_segment_state(_si)
+                ck = cp_mgr.get(f"{topic}_seg{_si:02d}")
+                if ck and "devanagari_script" in ck:
+                    ds = ck["devanagari_script"]
+                    state["devanagari_script"] = ds.get("data")
+                    state["script_for_tts"] = ds.get("script_for_tts", "")
+                if not state.get("script_for_tts") and ck and "script" in ck:
+                    state["script_for_tts"] = ck["script"]["data"]
+                result = tts_node(state)
+                state.update(result)
+
+            _retry_segment_phase(_si, _do)
+
+    def run_images_phase(segment_indices: list[int]) -> None:
+        """Phase 4: images + important_image_review for all segments."""
+        for _si in segment_indices:
+            if _director_aborted():
+                break
+            _key = f"{topic}_seg{_si:02d}"
+            ck = cp_mgr.get(_key) if resume else None
+            if ck and "images" in ck and ck["images"]["data"] and all(Path(p).exists() for p in ck["images"]["data"]) and ck.get("image_review_done"):
+                continue
+
+            def _do(_si, _key=_key):
+                state = _build_segment_state(_si)
+                ck = cp_mgr.get(f"{topic}_seg{_si:02d}")
+                if ck and "script" in ck:
+                    state["script"] = ck["script"]["data"]
+                result = image_node(state)
+                state.update(result)
+                if state.get("images"):
+                    _ir = builder.important_image_review_node(state)
+                    state.update(_ir)
+                cp_mgr.save(_key, "image_review_done", {"done": True})
+
+            _retry_segment_phase(_si, _do)
+
+    def run_renders_phase(segment_indices: list[int]) -> None:
+        """Phase 5: render + memory_review for all segments."""
+        for _si in segment_indices:
+            if _director_aborted():
+                break
+            _key = f"{topic}_seg{_si:02d}"
+            ck = cp_mgr.get(_key) if resume else None
+            if ck and "video" in ck and Path(ck["video"]["data"]).exists() and ck.get("render_done"):
+                continue
+
+            def _do(_si, _key=_key):
+                state = _build_segment_state(_si)
+                ck = cp_mgr.get(f"{topic}_seg{_si:02d}")
+                if ck and "script" in ck:
+                    state["script"] = ck["script"]["data"]
+                if ck and "audio" in ck:
+                    state["audio_path"] = ck["audio"]["data"]
+                    state["word_timestamps_json"] = ck["audio"].get("word_timestamps")
+                if ck and "images" in ck:
+                    state["images"] = ck["images"]["data"]
+                render_node(state)
+                cp_mgr.save(_key, "render_done", {"done": True})
+                # ponytail: memory_review also loads Ollama; it's part of same phase as render
+                builder.memory_review_node(state)
+                with completed_segs_lock:
+                    completed_segs_counter_holder[0] += 1
+                    try:
+                        from agents.director_agent import UIState as _UIState
+                        _UIState.set_progress(current=completed_segs_counter_holder[0])
+                    except Exception:
+                        pass
+                aggressive_vram_cleanup(global_scheduler)
+
+            _retry_segment_phase(_si, _do)
+
     def process_segment(i: int) -> None:
         if _director_aborted():
             return
         log_vram_usage(f"Seg {i} Start")
+        touch_ollama_active()
+        if not _ollama_alive(config):
+            start_ollama_server(config, reason="recovery")
         try:
-            plan = outline[i - 1] if i - 1 < len(outline) else outline[-1]
-
-            ws_block = world_state.to_prompt_block()
-            raw_entries = []
-            if ctx_mgr:
-                raw_entries = (
-                    [
-                        {
-                            "segment": s["segment"],
-                            "summary": s["summary"],
-                            "script": s.get("script", ""),
-                        }
-                        for s in (mem._load_all().get(topic, {}).get("segments", []))
-                    ]
-                    if hasattr(mem, "_load_all")
-                    else []
-                )
-                context = ctx_mgr.build_context_for_prompt(
-                    memory_entries=raw_entries, world_state_block=ws_block, agent=None
-                )
-            else:
-                from memory import build_context
-
-                context = f"{ws_block}\n{build_context(mem.load(topic))}"
-
-            # Inject persistent memory_items (from previous segments) into context
-            mem_data = {}
-            try:
-                mem_data = mem.read()
-                all_items = []
-                for scope_key in ("project", "story"):
-                    items = mem_data.get("memory_items", {}).get(scope_key, [])
-                    if isinstance(items, list):
-                        all_items.extend(items)
-
-                if all_items:
-                    plan_cp = plan.get("char_presence", [])
-                    chars_in_segment = set()
-                    for frame_cp in plan_cp if isinstance(plan_cp, list) else [plan_cp]:
-                        if isinstance(frame_cp, dict):
-                            for cname in frame_cp:
-                                chars_in_segment.add(cname.lower().replace(" ", "_"))
-
-                    blocks = []
-                    for item in all_items:
-                        owner = (item.get("owner") or "").lower().replace(" ", "_")
-                        if owner and owner not in chars_in_segment:
-                            continue
-                        importance = item.get("importance", "medium")
-                        name = item.get("name", "")
-                        desc = item.get("description", "")
-                        lines = [f"- {name} ({importance}): {desc}"]
-                        for rule in item.get("visual_rules", []):
-                            lines.append(f"  Visual: {rule}")
-                        for rule in item.get("negative_rules", []):
-                            lines.append(f"  Avoid: {rule}")
-                        blocks.append("\n".join(lines))
-
-                    if blocks:
-                        context += (
-                            "\n\n[Character Memory]\n"
-                            + "\n---\n".join(blocks)
-                            + "\n[/Character Memory]\n"
-                        )
-            except Exception as e:
-                log.warning(f"[DIRECTOR] Failed to inject memory items into context: {e}")
-                from agents.director_agent import UIState as _UIState
-                _UIState.add_degradation(i, "memory_context_injection", str(e))
-
-            initial_state = {
-                "i": i,
-                "plan": plan,
-                "context": context,
-                "rewrites_attempted": 0,
-                "aborted": False,
-                "skip": False,
-                "memory_data": mem_data,
-            }
-            if source_chunks and 0 <= (i - 1) < len(source_chunks):
-                initial_state["source_chunk"] = source_chunks[i - 1]
-
+            initial_state = _build_segment_state(i)
+            _plan = initial_state.get("plan", {})
             graph.invoke(initial_state)
 
             from agents.director_agent import UIState as _UIState
@@ -1505,7 +1649,7 @@ def make_process_segment(
             _UIState.set_segment_manifest(i, {
                 "segment": i,
                 "status": "success",
-                "title": plan.get("title", f"Part {i}"),
+                "title": _plan.get("title", f"Part {i}"),
                 "video_path": path_str,
                 "duration_seconds": duration_s,
             })
@@ -1513,12 +1657,17 @@ def make_process_segment(
         except Exception as e:
             log.error(f"Segment {i} failed: {e}", exc_info=True)
             from agents.director_agent import UIState as _UIState
+            _plan_title = (
+                outline[i - 1].get("title", f"Part {i}")
+                if i - 1 < len(outline) and isinstance(outline[i - 1], dict)
+                else f"Part {i}"
+            )
 
             _UIState.set_segment_manifest(i, {
                 "segment": i,
                 "status": "error",
                 "reason": str(e),
-                "title": plan.get("title", f"Part {i}") if "plan" in locals() else f"Part {i}",
+                "title": _plan_title,
             })
             if not resume:
                 raise
@@ -1534,8 +1683,9 @@ def make_process_segment(
                     pass
             aggressive_vram_cleanup(global_scheduler)
             log_vram_usage(f"Seg {i} After Cleanup")
+            schedule_ollama_stop(config)
 
-    return process_segment
+    return process_segment, run_scripts_phase, run_translations_phase, run_tts_phase, run_images_phase, run_renders_phase
 
 
 def build_retry_wrapper(

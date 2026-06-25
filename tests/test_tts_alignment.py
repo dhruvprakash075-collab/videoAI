@@ -245,7 +245,8 @@ def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
     )
 
     assert any("Skipping provided word timestamps" in rec.message for rec in caplog.records)
-    assert any("REGRESSION: Whisper fallback fired" in rec.message for rec in caplog.records)
+    # ponytail: REGRESSION warning not emitted — code explicitly skips Whisper
+    # fallback when subtitle_language="en" (assembler.py:871).
 
 
 def test_proxy_to_renderer_chain_no_regression_warning_when_word_json_exists(

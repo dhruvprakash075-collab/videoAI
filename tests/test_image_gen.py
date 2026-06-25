@@ -1,8 +1,7 @@
 """test_image_gen.py - Test the testable surface of video/image_gen/image_gen.py.
 
-ComfyUI is the primary backend; Bonsai (FLUX ternary via diffusers) is the
-GPU-bound fallback and is not directly testable. We focus on the orchestrators
-and helpers that ARE testable in pure Python.
+ComfyUI is the image backend. We focus on the orchestrators and helpers
+that ARE testable in pure Python.
 """
 
 from pathlib import Path
@@ -15,11 +14,10 @@ from video.image_gen.image_gen import (
     _comfyui_seed,
     _prompt_cache_key,
     _record_oom_event,
-    _resolve_dominant_char,
+    _resolve_dominant_char_at_threshold,
     clear_oom_events,
     generate_images,
     get_oom_report,
-    unload_bonsai_pipeline,
 )
 
 
@@ -75,32 +73,6 @@ def test_clear_oom_events():
     assert get_oom_report() == []
 
 
-# ── unload_bonsai_pipeline ──────────────────────────────────
-
-
-def test_unload_bonsai_when_no_pipeline(monkeypatch):
-    """If pipeline is None, no error, just a debug log."""
-    import video.image_gen.image_gen as mod
-
-    monkeypatch.setattr(mod, "_bonsai_pipe", None)
-    unload_bonsai_pipeline()  # Should not raise
-
-
-def test_unload_bonsai_releases_pipeline(monkeypatch):
-    """When a pipeline is loaded, it gets unloaded and VRAM cache cleared."""
-    import video.image_gen.image_gen as mod
-
-    fake_pipe = MagicMock()
-    monkeypatch.setattr(mod, "_bonsai_pipe", fake_pipe)
-    monkeypatch.setattr(mod, "_bonsai_model_id", "prism-ml/test-model")
-    fake_torch = MagicMock()
-    fake_torch.cuda.is_available.return_value = True
-    monkeypatch.setitem(__import__("sys").modules, "torch", fake_torch)
-    unload_bonsai_pipeline()
-    assert mod._bonsai_pipe is None
-    assert mod._bonsai_model_id is None
-    fake_torch.cuda.empty_cache.assert_called_once()
-
 
 # ── _prompt_cache_key ──────────────────────────────────────
 
@@ -121,16 +93,16 @@ def test_prompt_cache_key_includes_master_portrait_hash():
 
 
 def test_prompt_cache_key_differs_on_model_id():
-    """Different bonsai models should not collide in cache."""
-    cfg_a = {"bonsai_model": "model-a", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    cfg_b = {"bonsai_model": "model-b", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
+    """Different sd_model_path should not collide in cache."""
+    cfg_a = {"sd_model_path": "model-a", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
+    cfg_b = {"sd_model_path": "model-b", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
     k1 = _prompt_cache_key("hero", cfg_a)
     k2 = _prompt_cache_key("hero", cfg_b)
     assert k1 != k2
 
 
-def test_prompt_cache_key_uses_bonsai_defaults():
-    """When cfg omits steps/width/etc., defaults match Bonsai spec (4/1024/1024/3.5)."""
+def test_prompt_cache_key_uses_defaults():
+    """When cfg omits steps/width/etc., defaults are consistent."""
     cfg = {}
     # Two identical calls must produce identical keys
     assert _prompt_cache_key("x", cfg) == _prompt_cache_key("x", cfg)
@@ -248,7 +220,7 @@ def test_comfyui_passes_locked_seed_into_workflow_patcher(tmp_path: Path):
 
 def test_resolve_dominant_char_above_threshold():
     cp = {"marcus": 0.6, "elena": 0.2}
-    key, weight = _resolve_dominant_char(cp)
+    key, weight = _resolve_dominant_char_at_threshold(cp, 0.3)
     assert key == "marcus"
     assert weight == 0.6
 
@@ -256,19 +228,19 @@ def test_resolve_dominant_char_above_threshold():
 def test_resolve_dominant_char_below_threshold():
     """Weight < 0.3 means no dominant char (env frame)."""
     cp = {"marcus": 0.2, "elena": 0.1}
-    key, weight = _resolve_dominant_char(cp)
+    key, weight = _resolve_dominant_char_at_threshold(cp, 0.3)
     assert key is None
     assert weight == 0.0
 
 
 def test_resolve_dominant_char_empty():
-    assert _resolve_dominant_char({}) == (None, 0.0)
-    assert _resolve_dominant_char(None) == (None, 0.0)
+    assert _resolve_dominant_char_at_threshold({}, 0.3) == (None, 0.0)
+    assert _resolve_dominant_char_at_threshold(None, 0.3) == (None, 0.0)
 
 
 def test_resolve_dominant_char_picks_max_above_threshold():
     cp = {"marcus": 0.4, "elena": 0.5}
-    key, weight = _resolve_dominant_char(cp)
+    key, weight = _resolve_dominant_char_at_threshold(cp, 0.3)
     assert key == "elena"
     assert weight == 0.5
 
@@ -278,19 +250,19 @@ def test_resolve_dominant_char_picks_max_above_threshold():
 
 def test_generate_images_string_prompts(tmp_path: Path):
     """Semicolon-separated string is split into list."""
-    cfg = {"image_gen": {"backend": "bonsai"}}
-    with patch("video.image_gen.image_gen._bonsai", return_value=[]) as bns:
+    cfg = {"image_gen": {"backend": "comfyui"}}
+    with patch("video.image_gen.image_gen._comfyui", return_value=[]) as cfn:
         generate_images("a; b; c", tmp_path, cfg)
-    prompts_arg = bns.call_args.args[0]
+    prompts_arg = cfn.call_args.args[0]
     assert len(prompts_arg) == 3
 
 
 def test_generate_images_empty_list(tmp_path: Path):
     """Empty prompts list still gets dispatched."""
-    cfg = {"image_gen": {"backend": "bonsai"}}
-    with patch("video.image_gen.image_gen._bonsai", return_value=[]) as bns:
+    cfg = {"image_gen": {"backend": "comfyui"}}
+    with patch("video.image_gen.image_gen._comfyui", return_value=[]) as cfn:
         generate_images([], tmp_path, cfg)
-    assert bns.call_args.args[0] == []
+    assert cfn.call_args.args[0] == []
 
 
 def test_generate_images_qwen_preflight_pass_dispatches_two_pass(tmp_path: Path):
@@ -303,6 +275,7 @@ def test_generate_images_qwen_preflight_pass_dispatches_two_pass(tmp_path: Path)
     }
     with (
         patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]) as preflight,
+        patch("video.image_gen.image_gen._qwen_resource_issues", return_value=[]),
         patch("video.image_gen.image_gen._comfyui_qwen_edit", return_value=[]) as qwen,
         patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
     ):
@@ -346,17 +319,15 @@ def test_generate_images_qwen_preflight_failure_uses_one_pass_comfyui(tmp_path: 
         patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=["missing model"]) as preflight,
         patch("video.image_gen.image_gen._comfyui_qwen_edit", return_value=[]) as qwen,
         patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
-        patch("video.image_gen.image_gen._bonsai", return_value=[]) as bonsai,
     ):
         generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
 
     preflight.assert_called_once()
     qwen.assert_not_called()
     comfy.assert_called_once()
-    bonsai.assert_not_called()
 
 
-def test_generate_images_qwen_runtime_failure_falls_back_to_bonsai(tmp_path: Path):
+def test_generate_images_qwen_runtime_failure_raises(tmp_path: Path):
     cfg = {
         "image_gen": {
             "backend": "comfyui",
@@ -366,39 +337,16 @@ def test_generate_images_qwen_runtime_failure_falls_back_to_bonsai(tmp_path: Pat
     }
     with (
         patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]),
+        patch("video.image_gen.image_gen._qwen_resource_issues", return_value=[]),
         patch(
             "video.image_gen.image_gen._comfyui_qwen_edit",
             side_effect=RuntimeError("qwen exploded"),
         ) as qwen,
-        patch("video.image_gen.image_gen._bonsai", return_value=[tmp_path / "fallback.png"]) as bonsai,
-        patch("video.image_gen.image_gen._comfyui", return_value=[]) as comfy,
-    ):
-        result = generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
-
-    qwen.assert_called_once()
-    bonsai.assert_called_once()
-    comfy.assert_not_called()
-    assert result == [tmp_path / "fallback.png"]
-
-
-def test_generate_images_qwen_runtime_failure_respects_non_bonsai_fallback(tmp_path: Path):
-    cfg = {
-        "image_gen": {
-            "backend": "comfyui",
-            "composition_mode": "qwen_edit",
-            "fallback_backend": "raise",
-            "qwen_edit": {"enabled": True},
-        }
-    }
-    with (
-        patch("video.image_gen.image_gen._qwen_preflight_issues", return_value=[]),
-        patch("video.image_gen.image_gen._comfyui_qwen_edit", side_effect=RuntimeError("qwen exploded")),
-        patch("video.image_gen.image_gen._bonsai", return_value=[]) as bonsai,
     ):
         with pytest.raises(RuntimeError, match="qwen exploded"):
             generate_images(["forest"], tmp_path, cfg, char_presence=[{"hero": 0.1}], project_id="p")
 
-    bonsai.assert_not_called()
+    qwen.assert_called_once()
 
 
 def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
@@ -410,6 +358,7 @@ def test_comfyui_qwen_edit_only_reposes_character_frames(tmp_path: Path):
     with (
         patch.object(image_gen, "_comfyui", return_value=images),
         patch.object(image_gen, "_free_comfyui_memory") as free_memory,
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch("video.image_gen.qwen_repose.repose_character_detailed") as repose,
     ):
         repose.side_effect = [
@@ -452,6 +401,7 @@ def test_comfyui_qwen_edit_records_degradation_on_failure(tmp_path: Path):
     with (
         patch.object(image_gen, "_comfyui", return_value=images),
         patch.object(image_gen, "_free_comfyui_memory"),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch.object(image_gen, "_log_qwen_degradation") as degrade,
         patch(
             "video.image_gen.qwen_repose.repose_character_detailed",
@@ -481,6 +431,7 @@ def test_comfyui_qwen_edit_respects_character_threshold(tmp_path: Path):
     with (
         patch.object(image_gen, "_comfyui", return_value=images),
         patch.object(image_gen, "_free_comfyui_memory"),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=[]),
         patch(
             "video.image_gen.qwen_repose.repose_character_detailed",
             return_value=QwenEditResult(status="edited", output_path=str(images[1]), reason=""),
@@ -500,10 +451,58 @@ def test_comfyui_qwen_edit_respects_character_threshold(tmp_path: Path):
     assert result == images
 
 
+def test_qwen_resource_gate_reports_low_headroom():
+    from video.image_gen import image_gen
+
+    cfg = {"qwen_edit": {"min_available_ram_gib": 8.0, "min_free_vram_mib": 5000}}
+    with (
+        patch.object(image_gen, "_available_ram_gib", return_value=4.5),
+        patch.object(image_gen, "_free_vram_mib", return_value=4200),
+    ):
+        issues = image_gen._qwen_resource_issues(cfg)
+
+    assert issues == [
+        "available RAM 4.50 GiB is below 8.00 GiB",
+        "free VRAM 4200 MiB is below 5000 MiB",
+    ]
+
+
+def test_qwen_resource_gate_allows_calibrated_headroom():
+    from video.image_gen import image_gen
+
+    with (
+        patch.object(image_gen, "_available_ram_gib", return_value=8.5),
+        patch.object(image_gen, "_free_vram_mib", return_value=5900),
+    ):
+        assert image_gen._qwen_resource_issues({"qwen_edit": {}}) == []
+
+
+def test_qwen_post_background_resource_failure_keeps_backgrounds(tmp_path: Path):
+    from video.image_gen import image_gen
+
+    images = [tmp_path / "scene_01.png"]
+    with (
+        patch.object(image_gen, "_comfyui", return_value=images),
+        patch.object(image_gen, "_free_comfyui_memory"),
+        patch.object(image_gen, "_qwen_resource_issues", return_value=["low RAM"]),
+        patch.object(image_gen, "_log_qwen_degradation") as degrade,
+        patch("video.image_gen.qwen_repose.repose_character_detailed") as repose,
+    ):
+        result = image_gen._comfyui_qwen_edit(
+            ["frame"],
+            tmp_path,
+            {"qwen_edit": {"character_threshold": 0.05}},
+            char_presence=[{"hero": 0.9}],
+        )
+
+    assert result == images
+    degrade.assert_called_once_with(0, "resource gate after background pass: low RAM")
+    repose.assert_not_called()
+
+
 def test_generate_images_passes_project_id(tmp_path: Path):
-    """project_id is forwarded to _bonsai for project-scoped lookups."""
-    cfg = {"image_gen": {"backend": "bonsai"}}
-    with patch("video.image_gen.image_gen._bonsai", return_value=[]) as bns:
+    """project_id is forwarded to comfyui for project-scoped lookups."""
+    cfg = {"image_gen": {"backend": "comfyui"}}
+    with patch("video.image_gen.image_gen._comfyui", return_value=[]) as cfn:
         generate_images(["p"], tmp_path, cfg, project_id="myproject")
-    # _bonsai is called as _bonsai(prompts, out, cfg, char_presence=..., project_id=...)
-    assert bns.call_args.kwargs.get("project_id") == "myproject"
+    assert cfn.call_args is not None

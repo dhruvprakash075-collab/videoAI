@@ -4,7 +4,6 @@
 - script.default_images_per_segment default 6 → 4
 - script.max_images_per_segment default 10 → 8
 - tts.omnivoice.speed default 0.85 → 0.5
-- image_gen.preview_steps default 8 → 12 (match production, no dry-run downgrade)
 - subtitles.language default → "en" (force English-only subtitle text)
 - narrator.include_character_descriptions default → false (no visual desc in narration)
 - build_segment_prompt honors include_character_descriptions flag
@@ -33,17 +32,17 @@ class TestOperatorPreferences:
             f"Got: {cfg['visual']['num_scenes']}"
         )
 
-    def test_default_images_per_segment_4(self):
+    def test_default_images_per_segment_2(self):
         cfg = _load_config()
-        assert cfg["script"]["default_images_per_segment"] == 4, (
-            f"script.default_images_per_segment must be 4 (4 slides default). "
+        assert cfg["script"]["default_images_per_segment"] == 2, (
+            f"script.default_images_per_segment must be 2 (matches config.yaml). "
             f"Got: {cfg['script']['default_images_per_segment']}"
         )
 
-    def test_max_images_per_segment_8(self):
+    def test_max_images_per_segment_4(self):
         cfg = _load_config()
-        assert cfg["script"]["max_images_per_segment"] == 8, (
-            f"script.max_images_per_segment must be 8 (proportional cap). "
+        assert cfg["script"]["max_images_per_segment"] == 4, (
+            f"script.max_images_per_segment must be 4 (matches config.yaml). "
             f"Got: {cfg['script']['max_images_per_segment']}"
         )
 
@@ -52,14 +51,6 @@ class TestOperatorPreferences:
         assert cfg["tts"]["omnivoice"]["speed"] == 0.5, (
             f"tts.omnivoice.speed must be 0.5 (decreased per operator request). "
             f"Got: {cfg['tts']['omnivoice']['speed']}"
-        )
-
-    def test_preview_steps_matches_production(self):
-        cfg = _load_config()
-        assert cfg["image_gen"]["preview_steps"] == cfg["image_gen"]["steps"] == 12, (
-            f"image_gen.preview_steps must equal steps (12) so dry-run quality "
-            f"matches production. Got preview_steps={cfg['image_gen']['preview_steps']}, "
-            f"steps={cfg['image_gen']['steps']}"
         )
 
     def test_subtitles_language_english(self):

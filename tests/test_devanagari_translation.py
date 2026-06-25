@@ -14,9 +14,8 @@ from unittest.mock import patch
 # Ensure repo root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import bootstrap_pipeline as _bp
-
-_bp.bootstrap()
+# ponytail: skip bootstrap — venv guard calls sys.exit(1) outside venv.
+# sys.path is already set above, tests don't need signal handlers.
 
 from agents.director_agent import _devanagari_ratio
 

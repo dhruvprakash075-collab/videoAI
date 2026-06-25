@@ -34,31 +34,46 @@ from typing import Any
 # ── Bootstrap: PYTHONPATH + telemetry suppression (matches old behavior) ──
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-try:
-    from utils.compatibility import apply_all_patches
+# ponytail: heavy imports deferred to _ensure_init() — avoids CUDA context + diffusers
+# at module-import time (tests import this module without running the pipeline).
+_compat_applied = False
+_torch = None
 
-    apply_all_patches()
-except ImportError:
-    pass
 
-os.environ.setdefault("OTEL_SDK_DISABLED", "true")
-os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
-os.environ.setdefault("CREWAI_TELEMETRY_OPTOUT", "true")
+def _ensure_init():
+    """Lazy-init: apply compat patches and import torch. Safe to call multiple times."""
+    global _compat_applied, _torch
+    if _compat_applied:
+        return
 
-if sys.platform == "win32":
-    for _stream in (sys.stdout, sys.stderr):
-        _reconf = getattr(_stream, "reconfigure", None)
-        if _reconf is not None:
-            with contextlib.suppress(AttributeError, OSError):
-                _reconf(encoding="utf-8")
+    try:
+        from utils.compatibility import apply_all_patches
+        apply_all_patches()
+    except ImportError:
+        pass
 
-os.environ.setdefault("TORCHDYNAMO_SUPPRESS_ERRORS", "1")
-try:
-    import torch as _torch
+    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+    os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
+    os.environ.setdefault("CREWAI_TELEMETRY_OPTOUT", "true")
 
-    _torch._dynamo.config.suppress_errors = True
-except Exception:
-    pass
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            _reconf = getattr(_stream, "reconfigure", None)
+            if _reconf is not None:
+                with contextlib.suppress(AttributeError, OSError):
+                    _reconf(encoding="utf-8")
+
+    os.environ.setdefault("TORCHDYNAMO_SUPPRESS_ERRORS", "1")
+    try:
+        import torch as _torch_mod
+        _torch = _torch_mod
+        _torch._dynamo.config.suppress_errors = True
+    except Exception:
+        pass
+
+    _compat_applied = True
+    log.info("Compatibility layer initialized")
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -84,6 +99,8 @@ from core.segment_runner import (
     log_vram_usage,
     make_process_segment,
     set_director_abort,
+    start_ollama_server,
+    stop_ollama_server,
 )
 from utils.concurrency import crewai_lock as _crewai_lock, global_scheduler
 
@@ -94,11 +111,11 @@ _aggressive_vram_cleanup = aggressive_vram_cleanup
 _director_aborted = get_director_abort
 
 
-# ── Public Director abort control (TUI calls these) ─────────────────────
+# ── Public abort control (TUI calls these) ───────────────────────────
 
 
 def _director_set_abort(val: bool = True) -> None:
-    """Set the Director Mode abort flag (thread-safe)."""
+    """Set the pipeline abort flag (thread-safe)."""
     set_director_abort(val)
 
 
@@ -121,7 +138,6 @@ def run_long_pipeline(
     dry_run: bool = False,
     fast_dry_run: bool = False,
     duration_min: int | None = None,
-    director_mode: bool = False,
     series_mode: bool = False,
     content_text: str | None = None,
     preview_mode: bool = False,
@@ -139,6 +155,7 @@ def run_long_pipeline(
     pre-production phase still runs to derive a top-level story arc, but
     individual segment scripts come verbatim from the source.
     """
+    _ensure_init()
     from agents.ui_state import UIState
     from core.main import create_director, create_writer
     from utils import _safe_filename, load_config, setup_run_logging
@@ -510,7 +527,7 @@ def run_long_pipeline(
         # Build the per-segment closure once, with the shared prompt executor
         # captured (it needs the executor for parallel image-prompt and
         # translation tasks). Building twice used to be a footgun.
-        process_segment = make_process_segment(
+        _process_seg, _run_scripts_phase, _run_translations_phase, _run_tts_phase, _run_images_phase, _run_renders_phase = make_process_segment(
             topic=topic,
             config=config,
             outline=outline,
@@ -526,7 +543,6 @@ def run_long_pipeline(
             resume=resume,
             dry_run=dry_run or fast_dry_run,
             fast_dry_run=fast_dry_run,
-            director_mode=director_mode,
             preview_mode=preview_mode,
             words_per_seg=words_per_seg,
             seg_min=seg_min,
@@ -541,6 +557,7 @@ def run_long_pipeline(
             run_start_ts=_run_start,
             source_chunks=source_chunks,
         )
+        process_segment = _process_seg  # alias for backward compat (non-staged path uses this)
         _process_segment_with_budget = build_retry_wrapper(
             process_segment,
             _max_seg_retries,
@@ -548,38 +565,69 @@ def run_long_pipeline(
             _seg_retry_counts,
         )
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            _staged = config.get("performance", {}).get("staged_loop", False)
-            _lookahead = int(config.get("performance", {}).get("lookahead_segments", 1))
+        _staged = config.get("performance", {}).get("staged_loop", False)
+        _lookahead = int(config.get("performance", {}).get("lookahead_segments", 1))
 
-            if _staged:
-                log.info(
-                    f"[C1] Staged loop enabled (lookahead={_lookahead}). "
-                    f"Running segments in batches with one evict per batch."
-                )
-                _seg_indices = list(range(1, n_segs + 1))
-                _batch_size = max(1, _lookahead)
-                _batches = [
-                    _seg_indices[k : k + _batch_size]
-                    for k in range(0, len(_seg_indices), _batch_size)
-                ]
+        if _staged:
+            log.info(
+                f"[C1] Staged loop enabled (lookahead={_lookahead}). "
+                f"Running task-wise batching — scripts → translations → TTS → images → renders."
+            )
+            _seg_indices = list(range(1, n_segs + 1))
+            _batch_size = max(1, _lookahead)
+            _batches = [
+                _seg_indices[k : k + _batch_size]
+                for k in range(0, len(_seg_indices), _batch_size)
+            ]
 
-                for _batch in _batches:
-                    if get_director_abort():
-                        break
-                    log.debug(f"[C1] Evicting Ollama before batch {_batch}")
-                    evict_ollama_models(config, reason="C1 staged batch")
+            for _bi, _batch in enumerate(_batches):
+                if get_director_abort():
+                    break
+                if _bi > 0:
+                    start_ollama_server(config, reason=f"batch {_batch}")
 
-                    _batch_futures = {
-                        executor.submit(_process_segment_with_budget, _bi): _bi for _bi in _batch
-                    }
-                    for _bf in concurrent.futures.as_completed(_batch_futures):
-                        _bseg = _batch_futures[_bf]
-                        try:
-                            _bf.result()
-                        except Exception as _be:
-                            log.error(f"Segment {_bseg} execution failed: {_be}", exc_info=True)
-            else:
+                # ponytail: evict per phase (5/batch instead of 1/batch); each phase loads a different
+                # model anyway, so clean separation is safer. Merge phases if model sharing is measured.
+                # ponytail: no abort check between phases within a batch; flag only checked at boundary.
+                # Phase 1: Scripts (Ollama loads once for writer)
+                evict_ollama_models(config, reason="C1 scripts phase")
+                try:
+                    _run_scripts_phase(_batch)
+                except Exception as _pe:
+                    log.error(f"Scripts phase failed for batch {_batch}: {_pe}", exc_info=True)
+
+                # Phase 2: Translations (Ollama loads once for translator; world_state sequential)
+                evict_ollama_models(config, reason="C1 translations phase")
+                try:
+                    _run_translations_phase(_batch)
+                except Exception as _pe:
+                    log.error(f"Translations phase failed for batch {_batch}: {_pe}", exc_info=True)
+
+                # Phase 3: TTS (CPU, no Ollama)
+                evict_ollama_models(config, reason="C1 TTS phase")
+                try:
+                    _run_tts_phase(_batch)
+                except Exception as _pe:
+                    log.error(f"TTS phase failed for batch {_batch}: {_pe}", exc_info=True)
+
+                # Phase 4: Images + review (ComfyUI/Bonsai loads once)
+                evict_ollama_models(config, reason="C1 images phase")
+                try:
+                    _run_images_phase(_batch)
+                except Exception as _pe:
+                    log.error(f"Images phase failed for batch {_batch}: {_pe}", exc_info=True)
+
+                # Phase 5: Renders + memory review (Ollama loads once for director)
+                evict_ollama_models(config, reason="C1 renders phase")
+                try:
+                    _run_renders_phase(_batch)
+                except Exception as _pe:
+                    log.error(f"Renders phase failed for batch {_batch}: {_pe}", exc_info=True)
+
+                if _bi < len(_batches) - 1:
+                    stop_ollama_server(config, reason=f"after batch {_batch}")
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
                     executor.submit(_process_segment_with_budget, idx): idx
                     for idx in range(1, n_segs + 1)
@@ -629,6 +677,7 @@ def run_long_pipeline(
 
 def run_long_pipeline_async(topic: str, config: dict, **kwargs):
     """Runs pre-production and returns config overlay."""
+    _ensure_init()
     from utils import _safe_filename, setup_run_logging
 
     setup_run_logging(Path("logs") / _safe_filename(topic))
@@ -665,12 +714,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Resume series without re-consultation (reuses previous config)",
     )
-    parser.add_argument(
-        "--director-mode",
-        action="store_true",
-        help="Pause after each script generation for human review",
-    )
-
     args = parser.parse_args()
 
     if args.file:
@@ -700,7 +743,6 @@ if __name__ == "__main__":
             dry_run=args.dry_run or args.fast_dry_run,
             fast_dry_run=args.fast_dry_run,
             duration_min=args.duration,
-            director_mode=args.director_mode,
             series_mode=args.series,
             content_text=content_text,
         )
@@ -736,11 +778,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n[FAILED] Pipeline interrupted by user")
         try:
-            from video.image_gen.image_gen import unload_bonsai_pipeline
-            from video.image_gen.ip_adapter import unload_ip_adapter
-
-            unload_bonsai_pipeline()
-            unload_ip_adapter()
             log.info("Gracefully released GPU Image Generation models.")
         except Exception as e:
             log.debug(f"Error during graceful shutdown: {e}")

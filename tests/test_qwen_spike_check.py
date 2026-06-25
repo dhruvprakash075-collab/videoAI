@@ -17,10 +17,10 @@ from scripts.qwen_edit_spike_check import (
 def _base_config() -> dict:
     return {
         "image_gen": {
-            "composition_mode": "one_pass",
+            "composition_mode": "qwen_edit",
             "comfyui": {"root": "external/ComfyUI"},
             "qwen_edit": {
-                "enabled": False,
+                "enabled": True,
                 "workflow_path": "config/comfyui/workflows/qwen_image_edit_api.json",
                 "model_path": "",
                 "required_custom_nodes": ["ComfyUI-nunchaku"],
@@ -29,25 +29,25 @@ def _base_config() -> dict:
     }
 
 
-def test_analyze_config_enforces_qwen_off_by_default():
+def test_analyze_config_accepts_resource_gated_qwen():
     checks = analyze_config(_base_config())
     by_name = {check.name: check for check in checks}
 
-    assert by_name["default composition mode"].ok is True
-    assert by_name["default Qwen disabled"].ok is True
+    assert by_name["resource-gated composition mode"].ok is True
+    assert by_name["Qwen enabled"].ok is True
     assert by_name["local Qwen model configured"].ok is False
 
 
-def test_analyze_config_flags_enabled_config():
+def test_analyze_config_flags_disabled_config():
     config = _base_config()
-    config["image_gen"]["composition_mode"] = "qwen_edit"
-    config["image_gen"]["qwen_edit"]["enabled"] = True
+    config["image_gen"]["composition_mode"] = "one_pass"
+    config["image_gen"]["qwen_edit"]["enabled"] = False
 
     checks = analyze_config(config)
     by_name = {check.name: check for check in checks}
 
-    assert by_name["default composition mode"].ok is False
-    assert by_name["default Qwen disabled"].ok is False
+    assert by_name["resource-gated composition mode"].ok is False
+    assert by_name["Qwen enabled"].ok is False
 
 
 def test_issue_template_contains_required_result_fields():
@@ -86,7 +86,7 @@ def test_load_config_reads_yaml(tmp_path: Path):
 
     loaded = load_config(config_path)
 
-    assert loaded["image_gen"]["composition_mode"] == "one_pass"
+    assert loaded["image_gen"]["composition_mode"] == "qwen_edit"
 
 
 def test_command_plan_lists_all_focused_qwen_checks(capsys):

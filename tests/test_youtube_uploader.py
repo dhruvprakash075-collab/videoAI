@@ -30,6 +30,11 @@ def mock_pw():
       - page    : the Page returned by new_page()
       - fc      : the file-chooser info object (has .value.set_files)
     """
+    # ponytail: purge stale module cache if a prior test loaded the module
+    # without playwright (e.g., as a side-effect of another import chain).
+    import sys as _sys
+    _sys.modules.pop("utils.youtube_uploader", None)
+
     sp = MagicMock()
     p = MagicMock()
     browser = MagicMock()

@@ -1007,7 +1007,6 @@ fn is_supported_arg(key: &str) -> bool {
             | "file"
             | "project"
             | "series"
-            | "director_mode"
             | "run_mode"
             | "eval_models"
             | "preview"

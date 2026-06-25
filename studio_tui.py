@@ -551,7 +551,6 @@ class StudioTUI(App):
         # Phase 2 option state
         self._opt_duration: str = ""
         self._opt_resume: bool = True
-        self._opt_director: bool = False
         self._opt_preview: bool = False
         self._opt_project: str = ""
         self._opt_use_file: bool = False
@@ -583,8 +582,6 @@ class StudioTUI(App):
                             with Horizontal(id="opts_row2"):
                                 yield Label("Resume", classes="opt_label")
                                 yield Switch(value=True, id="opt_resume")
-                                yield Label("Director", classes="opt_label")
-                                yield Switch(value=False, id="opt_director")
                                 yield Label("Preview", classes="opt_label")
                                 yield Switch(value=False, id="opt_preview")
                             with Horizontal(id="opts_row3"):
@@ -834,8 +831,6 @@ class StudioTUI(App):
             kwargs["duration_min"] = dur
         if not self._opt_resume:
             kwargs["resume"] = False
-        if self._opt_director:
-            kwargs["director_mode"] = True
         if self._opt_preview:
             kwargs["preview_mode"] = True
         if self._opt_project.strip():
@@ -882,11 +877,7 @@ class StudioTUI(App):
         UIState.user_reply = None
         UIState.output_video = ""
         UIState.pause_event = threading.Event()
-        # Unless Director (interactive) mode is ON, auto-accept all Director
-        # questions so a normal run flows straight through without pausing.
-        # This is what made runs look "frozen/crashed" — they were silently
-        # waiting at a Director pause for an answer that never came.
-        UIState.auto_accept = not self._opt_director
+        UIState.auto_accept = True
         UIState.reset_run(topic)
         self.log_index = 0
         self._last_question = ""
@@ -901,8 +892,6 @@ class StudioTUI(App):
         sid = event.switch.id
         if sid == "opt_resume":
             self._opt_resume = event.value
-        elif sid == "opt_director":
-            self._opt_director = event.value
         elif sid == "opt_preview":
             self._opt_preview = event.value
         elif sid == "opt_use_file":
@@ -959,7 +948,7 @@ class StudioTUI(App):
         UIState.user_reply = None
         UIState.output_video = ""
         UIState.pause_event = threading.Event()
-        UIState.auto_accept = not self._opt_director
+        UIState.auto_accept = True
         UIState.reset_run(topic)
         self.log_index = 0
         self._last_question = ""

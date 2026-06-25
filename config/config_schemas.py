@@ -167,16 +167,12 @@ class TTSConfig(BaseModel):
     model_config = {"extra": "forbid"}
     engine: Literal["supertonic", "omnivoice"] = "supertonic"
     lang: str = "hi"
-    slow: bool = False
     voice_samples_dir: str = "character_voices"
     voice_profile: VoiceProfileConfig = Field(default_factory=VoiceProfileConfig)
     devanagari: DevanagariConfig = Field(default_factory=DevanagariConfig)
     supertonic: SuperTonicSubConfig = Field(default_factory=SuperTonicSubConfig)
     omnivoice: OmniVoiceSubConfig = Field(default_factory=OmniVoiceSubConfig)
-    fish_speech_model_path: str = ""
-    fish_speech_temperature: float = 0.7
-    fish_speech_top_p: float = 0.9
-    fish_speech_repetition_penalty: float = 1.5
+
     alignment: "AlignmentConfig" = Field(default_factory=lambda: AlignmentConfig())
 
 
@@ -344,6 +340,8 @@ class QwenEditConfig(BaseModel):
     cfg: float = 1.0
     denoise: float = 0.6
     vram_offload: bool = True
+    min_available_ram_gib: float = Field(default=8.0, ge=0)
+    min_free_vram_mib: int = Field(default=5000, ge=0)
     trigger: Literal["any_character", "disabled"] = "any_character"
     character_threshold: float = 0.05
     cache_dir: str = ".qwen_edit_cache"
@@ -355,7 +353,6 @@ class QwenEditConfig(BaseModel):
 class ImageGenConfig(BaseModel):
     model_config = {"extra": "forbid"}
     backend: str = "comfyui"
-    bonsai_model: str = ""
     sd_model_path: str = ""
     width: int = 1024
     height: int = 1024
@@ -364,14 +361,12 @@ class ImageGenConfig(BaseModel):
     cfg: float = 7.0
     ip_adapter_scale: float = 0.8
     lock_seed: bool = True
-    preview_steps: int = 12
-    oom_recovery: bool = True
     sampler: str = "euler"
     scheduler: str = "normal"
     seed: int = -1
     upscaler: UpscalerConfig = Field(default_factory=UpscalerConfig)
     comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
-    fallback_backend: str = "bonsai"
+    fallback_backend: str = "none"
     composition_mode: str = "one_pass"
     qwen_edit: QwenEditConfig = Field(default_factory=QwenEditConfig)
 
@@ -409,7 +404,6 @@ class AudioFxConfig(BaseModel):
     enabled: bool = True
     volume: float = 0.25
     program_loudnorm: bool = True
-    loudnorm_two_pass: bool = True
     target_lufs: int = -14
 
 

@@ -22,7 +22,6 @@ export default function CreateJobPanel({ onJobQueued }) {
   const [file, setFile] = useState(null);
   const [duration, setDuration] = useState(1);
   const [runMode, setRunMode] = useState('');
-  const [directorMode, setDirectorMode] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const [preview, setPreview] = useState(false);
   const [evalModels, setEvalModels] = useState(false);
@@ -47,7 +46,6 @@ export default function CreateJobPanel({ onJobQueued }) {
       no_resume: noResume,
     };
     if (runMode) payload.run_mode = runMode;
-    if (directorMode) payload.director_mode = true;
     if (preview) payload.preview = true;
     if (evalModels) payload.eval_models = true;
     if (yes) payload.yes = true;
@@ -289,7 +287,6 @@ export default function CreateJobPanel({ onJobQueued }) {
           <div className="space-y-2">
             <ToggleRow label="Dry Run" value={dryRun} onChange={setDryRun} />
             <ToggleRow label="Preview Mode" value={preview} onChange={setPreview} />
-            <ToggleRow label="Director Mode" value={directorMode} onChange={setDirectorMode} />
             <ToggleRow label="Series Mode" value={series} onChange={setSeries} />
             <ToggleRow label="Eval Models" value={evalModels} onChange={setEvalModels} />
             <ToggleRow label="No Resume" value={noResume} onChange={setNoResume} />

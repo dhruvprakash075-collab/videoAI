@@ -1,0 +1,171 @@
+{
+  "audit": "ponytail-review",
+  "scope": "repo-wide",
+  "date": "2026-06-19",
+  "net": {
+    "lines_removable": 900,
+    "duplicate_implementations": 6
+  },
+  "findings": [
+    {
+      "id": 1,
+      "tag": "delete",
+      "what": "overlapping diagnose.py + media_analyzer.py (identical ANSI helpers, check_ffmpeg twice)",
+      "replacement": "Keep one, move to scripts/",
+      "files": ["utils/diagnose.py", "utils/media_analyzer.py"],
+      "lines": 200
+    },
+    {
+      "id": 2,
+      "tag": "delete",
+      "what": "map_codebase.py in utils/, zero production imports",
+      "replacement": "Move to scripts/ or delete",
+      "files": ["utils/map_codebase.py"],
+      "lines": 230
+    },
+    {
+      "id": 3,
+      "tag": "delete",
+      "what": "6 copies of brace-depth JSON extractor across critic.py, seo_generator.py, story_planner.py, source_splitter.py, specialized_models.py (x2), director_agent.py",
+      "replacement": "Extract one helper or inline",
+      "files": ["utils/critic.py", "utils/seo_generator.py", "utils/story_planner.py", "utils/source_splitter.py", "utils/specialized_models.py", "agents/director_agent.py"],
+      "lines": 90
+    },
+    {
+      "id": 4,
+      "tag": "stdlib",
+      "what": "path_utils.py exports 7 functions, only is_safe_path used externally",
+      "replacement": "path.is_symlink(), path.is_file(), path.is_dir() are stdlib",
+      "files": ["utils/path_utils.py"],
+      "lines": 80
+    },
+    {
+      "id": 5,
+      "tag": "delete",
+      "what": "retry_manager.py:patch_retries() monkey-patches sys.modules at runtime",
+      "replacement": "Decorate at import time instead",
+      "files": ["utils/retry_manager.py"],
+      "lines": 65
+    },
+    {
+      "id": 6,
+      "tag": "native",
+      "what": "checkpoint.py Rust code paths gate on undocumented env var, binary doesn't exist in rust/",
+      "replacement": "Delete dead branches",
+      "files": ["utils/checkpoint.py"],
+      "lines": 60
+    },
+    {
+      "id": 7,
+      "tag": "delete",
+      "what": "ollama_client.py:_is_local_host() duplicates url_security.py:validate_local_service_base_url() already called in __init__",
+      "replacement": "Reuse url_security.validate_local_service_base_url()",
+      "files": ["utils/ollama_client.py"],
+      "lines": 50
+    },
+    {
+      "id": 8,
+      "tag": "yagni",
+      "what": "researcher.py + web_search.py both search Wikipedia via different APIs",
+      "replacement": "Merge into one module",
+      "files": ["utils/researcher.py", "utils/web_search.py"],
+      "lines": 50
+    },
+    {
+      "id": 9,
+      "tag": "delete",
+      "what": "notion_client.py imported only by a smoke test",
+      "replacement": "Move to scripts/ or cut",
+      "files": ["utils/notion_client.py"],
+      "lines": 75
+    },
+    {
+      "id": 10,
+      "tag": "stdlib",
+      "what": "topic_researcher.py is a single-function module, 1 caller",
+      "replacement": "Inline into bootstrap_pipeline.py",
+      "files": ["utils/topic_researcher.py"],
+      "lines": 36
+    },
+    {
+      "id": 11,
+      "tag": "shrink",
+      "what": "ollama_client.py:_post() hand-rolls retry loop",
+      "replacement": "retry_with_backoff() exists in same package",
+      "files": ["utils/ollama_client.py"],
+      "lines": 20
+    },
+    {
+      "id": 12,
+      "tag": "delete",
+      "what": "specialized_models.py:generate_image_prompts_batch() zero production callers",
+      "replacement": "Delete",
+      "files": ["utils/specialized_models.py"],
+      "lines": 14
+    },
+    {
+      "id": 13,
+      "tag": "yagni",
+      "what": "utils.py:SafeStream class for a 5-line try/except",
+      "replacement": "Inline",
+      "files": ["utils/utils.py"],
+      "lines": 10
+    },
+    {
+      "id": 14,
+      "tag": "delete",
+      "what": "config.yaml + config_schemas.py: script_gen, llm_word_fix, word_count_max_retries — schema fields with zero readers",
+      "replacement": "Remove from config and schema",
+      "files": ["config/config.yaml", "config/config_schemas.py"],
+      "lines": 6
+    },
+    {
+      "id": 15,
+      "tag": "yagni",
+      "what": "local_ui.py:_form_bool duplicates _parse_job_form_bool",
+      "replacement": "Keep one",
+      "files": ["utils/local_ui.py"],
+      "lines": 5
+    },
+    {
+      "id": 16,
+      "tag": "shrink",
+      "what": "source_splitter.py + source_loader.py: identical _word_count",
+      "replacement": "len(text.split()) inline",
+      "files": ["utils/source_splitter.py", "utils/source_loader.py"],
+      "lines": 2
+    },
+    {
+      "id": 17,
+      "tag": "delete",
+      "what": "ollama_client.py:_BreakerState subclass, tests-only",
+      "replacement": "Use CircuitBreaker directly",
+      "files": ["utils/ollama_client.py"],
+      "lines": 4
+    },
+    {
+      "id": 18,
+      "tag": "shrink",
+      "what": "emotion_control.py:_MOOD_MARKERS uses lambdas for one-line str.replace",
+      "replacement": "Table of (old, new) pairs",
+      "files": ["utils/emotion_control.py"],
+      "lines": 20
+    },
+    {
+      "id": 19,
+      "tag": "native",
+      "what": "web_search.py imports both requests and urllib",
+      "replacement": "Pick one",
+      "files": ["utils/web_search.py"],
+      "lines": 15
+    },
+    {
+      "id": 20,
+      "tag": "delete",
+      "what": "diagnose.py:L239 dead expression, result never assigned",
+      "replacement": "Delete line",
+      "files": ["utils/diagnose.py"],
+      "lines": 1
+    }
+  ]
+}

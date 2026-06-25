@@ -30,7 +30,7 @@ class TestConfigAPI:
                     "timeout_seconds": 300,
                     "poll_seconds": 1.0,
                 },
-                "fallback_backend": "bonsai",
+                "fallback_backend": "none",
             },
         }
 
@@ -126,6 +126,35 @@ class TestConfigAPI:
         assert comfy["sampler_name"] == "dpm_2m"
         assert comfy["scheduler"] == "karras"
 
+    @patch("utils.local_ui.load_config")
+    @patch("builtins.open", MagicMock())
+    @patch("os.replace", MagicMock())
+    @patch("yaml.safe_dump")
+    def test_save_config_enables_resource_gated_qwen(
+        self, mock_yaml_dump, mock_load_config, mock_config
+    ):
+        mock_load_config.return_value = mock_config.copy()
+
+        from fastapi.testclient import TestClient
+
+        from utils.local_ui import app
+
+        response = TestClient(app).post(
+            "/api/config",
+            data={
+                "voice_engine": "omnivoice",
+                "dynamic_subtitles": "false",
+                "uncapped_scaling": "false",
+                "max_images_per_segment": 6,
+                "composition_mode": "qwen_edit",
+            },
+        )
+
+        assert response.status_code == 200
+        image_cfg = mock_yaml_dump.call_args[0][0]["image_gen"]
+        assert image_cfg["composition_mode"] == "qwen_edit"
+        assert image_cfg["qwen_edit"]["enabled"] is True
+
     def test_save_config_validates_image_backend(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):
             from fastapi.testclient import TestClient
@@ -146,7 +175,7 @@ class TestConfigAPI:
 
             assert response.status_code == 400
             data = response.json()
-            assert "bonsai" in data.get("message", "").lower() or "comfyui" in data.get("message", "").lower()
+            assert "comfyui" in data.get("message", "").lower()
 
     def test_save_config_validates_fallback_backend(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):
@@ -174,7 +203,7 @@ class TestConfigAPI:
     @patch("builtins.open", MagicMock())
     @patch("os.replace", MagicMock())
     @patch("yaml.safe_dump")
-    def test_save_config_accepts_bonsai_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
+    def test_save_config_rejects_bonsai_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
         mock_load_config.return_value = mock_config.copy()
 
         from fastapi.testclient import TestClient
@@ -193,9 +222,7 @@ class TestConfigAPI:
             },
         )
 
-        assert response.status_code == 200
-        saved_config = mock_yaml_dump.call_args[0][0]
-        assert saved_config["image_gen"]["fallback_backend"] == "bonsai"
+        assert response.status_code == 400
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
@@ -224,12 +251,12 @@ class TestConfigAPI:
         saved_config = mock_yaml_dump.call_args[0][0]
         assert saved_config["image_gen"]["fallback_backend"] == "none"
 
-    def test_get_config_with_bonsai_backend(self):
+    def test_get_config_with_comfyui_backend(self):
         config = {
             "tts": {"engine": "omnivoice"},
             "subtitles": {"format": "classic"},
             "script": {"uncapped_scaling": False},
-            "image_gen": {"backend": "bonsai"},
+            "image_gen": {"backend": "comfyui"},
         }
 
         with patch("utils.local_ui.load_config", return_value=config):
@@ -242,4 +269,4 @@ class TestConfigAPI:
 
             assert response.status_code == 200
             data = response.json()
-            assert data["imageBackend"] == "bonsai"
+            assert data["imageBackend"] == "comfyui"

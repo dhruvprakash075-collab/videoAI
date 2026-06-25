@@ -105,7 +105,11 @@ def test_run_long_pipeline_dry_run_success(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}) as mock_pre_prod,
@@ -183,7 +187,11 @@ def test_run_long_pipeline_with_decision_record(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -250,7 +258,11 @@ def test_run_long_pipeline_staged_loop(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -287,7 +299,7 @@ def test_run_long_pipeline_staged_loop(tmp_path):
             )
 
         assert res["status"] == "dry_run"
-        assert mock_evict.call_count == 2
+        assert mock_evict.call_count == 10  # 5 phases x 2 batches
 
 
 def test_run_long_pipeline_no_dry_run(tmp_path):
@@ -307,7 +319,11 @@ def test_run_long_pipeline_no_dry_run(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -365,7 +381,8 @@ def test_run_long_pipeline_no_segments_generated(tmp_path):
     ):
         mock_plan_outline.return_value = [{"seg": 1, "title": "Intro"}]
         # Process seg returns without placing any MP4 in the list
-        mock_make_seg.return_value = lambda i: None
+        _noop = lambda x: None
+        mock_make_seg.return_value = (lambda i: None, _noop, _noop, _noop, _noop, _noop)
 
         with patch("utils.load_config", return_value=cfg):
             res = run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
@@ -392,7 +409,11 @@ def test_run_long_pipeline_endurance_mode(tmp_path):
             if seg_idx == 1 and mp4s_list is not None:
                 mp4s_list[0] = Path("segment_1.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -437,7 +458,11 @@ def test_run_long_pipeline_staged_loop_failures(tmp_path):
         def run_seg(seg_idx):
             raise RuntimeError("batch element fail")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -481,7 +506,11 @@ def test_run_long_pipeline_segment_failures_non_staged(tmp_path):
         def run_seg(seg_idx):
             raise RuntimeError("fail")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -531,7 +560,11 @@ def test_run_long_pipeline_outline_length_locked_truncate(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -586,7 +619,11 @@ def test_run_long_pipeline_outline_length_locked_adjust(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -632,7 +669,7 @@ def test_run_long_pipeline_worker_shutdown_exceptions(tmp_path):
         mp4s_list = kwargs.get("mp4s")
         if mp4s_list is not None:
             mp4s_list[0] = Path("segment_1.mp4")
-        return lambda i: None
+        return lambda i: None, lambda x: None, lambda x: None, lambda x: None, lambda x: None, lambda x: None
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -702,7 +739,11 @@ def test_run_long_pipeline_errors_and_edge_cases(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     # Force blackboard exception, sync memory exception, train_lora import exception
     with (
@@ -761,7 +802,11 @@ def test_run_long_pipeline_stale_world_state_clear_fails(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -812,7 +857,11 @@ def test_run_long_pipeline_image_cap_and_env_ratio(tmp_path):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
 
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -877,7 +926,7 @@ def test_run_long_pipeline_stale_world_state_clear_success(tmp_path):
         mp4s_list = kwargs.get("mp4s")
         if mp4s_list is not None:
             mp4s_list[0] = Path("segment_1.mp4")
-        return lambda i: None
+        return lambda i: None, lambda x: None, lambda x: None, lambda x: None, lambda x: None, lambda x: None
 
     from agents.director_agent import UIState
 
@@ -899,7 +948,7 @@ def test_run_long_pipeline_stale_world_state_clear_success(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
         patch.object(
             UIState, "set_progress", side_effect=Exception("UIState progress err")
-        ),  # line 377
+        ),
     ):
         mock_plan_outline.return_value = [{"seg": 1}]
         mock_make_seg.side_effect = fake_make_seg
@@ -909,7 +958,7 @@ def test_run_long_pipeline_stale_world_state_clear_success(tmp_path):
             res = run_long_pipeline(topic="test_topic", resume=False, dry_run=True)
 
         assert res["status"] == "ok"
-        assert not ws_file.exists()  # should have been unlinked successfully
+        assert not ws_file.exists()
 
 
 def test_run_long_pipeline_staged_loop_abort_early(tmp_path):
@@ -942,11 +991,10 @@ def test_run_long_pipeline_staged_loop_abort_early(tmp_path):
     ):
         mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
 
-        # Process seg aborts early by setting abort flag
-        def abort_side_effect(i):
-            set_director_abort(True)
-
-        mock_make_seg.return_value = abort_side_effect
+        # Abort is triggered by scripts phase to simulate mid-batch abort
+        _noop = lambda x: None
+        _abort_phase = lambda segs: set_director_abort(True)
+        mock_make_seg.return_value = (_noop, _abort_phase, _noop, _noop, _noop, _noop)
 
         with patch("utils.load_config", return_value=cfg):
             res = run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
@@ -996,12 +1044,14 @@ def test_run_long_pipeline_preview_and_exceptions(tmp_path):
         patch("utils.context_manager.ContextWindowManager"),
         patch("core.main.create_director"),
         patch("core.pipeline_long.plan_outline") as mock_plan_outline,
-        patch("core.pipeline_long.make_process_segment"),
+        patch("core.pipeline_long.make_process_segment") as mock_make_seg,
         patch(
             "audio.audio_proxy.normalize_tts_engine", return_value="supertonic"
         ),  # different from invalid-engine
         patch("core.pipeline_long.build_retry_wrapper") as mock_wrapper,
     ):
+        _noop = lambda x: None
+        mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
         mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
         # mock wrapper to raise exception to trigger 540-541
         mock_wrapper.return_value = MagicMock(side_effect=RuntimeError("executor err"))
@@ -1043,7 +1093,9 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
         patch("core.pipeline_long.build_retry_wrapper") as mock_wrapper,
         patch("core.pipeline_long.evict_ollama_models"),
     ):
+        _noop = lambda x: None
         mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
         mock_wrapper.return_value = MagicMock(side_effect=RuntimeError("staged executor err"))
 
         with patch("utils.load_config", return_value=cfg):
@@ -1070,7 +1122,8 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
         patch("core.pipeline_long.evict_ollama_models"),
     ):
         mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
-        mock_make_seg.return_value = lambda i: None
+        _noop = lambda x: None
+        mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
 
         with patch("utils.load_config", return_value=cfg):
             res = run_long_pipeline(topic="test_topic", resume=True, dry_run=True)
@@ -1168,7 +1221,11 @@ def test_role_normalization_single_named_char_keeps_max_weight(tmp_path):
         def run_seg(seg_idx):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -1241,7 +1298,11 @@ def test_role_normalization_three_named_characters_map_independently(tmp_path):
         def run_seg(seg_idx):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -1308,7 +1369,11 @@ def test_role_normalization_environment_removed(tmp_path):
         def run_seg(seg_idx):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -1368,7 +1433,11 @@ def test_role_normalization_non_dict_frames_unchanged(tmp_path):
         def run_seg(seg_idx):
             if mp4s_list is not None and seg_idx - 1 < len(mp4s_list):
                 mp4s_list[seg_idx - 1] = Path(f"segment_{seg_idx}.mp4")
-        return run_seg
+        def fake_render_phase(segment_indices):
+            for si in segment_indices:
+                run_seg(si)
+
+        return run_seg, lambda x: None, lambda x: None, lambda x: None, lambda x: None, fake_render_phase
 
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
@@ -1413,3 +1482,13 @@ def test_role_normalization_non_dict_frames_unchanged(tmp_path):
         # step itself should not have crashed or turned it into something unexpected.
         assert isinstance(cp[1], dict)  # env_ratio converted None → {}
         assert "protagonist" not in cp[1]  # no role keys leaked into the non-dict frame
+
+
+def test_run_long_pipeline_signature_excludes_director_mode():
+    """run_long_pipeline no longer accepts director_mode (removed in Plan 001)."""
+    import inspect
+
+    from core.pipeline_long import run_long_pipeline
+
+    sig = inspect.signature(run_long_pipeline)
+    assert "director_mode" not in sig.parameters

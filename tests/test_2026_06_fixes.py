@@ -430,12 +430,12 @@ class TestBreakerOpenCarriesRealCooldown:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# WorkloadScheduler: HEAVY/LIGHT timeout branches + _Count callable
+# WorkloadScheduler: HEAVY/LIGHT timeout branches
 # ═════════════════════════════════════════════════════════════════════════════
 
 
 class TestWorkloadSchedulerTimeouts:
-    """Cover the timeout branches (lines 55-56, 80-81) and _Count (line 28)."""
+    """Cover the timeout branches (lines 55-56, 80-81)."""
 
     def test_heavy_timeout_raises_timeout_error(self):
         """When heavy semaphore can't be acquired within timeout, TimeoutError is raised."""
@@ -462,32 +462,6 @@ class TestWorkloadSchedulerTimeouts:
             with pytest.raises(TimeoutError, match=r"LIGHT task.*timed out"):
                 with sched.task("LIGHT", "test-light-timeout"):
                     pass  # pragma: no cover
-
-    def test_count_is_callable(self):
-        """_Count objects can be called like a method (returns self)."""
-        from utils.concurrency import _Count
-
-        c = _Count(5)
-        assert c() == 5
-        assert c() is c
-
-    def test_count_iadd_preserves_type(self):
-        """_Count += int returns a _Count, not a plain int."""
-        from utils.concurrency import _Count
-
-        c = _Count(3)
-        c += 2
-        assert isinstance(c, _Count)
-        assert c == 5
-
-    def test_count_isub_preserves_type(self):
-        """_Count -= int returns a _Count."""
-        from utils.concurrency import _Count
-
-        c = _Count(10)
-        c -= 4
-        assert isinstance(c, _Count)
-        assert c == 6
 
     def test_heavy_task_runs_successfully(self):
         """Happy path: HEAVY task acquires, runs, and releases the slot."""

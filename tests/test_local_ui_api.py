@@ -1,6 +1,6 @@
 """Tests for the new local_ui.py endpoints: chat, preflight, artifacts, memory, characters, config/jobs extensions."""
 
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -333,7 +333,6 @@ class TestJobsExtension:
             "no_resume": True,
             "project": "myproj",
             "series": True,
-            "director_mode": False,
             "run_mode": "project",
             "eval_models": False,
             "preview": False,
@@ -359,6 +358,21 @@ class TestJobsExtension:
 
         assert resp.status_code == 400
         assert "run_mode must be one of" in resp.json()["message"]
+
+    @patch("utils.local_ui.job_store")
+    def test_post_jobs_director_mode_not_in_worker_args(self, mock_store):
+        """director_mode was removed in Plan 001; worker must not pass it to CLI."""
+        mock_store.create_job.return_value = 99
+        mock_store.append_event = MagicMock()
+        mock_store.list_jobs.return_value = []
+
+        payload = {"topic": "T", "director_mode": True}
+        resp = client.post("/api/jobs", json=payload)
+        assert resp.status_code == 200
+        # The worker's supported_args set excludes director_mode,
+        # so it won't appear in the CLI command even if the payload contains it.
+        req = resp.json()["request"]
+        assert req["topic"] == "T"
 
     @patch("utils.local_ui.job_store")
     def test_upload_script_rejects_invalid_run_mode(self, mock_store):
@@ -444,7 +458,7 @@ class TestABExtension:
     @patch("utils.local_ui.load_config")
     def test_ab_pick_returns_destination_paths(self, mock_load_config):
         from pathlib import Path as RealPath
-        mock_load_config.return_value = {"image_gen": {"backend": "bonsai"}}
+        mock_load_config.return_value = {"image_gen": {"backend": "comfyui"}}
 
         # Create test dirs in real studio_outputs to avoid path resolution issues
         test_variant_dir = RealPath("studio_outputs") / "ab_test" / "testjob_abtest" / "variant_a"

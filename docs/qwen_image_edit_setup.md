@@ -1,6 +1,6 @@
 # Qwen-Image-Edit two-pass setup
 
-This feature is optional and ships off by default. It keeps the current fast image path unchanged until you explicitly enable `image_gen.composition_mode: qwen_edit` and `image_gen.qwen_edit.enabled: true`.
+This feature uses Nunchaku INT4 and ships enabled behind live RAM/VRAM admission gates. When the machine has less than the configured headroom, it logs the reason and uses the normal one-pass ComfyUI path without attempting Qwen.
 
 ## What it does
 
@@ -17,14 +17,14 @@ The output frame path is unchanged. Qwen overwrites/copies back to the same fram
 
 ```yaml
 image_gen:
-  composition_mode: one_pass
+  composition_mode: qwen_edit
   qwen_edit:
-    enabled: false
+    enabled: true
 ```
 
 Do not commit a config change that enables Qwen by default. Enable it only in a local test config or a temporary working tree while running the GPU spike.
 
-## Post-merge normal-mode regression
+## Resource-gated normal-mode regression
 
 Run these before the GPU spike to prove the merge did not change the default path:
 
@@ -33,10 +33,10 @@ git checkout main
 git pull origin main
 ```
 
-Confirm the default config is still off:
+Confirm Qwen is enabled with the calibrated resource gates:
 
 ```powershell
-Select-String -Path config\config.yaml -Pattern "composition_mode: one_pass", "enabled: false"
+Select-String -Path config\config.yaml -Pattern "composition_mode: qwen_edit", "enabled: true", "min_available_ram_gib: 8.0", "min_free_vram_mib: 5000"
 ```
 
 Run the focused tests:
@@ -66,13 +66,13 @@ Use the harness before the hardware run to keep the Qwen validation focused and 
 venv\Scripts\python.exe scripts\qwen_edit_spike_check.py --strict-defaults
 ```
 
-The script checks that the committed config still keeps Qwen off by default, verifies the workflow template path, reports missing local-only Qwen model/custom-node paths, prints the focused pytest/Ruff commands, and writes a paste-ready Issue #23 result template to:
+The script checks that the committed config selects resource-gated Qwen, verifies the workflow template/model/custom-node paths, prints the focused pytest/Ruff commands, and writes a paste-ready Issue #23 result template to:
 
 ```text
 .qwen_edit_cache/qwen_local_spike_results.md
 ```
 
-Missing model/custom-node checks are expected before local installation. They are a reminder to fill `model_path` only in a local test config or temporary working tree. Do not commit enabled Qwen defaults.
+When the model or custom node is absent, preflight falls back to one-pass. When live RAM or VRAM is below the configured threshold, admission also falls back before Qwen allocation.
 
 ## Recommended 6 GB setup
 
@@ -82,9 +82,9 @@ Suggested config block:
 
 ```yaml
 image_gen:
-  composition_mode: one_pass   # keep default off
+  composition_mode: qwen_edit
   qwen_edit:
-    enabled: false
+    enabled: true
     backend: nunchaku
     workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
     model_path: ""
@@ -92,9 +92,9 @@ image_gen:
     steps: 8
     cfg: 1.0
     denoise: 0.6
-    max_resolution: 1024
-    youtube_aspect: "16:9"
     vram_offload: true
+    min_available_ram_gib: 8.0
+    min_free_vram_mib: 5000
     trigger: any_character
     character_threshold: 0.05
     cache_dir: .qwen_edit_cache
@@ -104,15 +104,7 @@ image_gen:
       - ComfyUI-nunchaku
 ```
 
-To enable after installation in a **local-only test config**:
-
-```yaml
-image_gen:
-  composition_mode: qwen_edit
-  qwen_edit:
-    enabled: true
-    model_path: external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors
-```
+The committed `model_path` points at the locally installed INT4 model. If it is missing, preflight keeps the one-pass result.
 
 For YouTube 1080p framing, start with a 1024-class 16:9 generation size:
 
@@ -121,10 +113,9 @@ image_gen:
   comfyui:
     width: 1024
     height: 576
-  qwen_edit:
-    max_resolution: 1024
-    youtube_aspect: "16:9"
 ```
+
+The committed Qwen workflow independently scales its edit input to about one megapixel; there are no separate Qwen resolution keys in the strict config schema.
 
 ## Workflow template
 
@@ -261,7 +252,7 @@ Do not touch `rust/**`, `video/renderer/**`, `audio/**`, `bootstrap_pipeline.py`
 
 ## Smoke test checklist
 
-- `image_gen.composition_mode` is still `one_pass` on main config before testing.
+- `image_gen.composition_mode` is `qwen_edit` and both live resource gates are configured.
 - `preflight_qwen_edit(config)` returns no missing items after you fill model paths and install nodes.
 - One 1024x576 frame with a saved character completes without OOM.
 - A 3-frame run completes with one Qwen load pass after the SD1.5 background pass.

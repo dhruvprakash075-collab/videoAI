@@ -60,7 +60,13 @@ class ComfyUIClient:
             cb.record_failure()
             try:
                 error_body = json.loads(e.read().decode("utf-8"))
-                raise ComfyUIError(f"HTTP {e.code}: {error_body.get('error', e.reason)}") from e
+                msg = f"HTTP {e.code}: {error_body.get('error', e.reason)}"
+                node_errors = error_body.get("node_errors")
+                if node_errors:
+                    msg += f" | node_errors: {json.dumps(node_errors, default=str)}"
+                raise ComfyUIError(msg) from e
+            except ComfyUIError:
+                raise
             except Exception:
                 raise ComfyUIError(f"HTTP {e.code}: {e.reason}") from e
         except urllib.error.URLError as e:

@@ -33,7 +33,6 @@ Schema-validated at startup by `config/config_schemas.py` (Pydantic). Unknown ke
 | `audio_fx` | `enabled` | `true` | Only `thunder.wav` SFX bundled |
 | `whisper_model` | — | `"tiny"` | Subtitle alignment (fast pass) |
 | `whisper_model_final` | — | `"base"` | Final subtitle render |
-| `loudnorm_two_pass` | — | `true` | Two-pass Loudnorm enabled |
 | `target_lufs` | — | `-14` | LUFS target for mastering |
 
 ### TTS engine fallback chain (2026-06-04)
@@ -106,7 +105,7 @@ styles:
 
 **Primary backend: ComfyUI** (with Bonsai 4B ternary as fallback).
 ComfyUI runs locally (auto-started) and supports multiple composition modes:
-`one_pass` (default), `layered_v3` (character+background passes), `qwen_edit` (two-pass character insertion).
+`one_pass` (default), `qwen_edit` (two-pass character insertion).
 
 Bonsai 4B ternary + IP-Adapter FLUX v2 is the **fallback backend** used when ComfyUI is unavailable or fails.
 Character face consistency via IP-Adapter referencing per-character master portraits works in both backends.
@@ -122,8 +121,6 @@ image_gen:
   guidance_scale: 3.5
   ip_adapter_scale: 0.8                     # 0.0–1.0; balance between prompt adherence and face lock
   lock_seed: true
-  preview_steps: 12
-  oom_recovery: true                         # 2-tier ladder (see runtime_safety_guide.md §4)
   upscaler: { model: "none", model_path: "", scale: 4 }
 
   # ComfyUI-specific
@@ -142,11 +139,48 @@ image_gen:
     steps: 20
     cfg: 7.0
 
+  qwen_edit:
+    enabled: true                           # live RAM/VRAM gates decide admission
+    backend: "nunchaku"
+    workflow_path: "config/comfyui/workflows/qwen_image_edit_api.json"
+    model_path: "external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors"
+    steps: 8
+    cfg: 1.0
+    denoise: 0.6
+    min_available_ram_gib: 8.0
+    min_free_vram_mib: 5000
+    required_custom_nodes: ["ComfyUI-nunchaku"]
+
   # Character portrait generation (lazy, on first frame with char_presence ≥ 0.3)
   # No "negative_prompt" — FLUX-style models do not use them
   # No "lora_*" — LoRA removed; consistency is via IP-Adapter
   # No "xformers" / "channels_last" / "cpu_offload" — sequential VRAM keeps peak ~3.5GB
   # No "acceleration" — Bonsai is already distilled and fast
+```
+
+The 6 GiB Phase 6 profile keeps one transformer block on the GPU with CPU
+offload enabled. Run its read-only checks with:
+
+```powershell
+venv\Scripts\python.exe scripts\phase6_acceptance.py --dry-run
+```
+
+The hardware run requires at least 8 GiB free RAM and an elevated terminal so
+the script can block ComfyUI's outbound internet access. It sets Hugging Face,
+Transformers, and Diffusers offline flags, verifies the firewall block, reserves
+1.25 GiB VRAM, watches GPU/RAM continuously, and aborts before inference when a
+gate fails. Install only the pinned package wheel, then run one frame:
+
+```powershell
+venv\Scripts\python.exe scripts\phase6_acceptance.py --install-nunchaku
+venv\Scripts\python.exe scripts\phase6_acceptance.py --run
+```
+
+After inspecting the generated PNG at original resolution, approve the existing
+run directory without generating a second frame:
+
+```powershell
+venv\Scripts\python.exe scripts\phase6_acceptance.py --approve-output evidence\phase6\YYYYMMDD_HHMMSS
 ```
 
 **Character data** in the Director overlay may include an optional

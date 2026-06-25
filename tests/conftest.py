@@ -38,6 +38,12 @@ def pytest_collection_modifyitems(config, items):
             if "smoke" in item.keywords:
                 item.add_marker(skip_smoke)
 
+# Disable CUDA globally in tests to prevent GPU driver crashes on low-VRAM
+# cards (RTX 4050 6GB). Many source files do `import torch` inside functions,
+# which initializes CUDA (~500MB-1GB VRAM). Tests don't need real CUDA — they
+# all patch/mock torch.cuda.*. Set before any torch import can happen.
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+
 # Suppress pyarrow C++ shutdown crash on Windows (DLL unloading order).
 # The pyarrow Windows wheel triggers an access violation at process exit when
 # native DLLs are unloaded in the wrong order. This flag tells pyarrow to skip
