@@ -137,7 +137,6 @@ _COMFYUI_UI_DEFAULTS = {
     "pollSeconds": 1,
     "unloadAfterBatch": True,
     "openBrowser": False,
-    "fallbackBackend": "none",
 }
 
 
@@ -205,9 +204,6 @@ def _comfyui_config_for_ui(config: dict) -> dict:
             comfy_cfg.get("unload_after_batch", _COMFYUI_UI_DEFAULTS["unloadAfterBatch"])
         ),
         "openBrowser": bool(comfy_cfg.get("open_browser", _COMFYUI_UI_DEFAULTS["openBrowser"])),
-        "fallbackBackend": image_cfg.get(
-            "fallback_backend", _COMFYUI_UI_DEFAULTS["fallbackBackend"]
-        ),
     }
 
 
@@ -738,7 +734,6 @@ async def save_ui_config(
     comfyui_poll_seconds: float | None = Form(None),
     comfyui_unload_after_batch: str | None = Form(None),
     comfyui_open_browser: str | None = Form(None),
-    comfyui_fallback_backend: str | None = Form(None),
 ):
     try:
         # Load, modify, and save config
@@ -768,12 +763,6 @@ async def save_ui_config(
                 raise ValueError("composition_mode must be 'one_pass' or 'qwen_edit'")
             image_cfg["composition_mode"] = cm
             image_cfg.setdefault("qwen_edit", {})["enabled"] = cm == "qwen_edit"
-
-        if comfyui_fallback_backend:
-            fallback = comfyui_fallback_backend.strip().lower()
-            if fallback not in {"none"}:
-                raise ValueError("comfyui_fallback_backend must be 'none'")
-            image_cfg["fallback_backend"] = fallback
 
         if any(
             value is not None

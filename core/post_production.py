@@ -96,7 +96,7 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
     log.info(f"[MANIFEST] Run manifest written: {manifest_path}")
 
 
-def _write_chapters(outline: list, mp4s: list, final_out: Path, topic: str) -> None:
+def _write_chapters(outline: list, mp4s: list, final_out: Path, topic: str) -> list:
     """Write YouTube chapter markers based on actual segment durations."""
     try:
         from agents.ui_state import UIState as _UIS
@@ -169,7 +169,7 @@ def _write_dry_run_chapters(outline: list, final_out: Path, topic: str) -> list:
         return []
 
 
-def _generate_thumbnail(final_video: Path, topic: str) -> str:
+def _generate_thumbnail(final_video: Path, topic: str) -> str | None:
     """Generate a 1280x720 thumbnail from the hero frame. Returns path or None."""
     if not Path(final_video).exists():
         return None

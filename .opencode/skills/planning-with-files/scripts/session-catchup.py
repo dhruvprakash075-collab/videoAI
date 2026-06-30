@@ -9,10 +9,11 @@ Usage: python3 session-catchup.py [project-path]
 """
 
 import json
-import sys
 import os
+import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 try:
     import orjson
@@ -23,7 +24,7 @@ PLANNING_FILES = ['task_plan.md', 'progress.md', 'findings.md']
 MIN_SESSION_BYTES = 5000
 
 
-def json_loads(line: str) -> Optional[Dict[str, Any]]:
+def json_loads(line: str) -> dict[str, Any] | None:
     """Prefer optional orjson while keeping the hook dependency-free."""
     try:
         if orjson is not None:
@@ -36,7 +37,7 @@ def json_loads(line: str) -> Optional[Dict[str, Any]]:
 
 
 def normalize_for_compare(path_value: str) -> str:
-    expanded = os.path.expanduser(path_value)
+    expanded = str(Path(path_value).expanduser())
     try:
         return str(Path(expanded).resolve())
     except (OSError, ValueError):
@@ -83,7 +84,7 @@ def get_claude_project_dir(project_path: str) -> Path:
     return Path.home() / '.claude' / 'projects' / sanitized
 
 
-def get_sessions_sorted(project_dir: Path) -> List[Path]:
+def get_sessions_sorted(project_dir: Path) -> list[Path]:
     """Get all session files sorted by modification time (newest first)."""
     sessions = list(project_dir.glob('*.jsonl'))
     main_sessions = [s for s in sessions if not s.name.startswith('agent-')]
@@ -104,10 +105,10 @@ def is_substantial_session(session: Path) -> bool:
         return False
 
 
-def read_codex_meta(session_file: Path) -> Optional[Dict[str, Any]]:
+def read_codex_meta(session_file: Path) -> dict[str, Any] | None:
     """Read the first session_meta; later meta records may be copied parent context."""
     try:
-        with open(session_file, 'r', encoding='utf-8', errors='replace') as f:
+        with open(session_file, encoding='utf-8', errors='replace') as f:
             for line in f:
                 data = json_loads(line)
                 if not data or data.get('type') != 'session_meta':
@@ -119,12 +120,12 @@ def read_codex_meta(session_file: Path) -> Optional[Dict[str, Any]]:
     return None
 
 
-def codex_meta_cwd(meta: Dict[str, Any]) -> Optional[str]:
+def codex_meta_cwd(meta: dict[str, Any]) -> str | None:
     cwd = meta.get('cwd')
     return cwd if isinstance(cwd, str) else None
 
 
-def find_current_codex_session(sessions: List[Path]) -> Optional[Path]:
+def find_current_codex_session(sessions: list[Path]) -> Path | None:
     thread_id = os.getenv('CODEX_THREAD_ID', '').strip()
     if not thread_id:
         return None
@@ -150,7 +151,7 @@ def is_codex_project_session(session: Path, project_cmp: str) -> bool:
 
 
 def get_codex_sessions(project_path: str) -> Iterable[Path]:
-    sessions_dir = Path(os.path.expanduser(os.getenv('CODEX_SESSIONS_DIR', '~/.codex/sessions')))
+    sessions_dir = Path(os.getenv('CODEX_SESSIONS_DIR', '~/.codex/sessions')).expanduser()
     if not sessions_dir.exists():
         return
 
@@ -167,7 +168,7 @@ def get_codex_sessions(project_path: str) -> Iterable[Path]:
             yield session
 
 
-def get_session_candidates(project_path: str) -> Tuple[str, Iterable[Path]]:
+def get_session_candidates(project_path: str) -> tuple[str, Iterable[Path]]:
     script_path = Path(__file__).resolve().as_posix().lower()
     if '/.codex/' in script_path:
         return 'codex', get_codex_sessions(project_path)
@@ -184,7 +185,7 @@ def get_session_candidates(project_path: str) -> Tuple[str, Iterable[Path]]:
 PLANNING_LIKE_SQL = ('%task_plan.md', '%findings.md', '%progress.md')
 
 
-def get_opencode_db_path() -> Optional[Path]:
+def get_opencode_db_path() -> Path | None:
     """Resolve OpenCode SQLite path. Same on all OS per xdg-basedir."""
     xdg = os.environ.get('XDG_DATA_HOME')
     if xdg:
@@ -197,7 +198,7 @@ def get_opencode_db_path() -> Optional[Path]:
     return db if db.exists() else None
 
 
-def _format_opencode_part(data: Dict[str, Any], session_id: str) -> Optional[Dict[str, Any]]:
+def _format_opencode_part(data: dict[str, Any], session_id: str) -> dict[str, Any] | None:
     """Print-ready summary for one OpenCode part row."""
     ptype = data.get('type')
     short = session_id[:8] if session_id else '????????'
@@ -270,7 +271,7 @@ def opencode_catchup(project_path: str) -> None:
     update_time = None
     update_idx = -1
     for idx, (sid, _) in enumerate(previous_sessions):
-        params = (sid,) + PLANNING_LIKE_SQL
+        params = (sid, *PLANNING_LIKE_SQL)
         cur.execute(
             """
             SELECT time_created FROM part
@@ -300,7 +301,7 @@ def opencode_catchup(project_path: str) -> None:
 
     newer_sessions = list(reversed(previous_sessions[:update_idx]))
 
-    parts: List[Dict[str, Any]] = []
+    parts: list[dict[str, Any]] = []
 
     cur.execute(
         "SELECT data FROM part WHERE session_id = ? AND time_created > ? ORDER BY time_created ASC, id ASC",
@@ -334,7 +335,7 @@ def opencode_catchup(project_path: str) -> None:
     if not parts:
         return
 
-    print(f"\n[planning-with-files] SESSION CATCHUP DETECTED (IDE: opencode)")
+    print("\n[planning-with-files] SESSION CATCHUP DETECTED (IDE: opencode)")
     print(f"Last planning update in session {update_sid[:8]}...")
     if update_idx + 1 > 1:
         print(f"Scanning {update_idx + 1} previous sessions for unsynced context")
@@ -362,10 +363,10 @@ def opencode_catchup(project_path: str) -> None:
     print("4. Continue with task")
 
 
-def parse_session_messages(session_file: Path) -> List[Dict[str, Any]]:
+def parse_session_messages(session_file: Path) -> list[dict[str, Any]]:
     """Parse all messages from a session file, preserving order."""
     messages = []
-    with open(session_file, 'r', encoding='utf-8', errors='replace') as f:
+    with open(session_file, encoding='utf-8', errors='replace') as f:
         for line_num, line in enumerate(f):
             data = json_loads(line)
             if data is not None:
@@ -374,7 +375,7 @@ def parse_session_messages(session_file: Path) -> List[Dict[str, Any]]:
     return messages
 
 
-def planning_file_from_path(path_value: Any) -> Optional[str]:
+def planning_file_from_path(path_value: Any) -> str | None:
     if not isinstance(path_value, str):
         return None
     for pf in PLANNING_FILES:
@@ -383,7 +384,7 @@ def planning_file_from_path(path_value: Any) -> Optional[str]:
     return None
 
 
-def planning_file_from_paths(paths: Iterable[Any]) -> Optional[str]:
+def planning_file_from_paths(paths: Iterable[Any]) -> str | None:
     matches = {pf for path in paths if (pf := planning_file_from_path(path))}
     for pf in PLANNING_FILES:
         if pf in matches:
@@ -391,7 +392,7 @@ def planning_file_from_paths(paths: Iterable[Any]) -> Optional[str]:
     return None
 
 
-def codex_planning_update(payload: Dict[str, Any]) -> Optional[str]:
+def codex_planning_update(payload: dict[str, Any]) -> str | None:
     """Use Codex's structured apply_patch result instead of parsing tool text."""
     if payload.get('type') != 'patch_apply_end' or payload.get('success') is not True:
         return None
@@ -399,7 +400,7 @@ def codex_planning_update(payload: Dict[str, Any]) -> Optional[str]:
     return planning_file_from_paths(changes.keys()) if isinstance(changes, dict) else None
 
 
-def find_last_planning_update(messages: List[Dict[str, Any]]) -> Tuple[int, Optional[str]]:
+def find_last_planning_update(messages: list[dict[str, Any]]) -> tuple[int, str | None]:
     """
     Find the last time a planning file was written/edited.
     Returns (line_number, filename) or (-1, None) if not found.
@@ -452,7 +453,7 @@ def text_content(content: Any) -> str:
     )
 
 
-def parse_codex_tool_args(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+def parse_codex_tool_args(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     raw_args = payload.get('arguments', payload.get('input', ''))
     if isinstance(raw_args, dict):
         return raw_args, json.dumps(raw_args, ensure_ascii=True)
@@ -462,7 +463,7 @@ def parse_codex_tool_args(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], str]
     return (decoded, raw_args) if isinstance(decoded, dict) else ({}, raw_args)
 
 
-def summarize_codex_tool(payload: Dict[str, Any]) -> str:
+def summarize_codex_tool(payload: dict[str, Any]) -> str:
     tool_name = payload.get('name', 'tool')
     tool_args, raw_args = parse_codex_tool_args(payload)
     if tool_name == 'exec_command':
@@ -472,7 +473,7 @@ def summarize_codex_tool(payload: Dict[str, Any]) -> str:
     return str(tool_name)
 
 
-def extract_messages_after(messages: List[Dict[str, Any]], after_line: int) -> List[Dict[str, Any]]:
+def extract_messages_after(messages: list[dict[str, Any]], after_line: int) -> list[dict[str, Any]]:
     """Extract conversation messages after a certain line number."""
     result = []
     for msg in messages:
@@ -557,7 +558,7 @@ def extract_messages_after(messages: List[Dict[str, Any]], after_line: int) -> L
 
 
 def main():
-    project_path = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    project_path = sys.argv[1] if len(sys.argv) > 1 else str(Path.cwd())
 
     # Check if planning files exist (indicates active task)
     has_planning_files = any(

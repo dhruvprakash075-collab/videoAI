@@ -64,7 +64,7 @@ class UIState:
 
     status = "running"
 
-    logs = []
+    logs: list[str] = []
 
     _log_maxlen = 1000
 

@@ -697,7 +697,6 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
     model = cfg.get("models", {}).get(
         "translator", cfg.get("models", {}).get("writer", "zephyr-writer")
     )
-    host = cfg.get("ollama", {}).get("host", "http://localhost:11434")
     from config.config import get_language
 
     tts_lang = get_language(cfg)

@@ -30,7 +30,6 @@ class TestConfigAPI:
                     "timeout_seconds": 300,
                     "poll_seconds": 1.0,
                 },
-                "fallback_backend": "none",
             },
         }
 
@@ -176,80 +175,6 @@ class TestConfigAPI:
             assert response.status_code == 400
             data = response.json()
             assert "comfyui" in data.get("message", "").lower()
-
-    def test_save_config_validates_fallback_backend(self, mock_config):
-        with patch("utils.local_ui.load_config", return_value=mock_config):
-            from fastapi.testclient import TestClient
-
-            from utils.local_ui import app
-
-            client = TestClient(app)
-            response = client.post(
-                "/api/config",
-                data={
-                    "voice_engine": "omnivoice",
-                    "dynamic_subtitles": "false",
-                    "uncapped_scaling": "false",
-                    "max_images_per_segment": 6,
-                    "comfyui_fallback_backend": "invalid",
-                },
-            )
-
-            assert response.status_code == 400
-            data = response.json()
-            assert "bonsai" in data.get("message", "").lower() or "none" in data.get("message", "").lower()
-
-    @patch("utils.local_ui.load_config")
-    @patch("builtins.open", MagicMock())
-    @patch("os.replace", MagicMock())
-    @patch("yaml.safe_dump")
-    def test_save_config_rejects_bonsai_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
-        mock_load_config.return_value = mock_config.copy()
-
-        from fastapi.testclient import TestClient
-
-        from utils.local_ui import app
-
-        client = TestClient(app)
-        response = client.post(
-            "/api/config",
-            data={
-                "voice_engine": "omnivoice",
-                "dynamic_subtitles": "false",
-                "uncapped_scaling": "false",
-                "max_images_per_segment": 6,
-                "comfyui_fallback_backend": "bonsai",
-            },
-        )
-
-        assert response.status_code == 400
-
-    @patch("utils.local_ui.load_config")
-    @patch("builtins.open", MagicMock())
-    @patch("os.replace", MagicMock())
-    @patch("yaml.safe_dump")
-    def test_save_config_accepts_none_fallback(self, mock_yaml_dump, mock_load_config, mock_config):
-        mock_load_config.return_value = mock_config.copy()
-
-        from fastapi.testclient import TestClient
-
-        from utils.local_ui import app
-
-        client = TestClient(app)
-        response = client.post(
-            "/api/config",
-            data={
-                "voice_engine": "omnivoice",
-                "dynamic_subtitles": "false",
-                "uncapped_scaling": "false",
-                "max_images_per_segment": 6,
-                "comfyui_fallback_backend": "none",
-            },
-        )
-
-        assert response.status_code == 200
-        saved_config = mock_yaml_dump.call_args[0][0]
-        assert saved_config["image_gen"]["fallback_backend"] == "none"
 
     def test_get_config_with_comfyui_backend(self):
         config = {

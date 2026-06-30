@@ -151,7 +151,6 @@ image_gen:
     poll_seconds: 1.0
     auto_start_timeout: 60
     unload_after_batch: true
-  fallback_backend: none
   composition_mode: qwen_edit
   qwen_edit:
     enabled: true

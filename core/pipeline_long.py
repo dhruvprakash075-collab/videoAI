@@ -296,8 +296,7 @@ def run_long_pipeline(
     mp4s: list[Path | None] = [None] * n_segs
     mp4s_lock = threading.Lock()
 
-    # Master portraits are generated lazily on first character appearance
-    # (triggered inside image_gen._bonsai()). No upfront session needed.
+    # Master portraits are generated lazily on first character appearance.
     completed_segs_counter_holder = [0]
     completed_segs_lock = threading.Lock()
 

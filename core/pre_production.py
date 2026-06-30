@@ -318,8 +318,6 @@ def generate_master_portrait(
     Stubbed: Bonsai was removed. Returns a placeholder in dry_run mode,
     None otherwise.
     """
-    char_name = char_data.get("name", char_key)
-
     if dry_run:
         out_dir = Path("studio_projects") / project_id / "characters" / char_key
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -335,7 +333,7 @@ def generate_master_portrait(
             log.warning(f"[Portrait][dry_run] placeholder failed: {e}")
             return None
 
-    log.warning(f"[Portrait] generate_master_portrait not available (Bonsai removed)")
+    log.warning("[Portrait] generate_master_portrait not available (Bonsai removed)")
     return None
 
 
@@ -833,6 +831,16 @@ def run_pre_production(
             config_overlay.setdefault("tts", {})["engine"] = _norm_ov_engine
     except Exception as _ne:
         log.debug(f"[PRE-PROD] TTS engine normalization skipped: {_ne}")
+
+    # Enforce operator-locked manga style before persisting the overlay used
+    # for resume/debug. Runtime also enforces this after merging, but saving the
+    # pre-lock overlay can reintroduce Director style drift on later resumes.
+    try:
+        from utils.scene_director import _enforce_visual_style_lock
+
+        config_overlay = _enforce_visual_style_lock(config_overlay, config)
+    except Exception as _style_lock_err:
+        log.debug(f"[PRE-PROD] Visual style lock skipped before overlay save: {_style_lock_err}")
 
     # Save overlay for series reuse
     overlay_dir = Path("studio_checkpoints")
