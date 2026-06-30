@@ -366,7 +366,6 @@ class ImageGenConfig(BaseModel):
     seed: int = -1
     upscaler: UpscalerConfig = Field(default_factory=UpscalerConfig)
     comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
-    fallback_backend: str = "none"
     composition_mode: str = "one_pass"
     qwen_edit: QwenEditConfig = Field(default_factory=QwenEditConfig)
 
