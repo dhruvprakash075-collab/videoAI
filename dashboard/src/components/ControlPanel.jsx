@@ -34,7 +34,6 @@ const DEFAULT_CONFIG = {
     pollSeconds: 1,
     unloadAfterBatch: true,
     openBrowser: false,
-    fallbackBackend: 'none',
   },
 };
 
@@ -45,10 +44,6 @@ const BACKEND_OPTIONS = [
 const COMPOSITION_OPTIONS = [
   { value: 'one_pass', label: 'One Pass' },
   { value: 'qwen_edit', label: 'Qwen Edit (resource gated)' },
-];
-
-const FALLBACK_OPTIONS = [
-  { value: 'none', label: 'None' },
 ];
 
 const SAMPLER_OPTIONS = ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_sde', 'ddim'];
@@ -128,7 +123,6 @@ formData.append('voice_engine', config.voiceEngine);
       formData.append('comfyui_poll_seconds', comfyUi.pollSeconds);
       formData.append('comfyui_unload_after_batch', String(comfyUi.unloadAfterBatch));
       formData.append('comfyui_open_browser', String(comfyUi.openBrowser));
-      formData.append('comfyui_fallback_backend', comfyUi.fallbackBackend);
 
       const res = await fetch(`${API_BASE}/api/config`, { method: 'POST', body: formData });
       const result = await res.json();
@@ -382,12 +376,6 @@ function ComfyUiAdvanceSettings({ config, update, updateComfyUi }) {
             onChange={(value) => updateComfyUi({ pollSeconds: value })}
           />
         </div>
-        <SelectField
-          label="Fallback Backend"
-          value={comfyUi.fallbackBackend}
-          options={FALLBACK_OPTIONS}
-          onChange={(value) => updateComfyUi({ fallbackBackend: value })}
-        />
         <ToggleRow
           title="Unload After Batch"
           description="Ask ComfyUI to release models after generated images finish."
