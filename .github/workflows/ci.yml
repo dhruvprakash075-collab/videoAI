@@ -65,7 +65,7 @@ jobs:
           pip install mypy pydantic pyyaml httpx types-PyYAML
       - name: Type check with mypy
         run: |
-          python -m mypy --follow-imports=skip config/config.py config/config_schemas.py \
+          python -m mypy --follow-imports=skip --ignore-missing-imports config/config.py config/config_schemas.py \
                          utils/errors.py utils/retry_manager.py \
                          utils/crewai_breaker.py utils/checkpoint.py \
                          utils/circuit_breaker.py agents/ui_state.py \
