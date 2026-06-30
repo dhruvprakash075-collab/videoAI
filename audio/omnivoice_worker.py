@@ -32,7 +32,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
-import numpy as np
+import numpy as np  # noqa: I001 — must follow os.environ setup
 import soundfile as sf
 # ponytail: torch imported lazily in _load_model, _set_seed, _install_torchaudio_soundfile_patch
 
