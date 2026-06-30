@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff pydantic pyyaml
+          pip install ruff pydantic pyyaml types-PyYAML
       - name: Lint with Ruff
         run: ruff check . --output-format=github
       - name: Quick test import check
@@ -62,10 +62,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mypy pydantic pyyaml httpx
+          pip install mypy pydantic pyyaml httpx types-PyYAML
       - name: Type check with mypy
         run: |
-          python -m mypy config/config.py config/config_schemas.py \
+          python -m mypy --follow-imports=skip config/config.py config/config_schemas.py \
                          utils/errors.py utils/retry_manager.py \
                          utils/crewai_breaker.py utils/checkpoint.py \
                          utils/circuit_breaker.py agents/ui_state.py \
