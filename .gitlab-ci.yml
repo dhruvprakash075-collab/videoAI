@@ -65,7 +65,7 @@ skylos-scan:
     # skylos renamed --output-file to --output in a recent release; uvx
     # always installs the latest version, which broke this job without
     # any change on our side. Consider pinning (uvx skylos==X.Y.Z).
-    - uvx skylos . -a --exclude "**/venv* **/indicf5* **/__pycache__ **/*cache* **/external* **/studio_outputs*" --format concise --output diagnostics/skylos_ci_scan.txt
+    - uvx skylos . -a --exclude "**/venv* **/__pycache__ **/*cache* **/external* **/studio_outputs*" --format concise --output diagnostics/skylos_ci_scan.txt
   # after_script runs even though the scan exits non-zero (it would be
   # skipped if appended to script). It echoes the report into the job
   # log so findings are reviewable without downloading artifacts.
