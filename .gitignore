@@ -98,6 +98,8 @@ dashboard/coverage/
 # ── Local external checkouts / vendored runtime clones ───────────
 external/ComfyUI/
 external/supertonic_embed/
+external/ponytail/
+external/shadcn-improve/
 
 # ── Model files (multi-GB, never commit) ──────────────────────────
 *.gguf
