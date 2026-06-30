@@ -25,15 +25,7 @@ transformers>=5.10.2
 # torch>=2.6.0
 # torchaudio>=2.6.0
 
-# ── Image generation (Bonsai via diffusers) ───────────────────────
-diffusers>=0.38.0
-# Bonsai 4B ternary + IP-Adapter FLUX v2 need these (sequential VRAM, no offload needed)
-gemlite>=0.5.0
-hqq>=0.2.8
-# triton-windows is Windows-only; Linux uses system triton
-# triton-windows>=3.7.0 ; sys_platform == "win32"
-# xformers skipped on Windows (requires triton, unavailable)
-# xformers>=0.0.29
+# ── Image generation (ComfyUI / Qwen-Image-Edit) ────────────────────
 
 # ── Optional image backends ───────────────────────────────────────
 
