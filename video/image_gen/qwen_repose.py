@@ -232,20 +232,6 @@ def _ensure_reference_image(project_id: str, char_key: str, config: dict) -> tup
         if path:
             identity_hash = assets.get("identity_hash") or character.get("master_portrait_hash") or _sha256_file(path)
             return path, identity_hash, character
-
-    try:
-        from core.pre_production import generate_master_portrait
-
-        log.info("[qwen_edit] No reference for %s — generating master portrait", char_key)
-        generate_master_portrait(
-            char_key=char_key,
-            project_id=project_id or "_default",
-            char_data=character or {"name": char_key},
-            config={"image_gen": _image_gen_cfg(config)},
-        )
-    except Exception as e:
-        log.warning("[qwen_edit] Could not generate master portrait for %s: %s", char_key, e)
-
     character, assets = _character_data(project_id, char_key)
     candidates = [
         getattr(ps, "get_master_portrait_path", lambda _k: "")(char_key),
