@@ -41,41 +41,6 @@ def test_run_preflight_checks_edge_cases(monkeypatch):
             run_preflight_checks(config={}, dry_run=False)
 
 
-def test_generate_master_portrait_edge_cases(tmp_path, monkeypatch):
-    """Master portrait gen: stubbed path returns None for non-dry-run, placeholder for dry_run."""
-    from core.pre_production import generate_master_portrait
-
-    fake_ps = MagicMock()
-    fake_ps.get_character.return_value = {"name": "H", "visual_description": "long desc of hero"}
-    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    cfg = {"image_gen": {"steps": 4, "guidance_scale": 3.5}}
-
-    # dry_run=False returns None (Bonsai removed)
-    res1 = generate_master_portrait(
-        "char_non_visual",
-        "proj1",
-        {"name": "Non Visual", "visual_description": "smart and intellectual reader"},
-        cfg,
-        dry_run=False,
-    )
-    assert res1 is None
-
-    # dry_run=True returns a placeholder path
-    res2 = generate_master_portrait(
-        "char_no_prompt",
-        "proj1",
-        {"name": "Empty"},
-        cfg,
-        dry_run=True,
-    )
-    assert res2 is not None
-    assert res2.exists()
-
-
-# Old test_run_studio_session_edge_cases removed (Bonsai uses lazy portrait gen)
-# Replaced by test_generate_master_portrait_edge_cases above.
-
 
 def test_seed_director_memory_edge_cases(tmp_path):
     overlay = {

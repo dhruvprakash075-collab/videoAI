@@ -303,61 +303,6 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
             )
 
 
-# ── Master Portrait Generation (stubbed) ──────────────────────
-
-
-def generate_master_portrait(
-    char_key: str,
-    project_id: str,
-    char_data: dict,
-    config: dict,
-    dry_run: bool = False,
-) -> Path | None:
-    """Generate (or regenerate) a master portrait for one character.
-
-    Stubbed: Bonsai was removed. Returns a placeholder in dry_run mode,
-    None otherwise.
-    """
-    if dry_run:
-        out_dir = Path("studio_projects") / project_id / "characters" / char_key
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "master.png"
-        try:
-            from PIL import Image
-
-            Image.new("RGB", (512, 512), (128, 128, 128)).save(out_path, "PNG")
-            log.info(f"[Portrait][dry_run] placeholder saved: {out_path}")
-            _record_portrait_to_store(char_key, project_id, out_path)
-            return out_path
-        except Exception as e:
-            log.warning(f"[Portrait][dry_run] placeholder failed: {e}")
-            return None
-
-    log.warning("[Portrait] generate_master_portrait not available (Bonsai removed)")
-    return None
-
-
-def _record_portrait_to_store(char_key: str, project_id: str, path: Path) -> None:
-    """Update ProjectStore with master_portrait_path + content hash."""
-    try:
-        import hashlib
-
-        content_hash = ""
-        try:
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            content_hash = h.hexdigest()
-        except Exception:
-            pass
-        from memory.project_store import ProjectStore
-
-        ps = ProjectStore(project_id or "_default")
-        ps.set_master_portrait(char_key, str(path), content_hash=content_hash)
-    except Exception as e:
-        log.warning(f"[Portrait] Could not record to project store: {e}")
-
 
 # ── Director memory seeding ───────────────────────────────────────────────
 

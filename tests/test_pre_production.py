@@ -271,73 +271,6 @@ def test_run_preflight_checks_missing_ffmpeg_raises():
             run_preflight_checks(config, dry_run=False)
 
 
-# ── _run_studio_session is removed (Bonsai uses lazy portrait gen) ──────────
-# These tests are replaced by tests for `generate_master_portrait` below.
-
-
-def test_generate_master_portrait_dry_run(tmp_path, monkeypatch):
-    """In dry_run mode, a placeholder PNG is saved and recorded in project store."""
-    from core.pre_production import generate_master_portrait
-
-    fake_ps = MagicMock()
-    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    char_data = {"name": "Hero", "portrait_prompt": "portrait, brown hair, green eyes"}
-    result = generate_master_portrait(
-        char_key="hero",
-        project_id="myproject",
-        char_data=char_data,
-        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
-        dry_run=True,
-    )
-    assert result is not None
-    assert result.exists()
-    assert result.name == "master.png"
-    # Project store was updated
-    fake_ps.set_master_portrait.assert_called_once()
-    call_args = fake_ps.set_master_portrait.call_args
-    assert call_args.args[0] == "hero"
-    assert str(result) in call_args.args[1]
-
-
-def test_generate_master_portrait_no_prompt_falls_back_to_description(tmp_path, monkeypatch):
-    """If no portrait_prompt provided, dry_run-mode generates a placeholder."""
-    from core.pre_production import generate_master_portrait
-
-    fake_ps = MagicMock()
-    fake_ps.get_character.return_value = {}
-    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    char_data = {"name": "Hero", "visual_description": "tall, scar, dark cloak"}
-    result = generate_master_portrait(
-        char_key="hero",
-        project_id="myproject",
-        char_data=char_data,
-        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
-        dry_run=True,
-    )
-    assert result is not None
-    assert result.exists()
-
-
-def test_generate_master_portrait_returns_none_on_no_candidates(tmp_path, monkeypatch):
-    """Stubbed path (dry_run=False) returns None."""
-    from core.pre_production import generate_master_portrait
-
-    fake_ps = MagicMock()
-    fake_ps.get_character.return_value = {}
-    monkeypatch.setattr("memory.project_store.ProjectStore", lambda *a, **kw: fake_ps)
-
-    char_data = {"name": "Hero", "portrait_prompt": "portrait, scar"}
-    result = generate_master_portrait(
-        char_key="hero",
-        project_id="myproject",
-        char_data=char_data,
-        config={"image_gen": {"steps": 4, "guidance_scale": 3.5}},
-        dry_run=False,
-    )
-    assert result is None
-
 
 # ── _seed_director_memory ──────────────────────────────────────────────────────
 
@@ -375,7 +308,6 @@ def test_run_pre_production():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
     ):
@@ -415,7 +347,6 @@ def test_run_pre_production_adaptation():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
         patch("pathlib.Path.exists", return_value=False),
@@ -463,7 +394,6 @@ def test_run_pre_production_series_resume():
     with (
         patch("agents.director_agent.DirectorAgent") as MockDirector,
         patch("core.pre_production._seed_director_memory"),
-        patch("core.pre_production.generate_master_portrait"),
         patch("agents.decision_engine.build_decision_record") as MockBDR,
         patch("memory.blackboard.get_blackboard") as _MockBB,
         patch("pathlib.Path.exists", return_value=True),
