@@ -249,7 +249,7 @@ def require_resource_headroom() -> dict[str, Any]:
     if gpu_processes:
         # Check if ComfyUI is already running
         try:
-            response = urllib.request.urlopen(f"{COMFY_URL}/system_stats", timeout=5)
+            urllib.request.urlopen(f"{COMFY_URL}/system_stats", timeout=5)
             # ComfyUI is running, so GPU processes are expected
             pass
         except Exception:

@@ -20,6 +20,7 @@ import os
 import random
 import sys
 import uuid
+from pathlib import Path
 
 # OmniVoice OOM/hang fix on low-VRAM GPUs (≤8GB) — see k2-fsa/OmniVoice issue #41.
 # expandable_segments lets the CUDA allocator satisfy small inference allocations
@@ -30,7 +31,6 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 # stderr to DEVNULL, but we also lower verbosity so nothing floods stdout either.
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-from pathlib import Path
 
 import numpy as np
 import soundfile as sf
