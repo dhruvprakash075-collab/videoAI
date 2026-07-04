@@ -1,9 +1,0 @@
---- a/studio_tui.py
-+++ b/studio_tui.py
-@@ -190,5 +190,5 @@
- 
-   Run Options (expand the panel above the input):
--    Duration (min), Resume, Skip-RVC, Director mode,
-+    Duration (min), Resume, Director mode,
-     Preview mode, Project name, Story file path
- 

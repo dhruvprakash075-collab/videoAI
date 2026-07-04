@@ -14,27 +14,28 @@ def test_normalize_tts_engine_omnivoice_aliases():
         assert audio_proxy.normalize_tts_engine(s) == "omnivoice"
 
 
-def test_normalize_tts_engine_removed_aliases_default_to_supertonic():
-    for s in ["f5", "edge", "edge-tts", "indicf5", "microsoft"]:
-        assert audio_proxy.normalize_tts_engine(s) == "supertonic"
+def test_normalize_tts_engine_indicf5_aliases():
+    for s in ["f5", "indicf5", "indic-f5", "f5tts", "indic"]:
+        assert audio_proxy.normalize_tts_engine(s) == "indicf5"
 
 
-def test_normalize_tts_engine_unknown_defaults_to_supertonic():
+def test_normalize_tts_engine_unknown_defaults_to_indicf5():
     with patch("audio.audio_proxy.log") as lg:
-        assert audio_proxy.normalize_tts_engine("some random voice") == "supertonic"
+        assert audio_proxy.normalize_tts_engine("some random voice") == "indicf5"
         assert lg.warning.called
 
 
-def test_normalize_tts_engine_non_string_defaults_to_supertonic():
+def test_normalize_tts_engine_non_string_defaults_to_indicf5():
     with patch("audio.audio_proxy.log") as lg:
-        assert audio_proxy.normalize_tts_engine(None) == "supertonic"
-        assert audio_proxy.normalize_tts_engine(123) == "supertonic"
+        assert audio_proxy.normalize_tts_engine(None) == "indicf5"
+        assert audio_proxy.normalize_tts_engine(123) == "indicf5"
         assert lg.warning.called
 
 
 def test_tts_capabilities_keys():
     caps = audio_proxy.tts_capabilities()
-    assert set(caps) == {"supertonic", "omnivoice"}
+    assert set(caps) == {"indicf5", "supertonic", "omnivoice"}
+    assert caps["indicf5"]["voice_cloning"] is True
     assert caps["supertonic"]["vram_hint_gb"] == 0.0
     assert caps["omnivoice"]["voice_cloning"] is True
 
@@ -126,21 +127,44 @@ def test_tts_generate_dispatches_to_omnivoice(tmp_path: Path):
     assert out["wav_path"] == wav_out
 
 
-def test_tts_generate_unknown_engine_falls_back_to_supertonic(tmp_path: Path):
+def test_tts_generate_dispatches_to_indicf5(tmp_path: Path):
     audio_proxy._config_cache.clear()
     wav_out = tmp_path / "u.wav"
     wav_out.write_bytes(b"RIFF")
     with (
         patch(
             "audio.audio_proxy.load_config",
-            return_value={"tts": {"engine": "weirdo", "lang": "hi", "voice_profile": {}}},
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_indicf5_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ) as indicf5,
+    ):
+        out = audio_proxy.tts_generate("x", output_dir=tmp_path)
+    assert indicf5.called
+    assert out["wav_path"] == wav_out
+
+
+def test_tts_generate_indicf5_fails_then_supertonic_succeeds(tmp_path: Path):
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "st.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_indicf5_worker",
+            return_value={"status": "error", "message": "indic fail"},
         ),
         patch(
             "audio.audio_proxy._call_supertonic_worker",
             return_value={"status": "success", "wav_path": str(wav_out)},
         ) as supertonic,
     ):
-        out = audio_proxy.tts_generate("x", output_dir=tmp_path)
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path)
     assert supertonic.called
     assert out["wav_path"] == wav_out
 

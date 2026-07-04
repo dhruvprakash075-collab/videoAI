@@ -185,7 +185,7 @@ def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
     """Verify the configured Supertonic voice JSON file exists on disk."""
     tts = config.get("tts", {})
     if tts.get("engine") != "supertonic":
-        return "skip", "TTS engine is not supertonic"
+        return "skip", f"TTS engine is not supertonic ({tts.get('engine', 'unknown')})"
     voice_path = tts.get("supertonic", {}).get("voice", "")
     if not voice_path:
         return "skip", "no supertonic.voice configured"

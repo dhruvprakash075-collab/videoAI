@@ -148,11 +148,11 @@ def test_tts_schema_rejects_removed_engines_and_subconfigs():
     valid = validate_config({"tts": {"engine": "supertonic"}})
     assert valid["tts"]["engine"] == "supertonic"
 
-    for engine in ("edge", "f5", "indicf5"):
+    for engine in ("edge",):
         with pytest.raises(FatalError, match="Config section 'tts' validation failed"):
             validate_config({"tts": {"engine": engine}})
 
-    for removed_key in ("edge", "f5", "indicf5"):
+    for removed_key in ("edge", "f5"):
         with pytest.raises(FatalError, match="Config section 'tts' validation failed"):
             validate_config({"tts": {"engine": "supertonic", removed_key: {}}})
 

@@ -4,12 +4,13 @@ import { API_BASE } from '../lib/api.js';
 import ToggleRow from './ToggleRow.jsx';
 
 const VOICE_ENGINES = [
+  { id: 'indicf5', label: 'IndicF5',            description: 'Default Hindi cloning voice.' },
   { id: 'supertonic', label: 'Supertonic 3',       description: 'CPU-only, 31 languages, custom voice JSON.' },
   { id: 'omnivoice', label: 'OmniVoice',           description: 'Ultra-expressive local cloning.' },
 ];
 
 const DEFAULT_CONFIG = {
-  voiceEngine: 'supertonic',
+  voiceEngine: 'indicf5',
   dynamicSubtitles: true,
   uncappedScaling: false,
   maxImagesPerSegment: 6,

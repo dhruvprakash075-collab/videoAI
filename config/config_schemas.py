@@ -71,7 +71,7 @@ class VisionDocument(BaseModel):
     emotions: str = "neutral"
     pacing: str = "moderate"
     shot_distribution: ShotDistribution = ShotDistribution()
-    tts_recommendation: Literal["supertonic", "omnivoice"] = "supertonic"
+    tts_recommendation: Literal["indicf5", "supertonic", "omnivoice"] = "indicf5"
     subtitle_style: SubtitleConfig = SubtitleConfig()
     ambiguity_detected: bool = False
     ambiguity_question: str = ""
@@ -163,14 +163,26 @@ class VoiceProfileConfig(BaseModel):
     sentence_gap_ms: int = 200
 
 
+class IndicF5SubConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    root: str = r"D:\IndicF5"
+    python: str = ""
+    ref_audio: str = "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav"
+    ref_text_file: str = "character_voices/narration_ref_9s_mono24k.txt"
+    ref_text: str = ""
+    use_pipeline_voice_sample: bool = False
+    timeout_seconds: int = 900
+
+
 class TTSConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    engine: Literal["supertonic", "omnivoice"] = "supertonic"
+    engine: Literal["indicf5", "supertonic", "omnivoice"] = "indicf5"
     lang: str = "hi"
     voice_samples_dir: str = "character_voices"
     voice_profile: VoiceProfileConfig = Field(default_factory=VoiceProfileConfig)
     devanagari: DevanagariConfig = Field(default_factory=DevanagariConfig)
     supertonic: SuperTonicSubConfig = Field(default_factory=SuperTonicSubConfig)
+    indicf5: IndicF5SubConfig = Field(default_factory=IndicF5SubConfig)
     omnivoice: OmniVoiceSubConfig = Field(default_factory=OmniVoiceSubConfig)
 
     alignment: "AlignmentConfig" = Field(default_factory=lambda: AlignmentConfig())
@@ -456,7 +468,7 @@ class LanguageConfig(BaseModel):
     code: str = Field(
         default="hi", min_length=2, max_length=10, pattern=r"^[a-z]{2}(-[a-z]{2,4})?$"
     )
-    tts_engine: str = "supertonic"
+    tts_engine: str = "indicf5"
     subtitle_language: str = "en"
 
     @field_validator("code")

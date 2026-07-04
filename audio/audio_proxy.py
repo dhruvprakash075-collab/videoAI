@@ -1,6 +1,6 @@
 """audio_proxy.py - TTS audio generation proxy.
 
-This module provides TTS generation using Supertonic and OmniVoice engines.
+This module provides TTS generation using IndicF5, Supertonic, and OmniVoice engines.
 
 Used by: pipeline_long.py
 """
@@ -49,7 +49,8 @@ def _get_config() -> dict:
 # TTS engine normalization whitelist.
 # Vision docs and user responses can contain arbitrary strings (e.g.
 # "Calm, measured, storytelling voice"). Map everything to the supported
-# engine ids that tts_generate dispatches: "supertonic" or "omnivoice".
+# engine ids that tts_generate dispatches: "indicf5", "supertonic", or "omnivoice".
+_INDICF5_ALIASES = frozenset({"indicf5", "indic-f5", "f5", "f5tts", "indic"})
 _OMNIVOICE_ALIASES = frozenset({"omnivoice", "omni", "voice_clone", "clone"})
 _SUPERTONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supertonic-3"})
 
@@ -57,31 +58,115 @@ _SUPERTONIC_ALIASES = frozenset({"supertonic", "supertone", "supertonic3", "supe
 def normalize_tts_engine(engine: str) -> str:
     """Normalize an arbitrary TTS engine string to a supported engine id.
 
-    Supported engines: "supertonic" (default) and "omnivoice".
-    Everything else (including free-text descriptions) → "supertonic" (default).
+    Supported engines: "indicf5" (default Hindi), "supertonic", and "omnivoice".
+    Everything else (including free-text descriptions) → "indicf5" (default).
 
     Args:
         engine: Raw engine string from vision doc, config overlay, or user input.
 
     Returns:
-        "supertonic" or "omnivoice".
+        "indicf5", "supertonic", or "omnivoice".
     """
     if not isinstance(engine, str):
         log.warning(
-            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — defaulting to 'supertonic'"
+            f"[TTS] normalize_tts_engine: non-string engine value {engine!r} — defaulting to 'indicf5'"
         )
-        return "supertonic"
+        return "indicf5"
 
     normalized = engine.strip().lower()
+    if normalized in _INDICF5_ALIASES:
+        return "indicf5"
     if normalized in _OMNIVOICE_ALIASES:
         return "omnivoice"
     if normalized in _SUPERTONIC_ALIASES:
         return "supertonic"
 
     log.warning(
-        f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'supertonic'."
+        f"[TTS] Unknown TTS engine string {engine!r} — defaulting to 'indicf5'."
     )
-    return "supertonic"
+    return "indicf5"
+
+
+def _read_optional_text(path: str) -> str:
+    if not path:
+        return ""
+    with contextlib.suppress(OSError):
+        return Path(path).read_text(encoding="utf-8").strip()
+    return ""
+
+
+def _call_indicf5_worker(
+    text: str,
+    lang: str = "hi",
+    output_dir: Path | None = None,
+    voice_sample: str = "",
+    speed_override: float | None = None,
+) -> dict[str, Any]:
+    """Generate Hindi TTS through the external D:\\IndicF5 runner."""
+    indic_cfg = _get_config().get("tts", {}).get("indicf5", {})
+    if output_dir is None:
+        output_dir = Path("tts_output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    root = Path(indic_cfg.get("root", r"D:\IndicF5"))
+    python_exe = indic_cfg.get("python") or sys.executable
+    configured_ref = indic_cfg.get(
+        "ref_audio", "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav"
+    )
+    # ponytail: IndicF5 is calibrated against one known-good 9s reference; opt in before
+    # swapping arbitrary uploaded voices into this path.
+    ref_audio = Path(
+        voice_sample if indic_cfg.get("use_pipeline_voice_sample", False) and voice_sample else configured_ref
+    ).resolve()
+    ref_text = indic_cfg.get("ref_text", "") or _read_optional_text(
+        indic_cfg.get("ref_text_file", "character_voices/narration_ref_9s_mono24k.txt")
+    )
+    if not ref_text:
+        ref_text = (
+            "एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर "
+            "उनके बाकी सभी दाँत गिर गए हैं।"
+        )
+    timeout = int(indic_cfg.get("timeout_seconds", 900))
+    out_wav = (output_dir / f"indicf5_{uuid.uuid4().hex[:8]}.wav").resolve()
+    worker_script = Path(__file__).parent / "indicf5_worker.py"
+    temp_dir = Path("studio_checkpoints") / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_file = temp_dir / f"indicf5_input_{uuid.uuid4().hex}.txt"
+
+    try:
+        temp_file.write_text(text, encoding="utf-8", errors="replace")
+        cmd = [
+            sys.executable,
+            str(worker_script),
+            f"--text-file={temp_file}",
+            f"--output={out_wav}",
+            f"--root={root}",
+            f"--python={python_exe}",
+            f"--ref-audio={ref_audio}",
+            f"--ref-text={ref_text}",
+            f"--timeout={timeout}",
+        ]
+        log.info("[IndicF5] Calling one-shot worker...")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout + 30,
+        )
+        if result.stdout.strip():
+            for line in reversed(result.stdout.strip().splitlines()):
+                if line.startswith("{") and line.endswith("}"):
+                    with contextlib.suppress(json.JSONDecodeError):
+                        return json.loads(line)
+        msg = (result.stderr or result.stdout or "IndicF5 failed").strip()[:500]
+        return {"status": "error", "message": msg}
+    except Exception as e:
+        log.exception(f"[IndicF5] worker exception: {e}")
+        return {"status": "error", "message": str(e)[:500]}
+    finally:
+        with contextlib.suppress(OSError):
+            temp_file.unlink()
 
 
 # ── Supertonic 3 persistent worker ────────────────────────────────────────────
@@ -823,12 +908,30 @@ def tts_generate(
                     voice_sample = wav_files[0]
                     log.info(f"Voice cloning: auto-detected narration sample '{voice_sample}'")
 
-    _raw_engine = _cfg.get("tts", {}).get("engine", "supertonic")
+    _raw_engine = _cfg.get("tts", {}).get("engine", "indicf5")
     engine = normalize_tts_engine(_raw_engine)
 
     log.info(f"Generating TTS audio ({lang}) using {engine}...")
 
-    if engine == "omnivoice":
+    if engine == "indicf5":
+        result = _call_indicf5_worker(
+            text,
+            lang=lang,
+            output_dir=output_dir,
+            voice_sample=str(voice_sample) if voice_sample else "",
+            speed_override=speed,
+        )
+        if result.get("status") != "success":
+            log.warning(
+                f"[TTS] IndicF5 failed ({result.get('message', 'unknown')}) — degrading to supertonic"
+            )
+            result = _call_supertonic_worker(
+                text,
+                lang=lang,
+                output_dir=output_dir,
+                speed_override=speed,
+            )
+    elif engine == "omnivoice":
         result = _call_omnivoice_worker(
             text,
             lang=lang,
@@ -918,11 +1021,21 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
             "voice_cloning": True,
             "languages": ["hi", "en", "multi", "31 langs"],
             "vram_hint_gb": 0.0,
-            "notes": "Default. CPU ONNX, 4.5x faster than OmniVoice. Zero VRAM. Custom voice JSON.",
+            "notes": "Fallback. CPU ONNX, 4.5x faster than OmniVoice. Zero VRAM. Custom voice JSON.",
             "recommended": {
                 "voice": "character_voices/dhruv_narration.json",
                 "steps": 16,
                 "speed": 1.0,
+            },
+        },
+        "indicf5": {
+            "voice_cloning": True,
+            "languages": ["hi", "en-mixed"],
+            "vram_hint_gb": 4.0,
+            "notes": "Default Hindi TTS. Uses external D:\\IndicF5 checkout with fixed EMA checkpoint loader.",
+            "recommended": {
+                "root": r"D:\IndicF5",
+                "ref_audio": "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav",
             },
         },
         "omnivoice": {

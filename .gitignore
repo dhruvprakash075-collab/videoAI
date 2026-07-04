@@ -35,6 +35,9 @@ studio_checkpoints/
 studio_projects/
 logs/
 cache/
+studio_cache/
+tts_output/
+output*.wav
 hf_cache/
 temp_srt_files/
 sfx/

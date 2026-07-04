@@ -694,7 +694,7 @@ async def get_ui_config():
         config = load_config()
         image_cfg = config.get("image_gen", {}) or {}
         return {
-            "voiceEngine": config.get("tts", {}).get("engine", "omnivoice"),
+            "voiceEngine": config.get("tts", {}).get("engine", "indicf5"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
             # P3-19: return the real saved value instead of always False
             "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),

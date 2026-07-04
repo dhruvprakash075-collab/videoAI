@@ -14,7 +14,17 @@ visual:
   environment_frame_ratio: 0.4
 tts:
   lang: hi
-  engine: supertonic
+  engine: indicf5
+  indicf5:
+    root: D:\IndicF5
+    python: C:\Video.AI\venv\Scripts\python.exe
+    ref_audio: character_voices/narration_ref_9s_mono24k_ref8s_mono.wav
+    ref_text_file: character_voices/narration_ref_9s_mono24k.txt
+    ref_text: >-
+      एक रात सोते समय, बादशाह अकबर ने एक अजीब सपना देखा, कि केवल एक छोड़कर
+      उनके बाकी सभी दाँत गिर गए हैं।
+    use_pipeline_voice_sample: false
+    timeout_seconds: 900
   supertonic:
     voice: character_voices/dhruv_narration.json
     steps: 16
