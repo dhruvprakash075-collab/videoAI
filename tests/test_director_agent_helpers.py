@@ -1582,18 +1582,18 @@ def test_produce_runtime_config_narrator_voice_default(agent):
 
 
 def test_produce_runtime_config_tts_engine_xtts(agent):
-    """xtts/coqui keyword → supertonic engine (unknown → default to supertonic)."""
+    """Removed xtts/coqui keywords fall back to the default TTS engine."""
     vision = {"characters": [{"name": "A"}]}
     for keyword in ["xtts", "XTTS", "coqui"]:
         result = agent.produce_runtime_config(vision, {"tts_engine": keyword}, {})
-        assert result["tts"]["engine"] == "supertonic", f"keyword={keyword}"
+        assert result["tts"]["engine"] == "indicf5", f"keyword={keyword}"
 
 
 def test_produce_runtime_config_tts_engine_edge(agent):
-    """Removed edge keyword → supertonic default."""
+    """Removed edge keyword falls back to the default TTS engine."""
     vision = {"characters": [{"name": "A"}]}
     result = agent.produce_runtime_config(vision, {"tts_engine": "edge"}, {})
-    assert result["tts"]["engine"] == "supertonic"
+    assert result["tts"]["engine"] == "indicf5"
 
 
 def test_produce_runtime_config_tts_engine_omnivoice(agent):
@@ -1604,10 +1604,10 @@ def test_produce_runtime_config_tts_engine_omnivoice(agent):
 
 
 def test_produce_runtime_config_tts_engine_default(agent):
-    """Unknown TTS engine → falls back to vision_doc (normalized) or supertonic default."""
+    """Unknown TTS engine falls back to the default TTS engine."""
     vision = {"characters": [{"name": "A"}], "tts_recommendation": "xtts"}
     result = agent.produce_runtime_config(vision, {"tts_engine": "unknown"}, {})
-    assert result["tts"]["engine"] == "supertonic"
+    assert result["tts"]["engine"] == "indicf5"
 
 
 def test_produce_runtime_config_subtitle_color(agent):

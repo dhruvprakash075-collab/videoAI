@@ -22,7 +22,6 @@ log = logging.getLogger("video.renderer.assembler")
 def reset_whisper_cache():
     """Reset global whisper caching variables between tests to avoid bleed."""
     assembler._whisper_models.clear()
-    assembler._whisper_backend = None
     assembler._cached_codec = None
     assembler._encoder_support_cache.clear()
 
@@ -61,7 +60,6 @@ def test_get_whisper_model_final_cpu():
         model = assembler._get_whisper_model(is_final=True)
         assert model is not None
         mock_faster.assert_called_once_with("medium", device="cpu", compute_type="int8")
-        assert assembler._whisper_backend == "faster"
 
 
 def test_get_whisper_model_preview_gpu():
@@ -81,37 +79,18 @@ def test_get_whisper_model_preview_gpu():
         model = assembler._get_whisper_model(is_final=False)
         assert model is not None
         mock_faster.assert_called_once_with("tiny", device="cuda", compute_type="float16")
-        assert assembler._whisper_backend == "faster"
 
 
-def test_get_whisper_model_fallbacks():
-    """Test _get_whisper_model fallbacks when faster-whisper fails."""
+def test_get_whisper_model_returns_none_when_faster_whisper_fails():
+    """Test _get_whisper_model returns None when faster-whisper fails."""
     mock_config = {}
 
-    # Case 1: faster-whisper fails, openai-whisper succeeds
     with (
         patch("config.load_config", return_value=mock_config),
         patch("faster_whisper.WhisperModel", side_effect=ImportError("faster-whisper missing")),
-        patch("whisper.load_model") as mock_openai,
-    ):
-        model = assembler._get_whisper_model(is_final=False)
-        assert model is not None
-        mock_openai.assert_called_once_with("tiny")
-        assert assembler._whisper_backend == "openai"
-
-    # Reset cache before Case 2
-    assembler._whisper_models.clear()
-    assembler._whisper_backend = None
-
-    # Case 2: Both fail
-    with (
-        patch("config.load_config", return_value=mock_config),
-        patch("faster_whisper.WhisperModel", side_effect=ImportError("faster-whisper missing")),
-        patch("whisper.load_model", side_effect=ImportError("openai-whisper missing")),
     ):
         model = assembler._get_whisper_model(is_final=False)
         assert model is None
-        assert assembler._whisper_backend is None
 
 
 def test_get_video_codec_win32_nvenc():
@@ -288,8 +267,6 @@ def test_write_srt_whisper_fallback(tmp_path):
     mock_model.transcribe.return_value = ([mock_segment], None)
 
     with patch("video.renderer.assembler._get_whisper_model", return_value=mock_model):
-        assembler._whisper_backend = "faster"
-
         # Test default transcribe call (no translation)
         assembler._write_srt(
             script="hello", path=srt_path, duration=1.0, audio=audio_path, subtitle_language="auto"
@@ -303,20 +280,15 @@ def test_write_srt_whisper_fallback(tmp_path):
         assert "hello" in content.lower()
 
     # Reset
-    assembler._whisper_model = None
-    assembler._whisper_backend = None
     srt_path.unlink(missing_ok=True)
 
-    # Test openai-whisper backend path
-    mock_openai_model = MagicMock()
-    mock_openai_model.transcribe.return_value = {
-        "segments": [{"words": [{"word": "world", "start": 0.2, "end": 1.2}]}]
-    }
+    mock_translation_model = MagicMock()
+    mock_word.word = "world"
+    mock_word.start = 0.2
+    mock_word.end = 1.2
+    mock_translation_model.transcribe.return_value = ([mock_segment], None)
 
-    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_openai_model):
-        assembler._whisper_backend = "openai"
-
-        # Test translation task
+    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_translation_model):
         assembler._write_srt(
             script="world",
             path=srt_path,
@@ -325,8 +297,13 @@ def test_write_srt_whisper_fallback(tmp_path):
             subtitle_language="es",  # triggers translation
         )
 
-        mock_openai_model.transcribe.assert_called_once_with(
-            str(audio_path), word_timestamps=True, task="translate", language="es"
+        mock_translation_model.transcribe.assert_called_once_with(
+            str(audio_path),
+            beam_size=1,
+            word_timestamps=True,
+            vad_filter=True,
+            task="translate",
+            language="es",
         )
         assert srt_path.exists()
         content = srt_path.read_text(encoding="utf-8-sig")
@@ -809,20 +786,18 @@ def test_write_srt_json_exception_fallback(tmp_path):
     assert "Proportional fallback text" in srt_path.read_text(encoding="utf-8-sig")
 
 
-def test_write_srt_openai_no_lang(tmp_path):
-    """Test _write_srt using openai-whisper with auto language (no language passed)."""
+def test_write_srt_faster_whisper_no_lang(tmp_path):
+    """Test _write_srt using faster-whisper with no language override."""
     srt_path = tmp_path / "test.srt"
     audio_path = tmp_path / "test.wav"
     audio_path.write_bytes(b"dummy")
 
-    mock_openai_model = MagicMock()
-    mock_openai_model.transcribe.return_value = {
-        "segments": [{"words": [{"word": "world", "start": 0.2, "end": 1.2}]}]
-    }
+    mock_model = MagicMock()
+    mock_word = MagicMock(word="world", start=0.2, end=1.2)
+    mock_segment = MagicMock(words=[mock_word])
+    mock_model.transcribe.return_value = ([mock_segment], None)
 
-    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_openai_model):
-        assembler._whisper_backend = "openai"
-
+    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_model):
         assembler._write_srt(
             script="world",
             path=srt_path,
@@ -831,7 +806,9 @@ def test_write_srt_openai_no_lang(tmp_path):
             subtitle_language=None,
         )
 
-        mock_openai_model.transcribe.assert_called_once_with(str(audio_path), word_timestamps=True)
+        mock_model.transcribe.assert_called_once_with(
+            str(audio_path), beam_size=1, word_timestamps=True, vad_filter=True
+        )
         assert srt_path.exists()
 
 
@@ -841,12 +818,10 @@ def test_write_srt_empty_raw_words_fallback(tmp_path):
     audio_path = tmp_path / "test.wav"
     audio_path.write_bytes(b"dummy")
 
-    mock_openai_model = MagicMock()
-    mock_openai_model.transcribe.return_value = {"segments": []}
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([], None)
 
-    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_openai_model):
-        assembler._whisper_backend = "openai"
-
+    with patch("video.renderer.assembler._get_whisper_model", return_value=mock_model):
         # Should fall back to proportional split
         assembler._write_srt(
             script="Fallback sentence.",

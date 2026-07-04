@@ -10,7 +10,7 @@ Usage in bootstrap_pipeline.py:
     register_shutdown_handlers()
     register_cleanup_hook(lambda: evict_ollama_models(config, reason="shutdown"))
 
-Usage in studio_tui.py: same pattern; the cleanup hook should also
+Usage in local UI entry points: same pattern; the cleanup hook should also
     save UIState to a checkpoint file.
 """
 

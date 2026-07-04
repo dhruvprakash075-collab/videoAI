@@ -14,14 +14,13 @@ from pathlib import Path
 # never clobber each other.
 _whisper_models: dict = {}
 _whisper_model_lock = threading.Lock()
-_whisper_backend = None  # backend of the most recently returned model ("faster"/"openai")
 
 # Thread lock to serialize access to the shared cleanup manifest JSON file
 _manifest_lock = threading.Lock()
 
 
 def _get_whisper_model(is_final: bool = False):
-    """Load whisper model. Prefers faster-whisper (CTranslate2, 4-8x faster), falls back to openai-whisper.
+    """Load the faster-whisper model.
 
     B5: For final (non-preview/non-dry) renders, use performance.whisper_model_final
     (default "base") pinned to CPU int8 so it never competes with SD for VRAM.
@@ -31,7 +30,6 @@ def _get_whisper_model(is_final: bool = False):
     final model choices keep independent cached instances instead of the first
     loaded model being reused for every later call regardless of is_final.
     """
-    global _whisper_backend
     try:
         from config import load_config
 
@@ -58,33 +56,20 @@ def _get_whisper_model(is_final: bool = False):
     with _whisper_model_lock:
         cached = _whisper_models.get(cache_key)
         if cached is not None:
-            model, backend = cached
-            _whisper_backend = backend
-            return model
+            return cached
 
-        # Try faster-whisper first (CTranslate2 — 4-8x faster, GPU FP16)
         try:
             from faster_whisper import WhisperModel as FasterWhisperModel
 
             model = FasterWhisperModel(
                 model_name, device=_device, compute_type=_compute
             )
-            backend = "faster"
             log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
         except Exception as e:
-            log.warning(f"faster-whisper failed ({e}), falling back to openai-whisper")
-            try:
-                import whisper
+            log.exception(f"faster-whisper failed: {e}")
+            return None
 
-                model = whisper.load_model(model_name)
-                backend = "openai"
-                log.info(f"Whisper: openai-whisper ({model_name})")
-            except Exception as e2:
-                log.exception(f"Both whisper backends failed: {e2}")
-                return None
-
-        _whisper_models[cache_key] = (model, backend)
-        _whisper_backend = backend
+        _whisper_models[cache_key] = model
         return model
 
 
@@ -881,46 +866,25 @@ def _write_srt(
                 if model is None:
                     raise RuntimeError("No whisper model available")
 
-                if _whisper_backend == "faster":
-                    if subtitle_language and subtitle_language != "auto":
-                        segments_gen, _info = model.transcribe(
-                            str(audio),
-                            beam_size=1,
-                            word_timestamps=True,
-                            vad_filter=True,
-                            task="translate",
-                            language=subtitle_language,
-                        )
-                    else:
-                        segments_gen, _info = model.transcribe(
-                            str(audio), beam_size=1, word_timestamps=True, vad_filter=True
-                        )
-                    raw_words = [
-                        {"word": (w.word or "").strip(), "start": w.start, "end": w.end}
-                        for seg in segments_gen
-                        for w in (seg.words or [])
-                        if (w.word or "").strip()
-                    ]
+                if subtitle_language and subtitle_language != "auto":
+                    segments_gen, _info = model.transcribe(
+                        str(audio),
+                        beam_size=1,
+                        word_timestamps=True,
+                        vad_filter=True,
+                        task="translate",
+                        language=subtitle_language,
+                    )
                 else:
-                    if subtitle_language and subtitle_language != "auto":
-                        result = model.transcribe(
-                            str(audio),
-                            word_timestamps=True,
-                            task="translate",
-                            language=subtitle_language,
-                        )
-                    else:
-                        result = model.transcribe(str(audio), word_timestamps=True)
-                    raw_words = [
-                        {
-                            "word": w.get("word", "").strip(),
-                            "start": w.get("start", 0.0),
-                            "end": w.get("end", 0.0),
-                        }
-                        for seg in result.get("segments", [])
-                        for w in seg.get("words", [])
-                        if w.get("word", "").strip()
-                    ]
+                    segments_gen, _info = model.transcribe(
+                        str(audio), beam_size=1, word_timestamps=True, vad_filter=True
+                    )
+                raw_words = [
+                    {"word": (w.word or "").strip(), "start": w.start, "end": w.end}
+                    for seg in segments_gen
+                    for w in (seg.words or [])
+                    if (w.word or "").strip()
+                ]
 
             if raw_words:
                 lines = _words_to_srt_lines(raw_words, format_style, CLASSIC_WORDS_PER_BLOCK)

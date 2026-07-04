@@ -289,7 +289,7 @@ def test_director_produce_runtime_config(agent):
 
     res = agent.produce_runtime_config(vision_doc, user_responses, writer_input, mode="full")
     assert "watercolor" in res["visual"]["style"]
-    assert res["tts"]["engine"] == "supertonic"
+    assert res["tts"]["engine"] == "indicf5"
     assert "hero" in res["characters"]
     assert "villain" in res["characters"]
 

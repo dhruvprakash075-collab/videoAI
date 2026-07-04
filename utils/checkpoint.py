@@ -2,9 +2,7 @@
 
 import json
 import logging
-import os
 import shutil
-import subprocess
 import threading
 import time
 from datetime import datetime
@@ -13,25 +11,6 @@ from pathlib import Path
 from config import _safe_filename
 
 log = logging.getLogger(__name__)
-
-
-def _rust_checkpoint_enabled() -> bool:
-    return os.environ.get("VIDEOAI_RUST_CHECKPOINT") == "1"
-
-
-def _rust_checkpoint_bin() -> str:
-    return os.environ.get("VIDEOAI_CHECKPOINT_BIN", "videoai_checkpoint")
-
-
-def _run_rust_checkpoint(args: list[str]) -> dict:
-    result = subprocess.run(
-        [_rust_checkpoint_bin(), *args],
-        capture_output=True,
-        check=True,
-        text=True,
-        timeout=30,
-    )
-    return json.loads(result.stdout)
 
 
 class CheckpointManager:
@@ -55,24 +34,6 @@ class CheckpointManager:
     def get(self, topic: str) -> dict | None:
         if not self.enabled:
             return None
-        if _rust_checkpoint_enabled():
-            try:
-                report = _run_rust_checkpoint(
-                    [
-                        "get",
-                        "--dir",
-                        str(self.dir),
-                        "--topic",
-                        topic,
-                        "--max-age-hours",
-                        str(self.max_age_hours),
-                    ]
-                )
-                for warning in report.get("warnings", []):
-                    log.warning(warning)
-                return report.get("data") if report.get("found") else None
-            except Exception as exc:
-                log.warning("Rust checkpoint get failed; falling back to Python: %s", exc)
         with CheckpointManager._lock:
             p = self._path(topic)
             if not p.exists():
@@ -129,24 +90,6 @@ class CheckpointManager:
     def save(self, topic: str, step: str, data: dict) -> None:
         if not self.enabled:
             return
-        if _rust_checkpoint_enabled():
-            try:
-                _run_rust_checkpoint(
-                    [
-                        "save",
-                        "--dir",
-                        str(self.dir),
-                        "--topic",
-                        topic,
-                        "--step",
-                        step,
-                        "--data-json",
-                        json.dumps(data, ensure_ascii=False, cls=self._CustomEncoder),
-                    ]
-                )
-                return
-            except Exception as exc:
-                log.warning("Rust checkpoint save failed; falling back to Python: %s", exc)
         with CheckpointManager._lock:
             body = self._read_raw(topic)  # must use _read_raw, NOT get() (TTL bypass)
             body[step] = {**data, "ts": datetime.now().isoformat()}
@@ -182,12 +125,6 @@ class CheckpointManager:
                     time.sleep(0.5)
 
     def clear(self, topic: str) -> None:
-        if _rust_checkpoint_enabled():
-            try:
-                _run_rust_checkpoint(["clear", "--dir", str(self.dir), "--topic", topic])
-                return
-            except Exception as exc:
-                log.warning("Rust checkpoint clear failed; falling back to Python: %s", exc)
         with CheckpointManager._lock:
             p = self._path(topic)
             if p.exists():

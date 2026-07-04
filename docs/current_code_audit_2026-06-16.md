@@ -18,7 +18,7 @@ then ran targeted tests and lightweight reproductions for the risky paths.
   - prompt-template formatting hazards
   - ComfyUI URL construction
 - Python parse check:
-  - `python -m compileall -q agents audio config core jobs memory scripts utils video bootstrap_pipeline.py run_pipeline.py studio_tui.py studio_tui_helpers.py style_resolver.py setup_youtube_profile.py`
+  - `python -m compileall -q agents audio config core jobs memory scripts utils video bootstrap_pipeline.py style_resolver.py setup_youtube_profile.py`
 - Targeted Python tests:
   - `python -m pytest tests/test_preflight_extended.py tests/test_layered_v3.py tests/test_assembler_extra.py tests/test_project_store.py tests/test_world_state.py tests/test_director_agent_extended.py tests/test_pre_production_extended.py tests/test_job_system.py tests/test_local_ui_api.py -q`
   - Result: `208 passed, 3 skipped`

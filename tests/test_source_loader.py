@@ -22,7 +22,6 @@ from utils.source_loader import (
     _is_url,
     _normalize_text,
     _strip_md_frontmatter,
-    _word_count,
     load_source,
 )
 
@@ -38,18 +37,6 @@ def _write(path: Path, content: str | bytes, binary: bool = False) -> Path:
 
 # ── Pure-function unit tests (no I/O) ───────────────────────────────
 class TestHelpers:
-    def test_word_count_basic(self):
-        assert _word_count("hello world") == 2
-
-    def test_word_count_empty(self):
-        assert _word_count("") == 0
-
-    def test_word_count_unicode(self):
-        assert _word_count("नमस्ते दोस्त") == 2
-
-    def test_word_count_whitespace_only(self):
-        assert _word_count("   \n\t  ") == 0
-
     def test_normalize_strips_bom(self):
         assert _normalize_text("\ufeffhello") == "hello"
 

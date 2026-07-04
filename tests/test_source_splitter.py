@@ -1,7 +1,7 @@
 """Tests for utils/source_splitter.py
 
 Covers:
-  - Pure helpers (_word_count, _split_sentences, _parse_md_headings,
+  - Pure helpers (_split_sentences, _parse_md_headings,
     _rebalance, _parse_llm_chunks, _index)
   - _split_by_chapter (MD headings, DOCX metadata, fall-through to empty)
   - _split_by_word_count (Latin + Devanagari sentences, padding, error)
@@ -28,7 +28,6 @@ from utils.source_splitter import (
     _split_by_llm,
     _split_by_word_count,
     _split_sentences,
-    _word_count,
     split_source,
 )
 
@@ -38,7 +37,7 @@ from utils.source_splitter import (
 def _doc(text="", source_type="txt", metadata=None, language="en"):
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=language,
         source_type=source_type,
         metadata=metadata or {},
@@ -46,23 +45,6 @@ def _doc(text="", source_type="txt", metadata=None, language="en"):
 
 
 # ── Pure helpers ────────────────────────────────────────────────────────────
-
-
-class TestWordCount:
-    def test_empty(self):
-        assert _word_count("") == 0
-
-    def test_single(self):
-        assert _word_count("hello") == 1
-
-    def test_multiple(self):
-        assert _word_count("the quick brown fox") == 4
-
-    def test_devanagari(self):
-        assert (
-            _word_count("\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e")
-            == 2
-        )
 
 
 class TestSplitSentences:

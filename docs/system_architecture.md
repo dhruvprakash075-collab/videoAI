@@ -11,7 +11,7 @@ This document describes the structure and execution flow of the **Video.AI** loc
 | Entry Point | Purpose |
 |---|---|
 | `bootstrap_pipeline.py` | **Primary CLI entry point.** Applies all patches, preflight, and args. Supports `--source <path-or-URL>` (v6 upload-source mode). |
-| `studio_tui.py` | Operator TUI (Textual). `venv\Scripts\python.exe studio_tui.py` |
+| `utils/local_ui.py` + `dashboard/` | Local FastAPI backend and dashboard UI. |
 | `run.bat` | Windows menu launcher: UI / CLI / Tests. |
 | `utils/local_ui.py` | FastAPI backend for the React dashboard (port 8000). |
 

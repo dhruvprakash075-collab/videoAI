@@ -160,7 +160,6 @@ def run_long_pipeline(
     from core.main import create_director, create_writer
     from utils import _safe_filename, load_config, setup_run_logging
     from utils.checkpoint import build_checkpoint_manager
-    from utils.retry_manager import patch_retries
 
     UIState.reset_run(topic)
     setup_run_logging(Path("logs") / _safe_filename(topic))
@@ -224,9 +223,8 @@ def run_long_pipeline(
     if isinstance(config_overlay, dict):
         config_overlay.setdefault("tts", {})["engine"] = _normalized_engine
 
-    # Preflight + retries + checkpoint + memory seeding
+    # Preflight + checkpoint + memory seeding
     run_preflight_checks(config, dry_run=dry_run)
-    patch_retries()
     cp_mgr = build_checkpoint_manager(config)
     _seed_director_memory(topic, config_overlay, config)
 

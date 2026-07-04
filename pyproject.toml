@@ -164,13 +164,6 @@ ignore = [
 "utils/compatibility.py" = [
     "F401",   # `try: import X except ImportError` is the explicit pattern here
 ]
-"studio_tui.py" = [
-    "E402",
-    "T201",   # operator-facing terminal UI prints
-    "PLR0915",
-    "F401",   # optional textual API checks
-]
-
 "utils/*.py" = ["E402"]
 "audio/*.py" = ["E402"]
 "video/**/*.py" = ["E402"]
@@ -201,7 +194,6 @@ ignore = [
     "S101",
     "PLR0915",
 ]
-"studio_tui_helpers.py" = ["E402"]
 "run_*.py" = ["E402", "T201"]
 "user_perspective_test.py" = ["E402", "T201", "S101"]
 "deep_test*.py" = ["E402", "T201", "S101", "PLR0915"]
@@ -259,7 +251,6 @@ omit = [
     "audio/*_worker.py",
     "utils/local_ui.py",
     "utils/diagnose.py",
-    "scripts/map_codebase.py",
     "utils/media_analyzer.py",
 ]
 branch = true

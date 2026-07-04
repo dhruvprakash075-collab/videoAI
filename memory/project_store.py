@@ -703,7 +703,7 @@ class StoryStore:
 class PermanentMemoryLog:
     """Backward-compatible wrapper over ProjectStore + StoryStore.
 
-    Existing callers (pipeline_long, local_ui, studio_tui) continue to work
+    Existing callers (pipeline_long, local_ui) continue to work
     unchanged. Internally routes to the appropriate tier.
 
     For project runs: pass project_name.

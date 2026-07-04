@@ -45,10 +45,6 @@ class SourceDocument:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def _word_count(text: str) -> int:
-    return len(text.split())
-
-
 def _detect_language(text: str) -> str:
     total_alpha = sum(1 for c in text if c.isalpha())
     if total_alpha == 0:
@@ -63,7 +59,7 @@ def _detect_language(text: str) -> str:
 
 
 def _check_oversize(text: str, max_words: int) -> None:
-    wc = _word_count(text)
+    wc = len(text.split())
     if wc > max_words:
         log.warning(
             f"source_loader: text is {wc} words, exceeds soft cap of {max_words}. Proceeding."
@@ -110,7 +106,7 @@ def _load_txt(path: Path) -> SourceDocument:
     text = _normalize_text(raw)
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=_detect_language(text),
         source_type="txt",
         metadata={"path": str(path.resolve()), "size_bytes": path.stat().st_size},
@@ -123,7 +119,7 @@ def _load_md(path: Path) -> SourceDocument:
     body, front_meta = _strip_md_frontmatter(text)
     return SourceDocument(
         text=body,
-        word_count=_word_count(body),
+        word_count=len(body.split()),
         language=_detect_language(body),
         source_type="md",
         metadata={
@@ -159,7 +155,7 @@ def _load_pdf(path: Path) -> SourceDocument:
         )
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=_detect_language(text),
         source_type="pdf",
         metadata={
@@ -197,7 +193,7 @@ def _load_docx(path: Path) -> SourceDocument:
     author = (core_props.author or "") if core_props else ""
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=_detect_language(text),
         source_type="docx",
         metadata={
@@ -306,7 +302,7 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
         metadata["final_url"] = resp.url
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=_detect_language(text),
         source_type="url",
         metadata=metadata,
@@ -317,7 +313,7 @@ def _load_paste(text: str) -> SourceDocument:
     text = _normalize_text(text)
     return SourceDocument(
         text=text,
-        word_count=_word_count(text),
+        word_count=len(text.split()),
         language=_detect_language(text),
         source_type="paste",
         metadata={"char_count": len(text)},

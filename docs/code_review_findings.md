@@ -2,7 +2,7 @@
 
 Manual line-by-line review of the untested zone + skylos triage + pattern sweeps.
 Files fully read: local_ui.py, jobs/worker.py, source_loader.py, omnivoice_worker.py,
-f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, studio_tui.py.
+f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py.
 
 ## HIGH severity
 
@@ -33,8 +33,6 @@ f5_worker.py, indicf5_worker.py, supertonic_worker.py, bootstrap_pipeline.py, st
 
 ## LOW severity
 
-- L1 studio_tui.py: path containment via str.startswith(PROJECT_ROOT) - prefix bug ('/project-evil' passes). Use Path.relative_to.
-- L2 studio_tui.py: UIState.logs read/reset without _log_lock (local_ui locks; TUI does not).
 - L3 bootstrap_pipeline.py: success print formats result.get('duration_s') with :.1f; missing key = TypeError, successful run reported as FAILED.
 - L4 bootstrap_pipeline.py: --file read without existence check (raw traceback).
 - L5 indicf5_worker.py _chunk_text: re.split removes sentence punctuation; TTS loses prosody marks (omnivoice keeps them).

@@ -140,13 +140,7 @@ _COMFYUI_UI_DEFAULTS = {
 }
 
 
-def _form_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _parse_job_form_bool(value: str | None, field_name: str, default: bool) -> bool:
+def _form_bool(value: str | None, default: bool = False, field_name: str | None = None) -> bool:
     if value is None:
         return default
 
@@ -155,7 +149,9 @@ def _parse_job_form_bool(value: str | None, field_name: str, default: bool) -> b
         return True
     if normalized in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(f"{field_name} must be a boolean form value, got {value!r}")
+    if field_name is not None:
+        raise ValueError(f"{field_name} must be a boolean form value, got {value!r}")
+    return default
 
 
 _VALID_RUN_MODES = {"project", "one_time"}
@@ -385,27 +381,25 @@ async def upload_script(
 
         if duration is not None:
             job_request["duration"] = duration
-        job_request["dry_run"] = _parse_job_form_bool(dry_run, "dry_run", False)
-        job_request["no_resume"] = _parse_job_form_bool(no_resume, "no_resume", True)
+        job_request["dry_run"] = _form_bool(dry_run, False, "dry_run")
+        job_request["no_resume"] = _form_bool(no_resume, True, "no_resume")
         if project is not None:
             job_request["project"] = project
         if series is not None:
-            job_request["series"] = _parse_job_form_bool(series, "series", False)
+            job_request["series"] = _form_bool(series, False, "series")
         if run_mode is not None:
             job_request["run_mode"] = run_mode
         if eval_models is not None:
-            job_request["eval_models"] = _parse_job_form_bool(
-                eval_models, "eval_models", False
-            )
+            job_request["eval_models"] = _form_bool(eval_models, False, "eval_models")
         if preview is not None:
-            job_request["preview"] = _parse_job_form_bool(preview, "preview", False)
+            job_request["preview"] = _form_bool(preview, False, "preview")
         if skip_preflight is not None:
-            job_request["skip_preflight"] = _parse_job_form_bool(
-                skip_preflight, "skip_preflight", False
+            job_request["skip_preflight"] = _form_bool(
+                skip_preflight, False, "skip_preflight"
             )
         if preflight_only is not None:
-            job_request["preflight_only"] = _parse_job_form_bool(
-                preflight_only, "preflight_only", False
+            job_request["preflight_only"] = _form_bool(
+                preflight_only, False, "preflight_only"
             )
         if words_per_segment is not None:
             job_request["words_per_segment"] = words_per_segment
@@ -414,7 +408,7 @@ async def upload_script(
         if segment_count is not None:
             job_request["segment_count"] = segment_count
         if yes is not None:
-            job_request["yes"] = _parse_job_form_bool(yes, "yes", False)
+            job_request["yes"] = _form_bool(yes, False, "yes")
         if source is not None:
             job_request["source"] = source
 

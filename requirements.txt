@@ -12,7 +12,6 @@ ollama>=0.6.0
 
 # ── Automatic Speech Recognition ───────────────────────────────────
 faster-whisper>=1.2.0
-openai-whisper  # fallback if faster-whisper fails
 
 # ── Deep Learning / Adapters ───────────────────────────────────────
 peft>=0.19.0
@@ -50,9 +49,6 @@ uvicorn>=0.29.0
 
 # ── Testing (dev only) ─────────────────────────────────────────────
 pytest>=8.4.2
-
-# ── TUI control panel ──────────────────────────────────────────────
-textual>=0.60.0
 
 # ── LangGraph pipeline (Phase 0) ───────────────────────────────────
 langgraph>=1.2.4

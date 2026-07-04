@@ -12,7 +12,6 @@ with the outer retry to avoid compounding retries (B14 fix).
 import functools
 import logging
 import subprocess
-import threading
 import time
 from collections.abc import Callable
 
@@ -39,9 +38,6 @@ BOUNDED_EXCEPTIONS: tuple[type[Exception], ...] = (
     RuntimeError,
     OSError,
 )
-
-_patch_lock = threading.Lock()
-
 
 def retry_with_backoff(
     max_retries: int = MAX_RETRIES,
@@ -100,48 +96,3 @@ def retry_with_backoff(
         return wrapper
 
     return decorator
-
-
-def patch_retries() -> None:
-    """Apply retry wrappers to external-calling functions.
-
-    Monkey-patches functions in their original modules so pipeline_long
-    gets retry+backoff automatically. Called once at pipeline start.
-
-    NOTE: generate_images is intentionally NOT wrapped here — it has its own
-    internal 3-tier OOM recovery. Wrapping it externally would compound retries
-    and cause multi-minute hangs on persistent OOM (B14 fix).
-    """
-    with _patch_lock:
-        log.info("Patching external calls with retry+backoff")
-
-        # Patch tts_generate — transient-only (2 retries; TTS failures are often transient)
-        try:
-            from audio import audio_proxy
-
-            if not hasattr(audio_proxy.tts_generate, "_is_retry_patched"):
-                audio_proxy.tts_generate = retry_with_backoff(
-                    max_retries=2, exceptions=TRANSIENT_EXCEPTIONS
-                )(audio_proxy.tts_generate)
-                audio_proxy.tts_generate._is_retry_patched = True
-                log.info("Patched audio_proxy.tts_generate (transient, 2 retries)")
-        except Exception as e:
-            log.warning(f"Could not patch tts_generate: {e}")
-
-        # Patch translate_hinglish — transient-only (3 retries)
-        try:
-            from audio import audio_proxy
-
-            if not hasattr(audio_proxy.translate_hinglish, "_is_retry_patched"):
-                audio_proxy.translate_hinglish = retry_with_backoff(
-                    max_retries=3, exceptions=TRANSIENT_EXCEPTIONS
-                )(audio_proxy.translate_hinglish)
-                audio_proxy.translate_hinglish._is_retry_patched = True
-                log.info("Patched audio_proxy.translate_hinglish (transient, 3 retries)")
-        except Exception as e:
-            log.warning(f"Could not patch translate_hinglish: {e}")
-
-        # generate_images: NOT wrapped — has internal 3-tier OOM handling (B14 fix)
-        log.info("generate_images: NOT wrapped (has internal OOM recovery)")
-
-        log.info("Retry patching complete")

@@ -12,6 +12,7 @@ import pytest
 from video.image_gen.image_gen import (
     _comfyui,
     _comfyui_seed,
+    _maybe_upscale,
     _prompt_cache_key,
     _record_oom_event,
     _resolve_dominant_char_at_threshold,
@@ -506,3 +507,100 @@ def test_generate_images_passes_project_id(tmp_path: Path):
     with patch("video.image_gen.image_gen._comfyui", return_value=[]) as cfn:
         generate_images(["p"], tmp_path, cfg, project_id="myproject")
     assert cfn.call_args is not None
+
+
+def test_generate_images_wraps_misc_prompt_and_rejects_unknown_backend(tmp_path: Path):
+    cfg = {"image_gen": {"backend": "comfyui"}}
+    with patch("video.image_gen.image_gen._comfyui", return_value=[]) as cfn:
+        generate_images(123, tmp_path, cfg)
+    assert cfn.call_args.args[0] == ["123"]
+
+    with pytest.raises(ValueError, match="Unsupported image backend"):
+        generate_images(["p"], tmp_path, {"image_gen": {"backend": "nope"}})
+
+
+def test_qwen_preflight_and_resource_probe_error_paths():
+    from video.image_gen import image_gen
+
+    with patch("video.image_gen.qwen_repose.preflight_qwen_edit", side_effect=RuntimeError("bad")):
+        assert image_gen._qwen_preflight_issues({}) == ["qwen_edit preflight raised: bad"]
+
+    with (
+        patch.object(image_gen, "_available_ram_gib", return_value=None),
+        patch.object(image_gen, "_free_vram_mib", return_value=None),
+    ):
+        assert image_gen._qwen_resource_issues({"qwen_edit": {}}) == [
+            "available RAM could not be measured",
+            "free NVIDIA VRAM could not be measured",
+        ]
+
+
+def test_local_resource_helpers_handle_missing_tools_and_bad_output():
+    from video.image_gen import image_gen
+
+    with patch("video.image_gen.image_gen.shutil.which", return_value=None):
+        assert image_gen._free_vram_mib() is None
+
+    bad_result = MagicMock(returncode=0, stdout="")
+    with (
+        patch("video.image_gen.image_gen.shutil.which", return_value="nvidia-smi"),
+        patch("video.image_gen.image_gen.subprocess.run", return_value=bad_result),
+    ):
+        assert image_gen._free_vram_mib() is None
+
+    with (
+        patch("video.image_gen.image_gen.os.name", "posix"),
+        patch("video.image_gen.image_gen.os.sysconf", side_effect=OSError("no sysconf"), create=True),
+    ):
+        assert image_gen._available_ram_gib() is None
+
+
+def test_maybe_upscale_lanczos_and_failure_fallback():
+    img = MagicMock()
+    img.size = (10, 10)
+    resized = MagicMock()
+    resized.size = (20, 20)
+    img.resize.return_value = resized
+
+    assert _maybe_upscale(img, {"upscaler": {"target_width": 20, "target_height": 20}}) is img
+    assert _maybe_upscale(
+        img,
+        {"upscaler": {"model": "lanczos", "target_width": 20, "target_height": 20}},
+    ) is resized
+
+    img.resize.side_effect = RuntimeError("resize failed")
+    assert _maybe_upscale(
+        img,
+        {"upscaler": {"model": "lanczos", "target_width": 20, "target_height": 20}},
+    ) is img
+
+
+def test_free_memory_and_degradation_logging_are_best_effort():
+    from video.image_gen import image_gen
+
+    fake_client = MagicMock()
+    fake_runtime = MagicMock(base_url="http://127.0.0.1:8188")
+    with (
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=fake_runtime),
+        patch("video.image_gen.comfyui_client.ComfyUIClient", return_value=fake_client),
+    ):
+        image_gen._free_comfyui_memory({"comfyui": {"timeout_seconds": 7}})
+    fake_client.free_memory.assert_called_once()
+
+    with patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", side_effect=RuntimeError("down")):
+        image_gen._free_comfyui_memory({})
+
+    with patch("agents.ui_state.UIState.add_degradation") as add:
+        image_gen._log_qwen_degradation(2, "")
+    add.assert_called_once_with(2, "qwen_edit_fallback", "qwen edit did not composite the character")
+
+    with patch("agents.ui_state.UIState.add_degradation", side_effect=RuntimeError("ui down")):
+        image_gen._log_qwen_degradation(3, "x")
+
+
+def test_comfyui_qwen_edit_returns_empty_background_batch(tmp_path: Path):
+    from video.image_gen import image_gen
+
+    with patch.object(image_gen, "_comfyui", return_value=[]) as comfy:
+        assert image_gen._comfyui_qwen_edit(["p"], tmp_path, {}, char_presence=[]) == []
+    comfy.assert_called_once()

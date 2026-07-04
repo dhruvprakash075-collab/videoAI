@@ -16,7 +16,7 @@
 |------|--------------|
 | CLI entry | `bootstrap_pipeline.py` |
 | Pipeline sig | `core/pipeline_long.py`, `core/segment_runner.py` |
-| TUI | `studio_tui.py` |
+| UI | `utils/local_ui.py` + `dashboard/` |
 | Local UI | `utils/local_ui.py` |
 | Job worker | `jobs/worker.py` |
 | Rust worker | `rust/worker/src/main.rs` |
@@ -59,13 +59,13 @@ Expected: no matches.
 ## Task 2: Remove `director_mode` from TUI, Local UI, Job Worker, Rust Worker, Dashboard
 
 **Files:**
-- Modify: `studio_tui.py:838`
+- Modify: local UI run controls
 - Modify: `utils/local_ui.py:172,354,399-401,456`
 - Modify: `jobs/worker.py:113`
 - Modify: `rust/worker/src/main.rs:1010`
 - Modify: `dashboard/src/components/CreateJobPanel.jsx:50`
 
-- [ ] **Step 1: Remove from `studio_tui.py`**
+- [ ] **Step 1: Remove from local UI controls**
 
 Remove the `if self._opt_director: kwargs["director_mode"] = True` block (line 837-838). Also remove the `_opt_director` attribute initialization if it exists elsewhere in the TUI class (search for `_opt_director`).
 

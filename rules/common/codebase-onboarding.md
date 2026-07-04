@@ -23,7 +23,7 @@ Gather raw signals without reading every file:
    - `config/config.yaml`, `prompts.yaml`, `styles.yaml`
 
 3. **Entry point identification**
-   - `bootstrap_pipeline.py`, `studio_tui.py`, `run.bat`
+   - `bootstrap_pipeline.py`, `utils/local_ui.py`, `run.bat`
 
 4. **Directory structure snapshot**
    - Top 2 levels, ignoring `__pycache__`, `venv/`, `node_modules/`

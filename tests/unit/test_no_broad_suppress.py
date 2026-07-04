@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-ALLOWLIST = {"utils/vram.py", "utils/tempfiles.py", "studio_tui.py"}  # justified cleanup/tools only
+ALLOWLIST = {"utils/vram.py", "utils/tempfiles.py"}  # justified cleanup/tools only
 
 def test_no_broad_suppress_in_logic_paths():
     repo_root = Path(__file__).resolve().parents[2]

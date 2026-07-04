@@ -1,4 +1,4 @@
-"""test_retry_manager.py - retry_with_backoff decorator + patch_retries."""
+"""test_retry_manager.py - retry_with_backoff decorator."""
 
 import subprocess
 from unittest.mock import patch
@@ -10,7 +10,6 @@ from utils.retry_manager import (
     BOUNDED_RETRIES,
     MAX_RETRIES,
     TRANSIENT_EXCEPTIONS,
-    patch_retries,
     retry_with_backoff,
 )
 
@@ -106,29 +105,6 @@ def test_retry_preserves_function_metadata():
 
     assert my_special_function.__name__ == "my_special_function"
     assert "my docstring" in my_special_function.__doc__
-
-
-def test_patch_retries_idempotent():
-    patch_retries()
-    from audio import audio_proxy
-
-    # Run again - should be no-op
-    patch_retries()
-    assert hasattr(audio_proxy.tts_generate, "_is_retry_patched")
-
-
-def test_patch_retries_handles_missing_audio_proxy(monkeypatch):
-    """patch_retries should not crash if audio_proxy import fails."""
-    import sys
-
-    monkeypatch.setitem(sys.modules, "audio", None)
-    # Reset any prior patching
-    with patch("utils.retry_manager.log") as _log:
-        patch_retries()
-    # Should log a warning but not raise
-
-
-
 
 
 def test_constants_have_expected_values():

@@ -4,8 +4,13 @@ from unittest.mock import MagicMock, patch
 
 from video.image_gen.qwen_repose import (
     QwenEditResult,
+    _character_data,
+    _copy_file,
+    _image_gen_cfg,
     _cache_path,
     _comfyui_image_ref,
+    _ensure_reference_image,
+    _normalize_existing_path,
     _patch_qwen_workflow,
     build_qwen_edit_prompt,
     preflight_qwen_edit,
@@ -161,6 +166,38 @@ def test_comfyui_image_ref_joins_subfolder():
     assert _comfyui_image_ref({"name": "b.png", "subfolder": "chars", "type": "input"}) == "chars/b.png"
 
 
+def test_small_qwen_helpers_cover_edge_paths(tmp_path: Path):
+    assert _image_gen_cfg({"qwen_edit": {"enabled": True}}) == {"qwen_edit": {"enabled": True}}
+    try:
+        _comfyui_image_ref({})
+        raise AssertionError("missing name should fail")
+    except ValueError as exc:
+        assert "missing 'name'" in str(exc)
+
+    missing = tmp_path / "missing.png"
+    assert _normalize_existing_path(None) is None
+    assert _normalize_existing_path(str(missing)) is None
+
+    src = tmp_path / "same.png"
+    src.write_bytes(b"x")
+    _copy_file(src, src)
+    assert src.read_bytes() == b"x"
+
+
+def test_validate_qwen_workflow_reports_unreadable_and_non_object(tmp_path: Path):
+    missing = tmp_path / "missing.json"
+    assert "could not be read" in validate_qwen_workflow_template(missing)[0]
+
+    workflow = tmp_path / "workflow.json"
+    workflow.write_text("[]", encoding="utf-8")
+    assert "must be a JSON object" in validate_qwen_workflow_template(workflow)[0]
+
+    lora_workflow = tmp_path / "lora.json"
+    lora_workflow.write_text(json.dumps(_workflow_with_required_placeholders()), encoding="utf-8")
+    issues = validate_qwen_workflow_template(lora_workflow, require_lightning_lora=True)
+    assert issues == ["qwen_edit workflow missing optional LoRA placeholder: __LIGHTNING_LORA__"]
+
+
 def test_patch_qwen_workflow_coerces_runtime_values(tmp_path: Path):
     workflow = tmp_path / "workflow.json"
     workflow.write_text(
@@ -228,6 +265,68 @@ def test_patch_qwen_workflow_coerces_runtime_values(tmp_path: Path):
     assert sampler_inputs["denoise"] == 0.55
     assert sampler_inputs["filename_prefix"] == "scene_01"
     assert prompt_inputs["text"] == "place hero in scene"
+
+
+def test_patch_qwen_workflow_handles_model_name_lora_prompt_and_non_dict_nodes(tmp_path: Path):
+    workflow = tmp_path / "workflow.json"
+    workflow.write_text(
+        json.dumps(
+            {
+                "skip": "not a node",
+                "loader": {
+                    "class_type": "Loader",
+                    "inputs": {"model_name": "", "lora_name": "", "lora_path": ""},
+                },
+                "text": {
+                    "class_type": "SomeTextEncode",
+                    "_meta": {"title": "Positive prompt"},
+                    "inputs": {"prompt": ""},
+                },
+                "neg": {
+                    "class_type": "SomeTextEncode",
+                    "_meta": {"title": "Negative prompt"},
+                    "inputs": {"prompt": "stay"},
+                },
+                "base": {
+                    "class_type": "LoadImage",
+                    "_meta": {"title": "base image"},
+                    "inputs": {"image": "__BASE_IMAGE__"},
+                },
+                "ref": {
+                    "class_type": "LoadImage",
+                    "_meta": {"title": "character reference"},
+                    "inputs": {"image": "__CHARACTER_IMAGE__"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = {
+        "image_gen": {
+            "qwen_edit": {
+                "model_path": "models/qwen.safetensors",
+                "lightning_lora": "models/lightning.safetensors",
+            }
+        }
+    }
+
+    patched = _patch_qwen_workflow(
+        workflow,
+        base_image_ref="bg.png",
+        character_image_ref="hero.png",
+        edit_prompt="edit me",
+        output_path=tmp_path / "out.png",
+        seed=1,
+        config=config,
+    )
+
+    assert patched["loader"]["inputs"]["model_name"] == "qwen.safetensors"
+    assert patched["loader"]["inputs"]["lora_name"] == "models/lightning.safetensors"
+    assert patched["loader"]["inputs"]["lora_path"] == "models/lightning.safetensors"
+    assert patched["text"]["inputs"]["prompt"] == "edit me"
+    assert patched["neg"]["inputs"]["prompt"] == "stay"
+    assert patched["base"]["inputs"]["image"] == "bg.png"
+    assert patched["ref"]["inputs"]["image"] == "hero.png"
 
 
 def test_patch_qwen_workflow_stages_loadimage_refs_on_committed_template():
@@ -333,6 +432,56 @@ def test_repose_character_falls_back_to_base_when_preflight_fails(tmp_path: Path
 
     assert result == str(base)
     assert base.read_bytes() == b"fake-png"
+
+
+def test_repose_character_skips_missing_base_and_missing_reference(tmp_path: Path):
+    missing_base = tmp_path / "missing.png"
+    result = repose_character_detailed(str(missing_base), "hero", "prompt", str(tmp_path / "out.png"), {}, "p")
+    assert result.status == "skipped"
+    assert result.reason == "base image missing"
+
+    base = tmp_path / "base.png"
+    base.write_bytes(b"base")
+    config = _staged_qwen_config(tmp_path)
+    with patch("video.image_gen.qwen_repose._ensure_reference_image", return_value=(None, "", {})):
+        result = repose_character_detailed(str(base), "hero", "prompt", str(tmp_path / "out.png"), config, "p")
+    assert result.status == "skipped"
+    assert "no character reference" in result.reason
+
+
+def test_repose_character_reports_failed_when_comfyui_not_running(tmp_path: Path):
+    base = tmp_path / "scene.png"
+    base.write_bytes(b"bg")
+    reference = tmp_path / "hero.png"
+    reference.write_bytes(b"ref")
+    config = _staged_qwen_config(tmp_path)
+    fake_runtime = MagicMock(base_url="http://127.0.0.1:8188")
+    fake_runtime.ensure_running.return_value = False
+
+    with (
+        patch("video.image_gen.qwen_repose._ensure_reference_image", return_value=(reference, "id", {})),
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=fake_runtime),
+    ):
+        result = repose_character_detailed(str(base), "hero", "prompt", str(tmp_path / "out.png"), config, "p")
+
+    assert result.status == "failed"
+    assert "ComfyUI not running" in result.reason
+
+
+def test_character_data_and_reference_resolution_swallow_store_errors(tmp_path: Path):
+    class Store:
+        def get_character(self, _key):
+            raise RuntimeError("character down")
+
+        def get_character_assets(self, _key):
+            raise RuntimeError("assets down")
+
+        def get_master_portrait_path(self, _key):
+            return ""
+
+    with patch("video.image_gen.qwen_repose._load_project_store", return_value=Store()):
+        assert _character_data("p", "hero") == ({}, {})
+        assert _ensure_reference_image("p", "hero", {}) == (None, "", {})
 
 
 def _staged_qwen_config(tmp_path: Path) -> dict:

@@ -60,10 +60,6 @@ class SegmentChunk:
     source_chapter: str = ""
 
 
-def _word_count(text: str) -> int:
-    return len(text.split())
-
-
 def _split_sentences(text: str) -> list[str]:
     """Devanagari-aware sentence splitter.
 
@@ -160,7 +156,7 @@ def _split_by_word_count(text: str, n: int, target_words: int) -> list[SegmentCh
     buf: list[str] = []
     buf_words = 0
     for sent in sentences:
-        sw = _word_count(sent)
+        sw = len(sent.split())
         if buf and (buf_words + sw) > target_words and buf_words >= target_words * 0.5:
             raw.append(SegmentChunk(text=" ".join(buf).strip()))
             buf = [sent]
@@ -190,7 +186,7 @@ def _rebalance(chunks: list[SegmentChunk], n: int) -> list[SegmentChunk]:
     while len(chunks) > n:
         i = min(
             range(len(chunks) - 1),
-            key=lambda k: _word_count(chunks[k].text) + _word_count(chunks[k + 1].text),
+            key=lambda k: len(chunks[k].text.split()) + len(chunks[k + 1].text.split()),
         )
         a, b = chunks[i], chunks[i + 1]
         merged = SegmentChunk(
@@ -202,7 +198,7 @@ def _rebalance(chunks: list[SegmentChunk], n: int) -> list[SegmentChunk]:
         chunks = [*chunks[:i], merged, *chunks[i + 2 :]]
 
     while len(chunks) < n:
-        idx = max(range(len(chunks)), key=lambda k: _word_count(chunks[k].text))
+        idx = max(range(len(chunks)), key=lambda k: len(chunks[k].text.split()))
         big = chunks[idx]
         sentences = _split_sentences(big.text)
         if len(sentences) < 2:

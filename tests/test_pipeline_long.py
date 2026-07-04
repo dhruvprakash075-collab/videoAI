@@ -114,7 +114,6 @@ def test_run_long_pipeline_dry_run_success(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}) as mock_pre_prod,
         patch("core.pipeline_long.run_preflight_checks") as mock_preflight,
-        patch("utils.retry_manager.patch_retries") as _mock_patch_retries,
         patch("utils.checkpoint.build_checkpoint_manager") as _mock_cp_mgr,
         patch("core.pipeline_long._seed_director_memory") as _mock_seed_mem,
         patch("agents.director_agent.DirectorAgent") as _mock_dir_agent,
@@ -196,7 +195,6 @@ def test_run_long_pipeline_with_decision_record(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -267,7 +265,6 @@ def test_run_long_pipeline_staged_loop(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -328,7 +325,6 @@ def test_run_long_pipeline_no_dry_run(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -366,7 +362,6 @@ def test_run_long_pipeline_no_segments_generated(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -418,7 +413,6 @@ def test_run_long_pipeline_endurance_mode(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -467,7 +461,6 @@ def test_run_long_pipeline_staged_loop_failures(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -515,7 +508,6 @@ def test_run_long_pipeline_segment_failures_non_staged(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -569,7 +561,6 @@ def test_run_long_pipeline_outline_length_locked_truncate(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -628,7 +619,6 @@ def test_run_long_pipeline_outline_length_locked_adjust(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -674,7 +664,6 @@ def test_run_long_pipeline_worker_shutdown_exceptions(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -751,7 +740,6 @@ def test_run_long_pipeline_errors_and_edge_cases(tmp_path):
             "core.pipeline_long.run_pre_production", return_value=None
         ),  # config_overlay = None to cover line 220
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent") as mock_dir_agent_cls,
@@ -811,7 +799,6 @@ def test_run_long_pipeline_stale_world_state_clear_fails(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -866,7 +853,6 @@ def test_run_long_pipeline_image_cap_and_env_ratio(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -933,7 +919,6 @@ def test_run_long_pipeline_stale_world_state_clear_success(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -975,7 +960,6 @@ def test_run_long_pipeline_staged_loop_abort_early(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1034,7 +1018,6 @@ def test_run_long_pipeline_preview_and_exceptions(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1078,7 +1061,6 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1106,7 +1088,6 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1230,7 +1211,6 @@ def test_role_normalization_single_named_char_keeps_max_weight(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1307,7 +1287,6 @@ def test_role_normalization_three_named_characters_map_independently(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1378,7 +1357,6 @@ def test_role_normalization_environment_removed(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
@@ -1442,7 +1420,6 @@ def test_role_normalization_non_dict_frames_unchanged(tmp_path):
     with (
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("core.pipeline_long.run_preflight_checks"),
-        patch("utils.retry_manager.patch_retries"),
         patch("utils.checkpoint.build_checkpoint_manager"),
         patch("core.pipeline_long._seed_director_memory"),
         patch("agents.director_agent.DirectorAgent"),
