@@ -15,6 +15,13 @@ try:
 except ImportError:
     pass  # Compatibility module not available
 
+try:
+    from utils.sentry import init_sentry
+
+    init_sentry()
+except Exception:
+    pass
+
 # Disable all CrewAI telemetry/OpenTelemetry to prevent network timeouts/deadlocks
 os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
@@ -113,14 +120,15 @@ def _ollama_model_available(model_name: str, host: str) -> bool:
     """Return True if `model_name` is pulled in Ollama (prefix match on tags)."""
     import json as _json
     import urllib.error
-    import urllib.request
 
     from utils.errors import RecoverableError
     from utils.url_security import build_validated_url, validate_service_base_url
 
     try:
         tags_url = build_validated_url(validate_service_base_url(host), "/api/tags")
-        with urllib.request.urlopen(tags_url, timeout=4) as r:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(tags_url, timeout=4) as r:
             tags = [t.get("name", "") for t in _json.loads(r.read()).get("models", [])]
         return any(model_name == t or t.startswith(model_name) or model_name in t for t in tags)
     except (urllib.error.URLError, OSError) as e:

@@ -4,6 +4,7 @@ import logging
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
+from typing_extensions import Required
 
 log = logging.getLogger(__name__)
 
@@ -11,16 +12,16 @@ log = logging.getLogger(__name__)
 class SegmentState(TypedDict, total=False):
     """The typed state passed between nodes in the LangGraph."""
 
-    i: int
-    plan: dict
-    context: str
+    i: Required[int]
+    plan: Required[dict]
+    context: Required[str]
 
     # Source path (Phase 4): when set, the writer short-circuits to the
     # chunk text and the critic auto-approves (verbatim source needs no rubric).
     source_chunk: Any
 
     # Script Node
-    script: str
+    script: Required[str]
     rewrites_attempted: int
 
     # Critic Node
@@ -29,7 +30,7 @@ class SegmentState(TypedDict, total=False):
 
     # Translation Node
     devanagari_script: str
-    script_for_tts: str
+    script_for_tts: Required[str]
 
     # Audio Node
     audio_path: str

@@ -6,7 +6,7 @@ To guarantee stable local execution on consumer hardware with **6GB VRAM** limit
 
 ## 1. VRAM & GPU Model Eviction
 
-ComfyUI / DreamShaper_8 (image generation, ~3-4GB peak), Supertonic 3 / OmniVoice (voice rendering — Supertonic is CPU-only so does not need eviction), and local LLMs (Ollama) cannot reside in VRAM simultaneously without causing Out-of-Memory (OOM) failures.
+ComfyUI / DreamShaper_8 (image generation), IndicF5 / Supertonic / OmniVoice (voice rendering), and local LLMs (Ollama) compete for local CPU/GPU memory. Supertonic is CPU-only, but GPU-backed engines and ComfyUI must be serialized to avoid Out-of-Memory failures.
 
 ### Two-Stage Eviction Process (`core/segment_runner.py`)
 
@@ -23,7 +23,7 @@ After eviction, the system polls `torch.cuda.mem_get_info()` in a loop, waiting 
 
 | Slot Type | Limit | Timeout | Used For |
 |---|---|---|---|
-| `"heavy"` | **1 active** | **1800s** (30 min) | ComfyUI image gen, OmniVoice TTS |
+| `"heavy"` | **1 active** | **1800s** (30 min) | ComfyUI image gen, GPU-backed TTS |
 | `"light"` | **16 active** | **60s** | Video rendering, assembler |
 
 * **GPU Task Slots**: `global_scheduler.task("heavy", ...)` restricts concurrent heavy GPU processes to **1**. A task that hangs past 1800s surfaces a `TimeoutError`.
@@ -71,7 +71,7 @@ VRAM before starting the image phase; if free VRAM is below the
 completes.
 
 ComfyUI itself is auto-started by the pipeline when needed (config:
-`images.comfyui.auto_start: true`) and unloaded after each image batch
+`image_gen.comfyui.auto_start: true`) and unloaded after each image batch
 to release VRAM for subsequent segments.
 
 ---
@@ -114,10 +114,9 @@ import the real module inside that test only.
 
 ## 6. TTS Worker Subprocess Safety (2026-06-04)
 
-All local TTS engines (Supertonic 3, OmniVoice, etc.) use a **persistent
-`--serve` worker subprocess** pattern — the parent process spawns the
-worker once, then sends JSON-over-stdin requests and receives binary
-WAV on stdout. This avoids the ~3s ONNX model load on every TTS call.
+Local TTS engines use subprocess workers. Supertonic and OmniVoice support
+persistent `--serve` workers; IndicF5 is invoked through its configured Python
+environment and reference audio/text settings in `tts.indicf5`.
 
 ### Encoding (P6-2)
 
@@ -125,9 +124,9 @@ On Windows, the worker subprocess inherits `sys.stdout = cp1252` from
 PowerShell. When the worker tries to `print("Devanagari text")` for
 debug logging, it crashes with `UnicodeDecodeError: 'charmap' codec`.
 
-**Fix (already applied):** all worker spawns in
-`audio/supertonic_worker.py:spawn()` and
-`audio/omnivoice_worker.py:spawn()` pass
+**Fix (already applied):** worker spawns in
+`audio/audio_proxy.py`, `audio/supertonic_worker.py`, and
+`audio/omnivoice_worker.py` pass
 `env={**os.environ, "PYTHONIOENCODING": "utf-8"}` in `Popen`. This
 forces the child to use UTF-8 stdout, regardless of the parent's code
 page.
@@ -176,10 +175,9 @@ the parent catches and falls back to omnivoice.
 | Supertonic 3 | Yes | 0 | High (4 threads) |
 | OmniVoice | Yes | ~2 GB | Low |
 
-Since Supertonic 3 is **CPU-only**, it does **NOT** need to participate
-in the Ollama eviction dance. It can run concurrently with Stable
-Diffusion (SD takes the GPU, Supertonic 3 takes the CPU). This is the
-key reason it became the default.
+Since Supertonic 3 is CPU-only, it does not need the Ollama eviction dance.
+IndicF5 and OmniVoice should be treated according to their configured runtime
+and hardware usage.
 
 ### Persistent-worker memory leak check
 

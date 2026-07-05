@@ -93,7 +93,7 @@ Create detailed steps with:
 
 - GPU memory is constrained (6GB VRAM) — plan for one model at a time
 - Use `global_scheduler.task("heavy", ...)` for GPU work
-- All config changes go in `config/config.yaml` + `config/config_schema.py`
+- All config changes go in `config/config.yaml` + `config/config_schemas.py`
 - All paths must use `pathlib.Path`
 - Circuit breaker pattern via `BreakerOpen` for Ollama/CrewAI failures
 - Preserve re-exports in `core/pipeline_long.py`

@@ -52,7 +52,9 @@ class ComfyUIClient:
             )
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=self.timeout) as response:
                 res = json.loads(response.read().decode("utf-8"))
                 cb.record_success()
                 return res
@@ -135,7 +137,9 @@ class ComfyUIClient:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=self.timeout) as response:
                 raw = response.read().decode("utf-8")
             cb.record_success()
         except urllib.error.HTTPError as e:
@@ -216,7 +220,9 @@ class ComfyUIClient:
         url = build_validated_url(self.base_url, f"/view?{params}")
         try:
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=self.timeout) as response:
                 content = response.read()
                 cb.record_success()
                 return content

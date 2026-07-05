@@ -158,7 +158,9 @@ class DirectorLlmClient:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(request, timeout=300) as resp:
+                from utils.url_security import open_validated_url
+
+                with open_validated_url(request, timeout=300) as resp:
                     UIState._uistate_log(f"[{label}] Streaming...")
                     for raw_line in resp:
                         line = raw_line.decode("utf-8").strip()

@@ -176,18 +176,18 @@ def _load_docx(path: Path) -> SourceDocument:
         ) from e
 
     doc = Document(str(path))
-    paragraph_data: list[dict[str, str]] = []
+    paragraph_data: list[dict[str, object]] = []
     text_parts: list[str] = []
     for para in doc.paragraphs:
-        style_name = para.style.name if para.style else "Normal"
+        style_name = str(para.style.name) if para.style and para.style.name else "Normal"
         is_heading = style_name.startswith("Heading")
         paragraph_data.append({"style": style_name, "text": para.text, "is_heading": is_heading})
         text_parts.append(para.text)
     text = _normalize_text("\n".join(text_parts))
     headings = [
-        {"style": p["style"], "text": p["text"]}
+        {"style": str(p["style"]), "text": str(p["text"])}
         for p in paragraph_data
-        if p["is_heading"] and p["text"].strip()
+        if bool(p["is_heading"]) and str(p["text"]).strip()
     ]
     core_props = doc.core_properties
     author = (core_props.author or "") if core_props else ""

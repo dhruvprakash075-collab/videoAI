@@ -103,7 +103,9 @@ def _check_ollama(config: dict) -> tuple[Status, str]:
     url = f"{validated.rstrip('/')}/api/tags"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Video.AI-Preflight"})
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(req, timeout=3) as resp:
             import json
 
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
@@ -117,8 +119,6 @@ def _check_ollama(config: dict) -> tuple[Status, str]:
 
 def _check_director_model(config: dict) -> tuple[Status, str]:
     """Verify the configured director model is installed in Ollama."""
-    import urllib.error
-    import urllib.request
 
     from utils.url_security import validate_service_base_url
 
@@ -130,7 +130,9 @@ def _check_director_model(config: dict) -> tuple[Status, str]:
         return "warn", f"Ollama host validation failed: {e}"
     url = f"{validated.rstrip('/')}/api/tags"
     try:
-        with urllib.request.urlopen(url, timeout=3) as resp:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(url, timeout=3) as resp:
             import json
 
             data = json.loads(resp.read().decode("utf-8", errors="replace"))

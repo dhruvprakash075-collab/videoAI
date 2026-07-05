@@ -349,8 +349,8 @@ def finalize_production(
         from utils.seo_generator import generate_seo_metadata
 
         seo_meta = generate_seo_metadata(topic, outline, config)
-        title = seo_meta["title"]
-        tags = seo_meta["tags"]
+        title = seo_meta.get("title", topic)
+        tags = seo_meta.get("tags", [])
 
         from utils.youtube_uploader import upload_to_youtube
 

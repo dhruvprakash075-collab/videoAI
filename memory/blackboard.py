@@ -17,7 +17,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 if TYPE_CHECKING:
     from config.config_schemas import DecisionRecord
@@ -53,7 +53,7 @@ class Blackboard:
             filename = self.FILENAME
         self._path = self._root / filename
         self._lock = threading.RLock()
-        self._file_lock = _FileLock(str(self._path) + ".lock") if _FILELOCK_AVAILABLE else None
+        self._file_lock = cast(Any, _FileLock)(str(self._path) + ".lock") if _FILELOCK_AVAILABLE else None
 
     # ── Low-level read/write ───────────────────────────────────────────────
 

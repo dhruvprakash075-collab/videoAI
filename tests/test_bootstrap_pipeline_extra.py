@@ -7,25 +7,25 @@ import bootstrap_pipeline as bp
 
 
 def _args(**overrides):
-    base = dict(
-        topic="topic",
-        file="",
-        source=None,
-        eval_models=False,
-        topics_file=None,
-        skip_preflight=True,
-        preflight_only=False,
-        dry_run=True,
-        project=None,
-        no_resume=False,
-        duration=None,
-        series=False,
-        preview=False,
-        words_per_segment=None,
-        images_per_segment=None,
-        segment_count=None,
-        yes=False,
-    )
+    base = {
+        "topic": "topic",
+        "file": "",
+        "source": None,
+        "eval_models": False,
+        "topics_file": None,
+        "skip_preflight": True,
+        "preflight_only": False,
+        "dry_run": True,
+        "project": None,
+        "no_resume": False,
+        "duration": None,
+        "series": False,
+        "preview": False,
+        "words_per_segment": None,
+        "images_per_segment": None,
+        "segment_count": None,
+        "yes": False,
+    }
     base.update(overrides)
     return Namespace(**base)
 

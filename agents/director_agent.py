@@ -566,7 +566,7 @@ class DirectorAgent:
         # Text-only fallback with image metadata
         meta = f"File: {img_file.name}, Format: {fmt}, Size: {width}x{height}"
         if char_presence:
-            dom_char = max(char_presence, key=char_presence.get)
+            dom_char = max(char_presence, key=lambda k: char_presence.get(k, 0) or 0)
             meta += f", Dominant char: {dom_char}"
         prompt_text = (
             f"You are the Creative Director. Review this image for character consistency.\n"
@@ -621,7 +621,9 @@ class DirectorAgent:
             "options": {"temperature": 0.2},
         }).encode()
         req = _ur.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        with _ur.urlopen(req, timeout=timeout) as resp:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode())
         raw = body.get("message", {}).get("content", "")
         return self._parse_json(raw, {"decision": "approve", "reason": "vision_reviewed", "locked": False})
@@ -977,12 +979,12 @@ class DirectorAgent:
 
         # Vision summary header (S8)
 
-        chars = vision_doc.get("characters", [])
+        chars: list[dict[str, Any]] | dict[str, Any] | str = vision_doc.get("characters", [])
         if isinstance(chars, dict):
-            chars_list = []
+            chars_list: list[dict[str, Any]] = []
             for name, details in chars.items():
                 if isinstance(details, dict):
-                    c = details.copy()
+                    c = {k: str(v) for k, v in details.items()}
                     c.setdefault("name", name)
                 else:
                     c = {"name": name, "description": str(details)}
@@ -993,7 +995,7 @@ class DirectorAgent:
         if chars and isinstance(chars[0], str):
             chars = [{"name": c} for c in chars]
 
-        char_names = ", ".join(c.get("name", "?") for c in chars[:4])
+        char_names = ", ".join(str(c.get("name", "?")) for c in chars[:4])
 
         if len(chars) > 4:
             char_names += " +%d more" % (len(chars) - 4)

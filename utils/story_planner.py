@@ -174,7 +174,6 @@ def _plan_batch(
                     agent=agent,
                     expected_output=f"A structured StoryOutline containing exactly {batch_size} segment plans",
                     output_json=StoryOutline,
-                    cache=True,  # Cache LLM results to avoid redundant calls
                 )
             ],
             process=Process.sequential,

@@ -58,9 +58,9 @@ class UIState:
 
     pause_event = threading.Event()
 
-    active_question = None
+    active_question: str | None = None
 
-    user_reply = None
+    user_reply: str | None = None
 
     status = "running"
 

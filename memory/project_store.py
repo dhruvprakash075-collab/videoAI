@@ -768,6 +768,8 @@ class PermanentMemoryLog:
         all character and motif data that was persisted in a previous (crashed) run.
         """
         try:
+            if self._one_time_mem_path is None:
+                return
             saved = _load_json(self._one_time_mem_path, {})
             chars = saved.get("characters", {})
             motifs = saved.get("motifs", {})

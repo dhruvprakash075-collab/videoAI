@@ -106,7 +106,7 @@ bootstrap → pre_production → segment_runner (loop) → post_production
 
 ### Config-Driven Pattern
 - All tunables in `config/config.yaml`
-- Pydantic validation in `config/config_schema.py`
+- Pydantic validation in `config/config_schemas.py`
 - `config.get("section", {}).get("key", default)` access pattern
 
 ## Red Flags

@@ -77,7 +77,7 @@ video/         Image generation + rendering
 
 ### Phase 4: Generate Onboarding Artifacts
 
-See `AGENTS.md` and `CLAUDE.md` for the full onboarding guide.
+See `AGENTS.md`, `README.md`, and the live files under `docs/` for the onboarding guide.
 
 ## Video.AI Quick Reference
 

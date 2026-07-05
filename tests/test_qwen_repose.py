@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 from video.image_gen.qwen_repose import (
     QwenEditResult,
-    _character_data,
-    _copy_file,
-    _image_gen_cfg,
     _cache_path,
+    _character_data,
     _comfyui_image_ref,
+    _copy_file,
     _ensure_reference_image,
+    _image_gen_cfg,
     _normalize_existing_path,
     _patch_qwen_workflow,
     build_qwen_edit_prompt,

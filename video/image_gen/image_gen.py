@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
+from typing import Any, cast
 
 from tqdm import tqdm
 
@@ -257,7 +258,7 @@ def _prompt_cache_key(
         f"|gs={guidance_scale}|neg={neg_prompt}|lora={lora_state}|model={model_id}"
         f"|seed={seed}|lora_fp={lora_fingerprint}|mp_hash={master_portrait_hash}"
     )
-    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+    return hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
 
 
 
@@ -284,6 +285,7 @@ def _maybe_upscale(img, cfg: dict):
     if model_name in ("4x-ultrasharp", "realesrgan", "real-esrgan"):
         try:
             import numpy as np
+
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
 
@@ -315,8 +317,9 @@ def _maybe_upscale(img, cfg: dict):
             from PIL import Image as _PILImage
 
             upscaled = _PILImage.fromarray(out_np)
+            resampling = cast(Any, getattr(_PILImage, "Resampling", _PILImage))
             if upscaled.size != (target_w, target_h):
-                upscaled = upscaled.resize((target_w, target_h), _PILImage.LANCZOS)
+                upscaled = upscaled.resize((target_w, target_h), resampling.LANCZOS)
             log.debug(f"[Upscale] {model_name}: {img.size} → {upscaled.size}")
             return upscaled
         except Exception as e:
@@ -326,7 +329,8 @@ def _maybe_upscale(img, cfg: dict):
     try:
         from PIL import Image as _PILImage
 
-        resized = img.resize((target_w, target_h), _PILImage.LANCZOS)
+        resampling = cast(Any, getattr(_PILImage, "Resampling", _PILImage))
+        resized = img.resize((target_w, target_h), resampling.LANCZOS)
         log.debug(f"[Upscale] Lanczos: {img.size} → {resized.size}")
         return resized
     except Exception as e:
@@ -346,7 +350,7 @@ def _resolve_dominant_char_at_threshold(
         return None, 0.0
     if not isinstance(char_presence, dict) or not char_presence:
         return None, 0.0
-    best_key = max(char_presence, key=char_presence.get)
+    best_key = max(char_presence, key=lambda k: cast(float, char_presence.get(k, 0.0)))
     best_weight = float(char_presence[best_key])
     if best_weight < threshold:
         return None, 0.0
@@ -377,7 +381,7 @@ def _comfyui_seed(cfg: dict, prompt: str, frame_index: int) -> int | None:
         return (explicit + frame_index * 7919) % (2**32)
     if cfg.get("lock_seed", True):
         raw = f"comfyui|{prompt[:120]}|frame={frame_index}"
-        return int(hashlib.md5(raw.encode("utf-8")).hexdigest()[:8], 16) % (2**32)
+        return int(hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16) % (2**32)
     return None
 
 
@@ -474,7 +478,7 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
 
 def _qwen_seed(char_key: str, frame_index: int, prompt: str) -> int:
     raw = f"qwen_edit|{char_key}|{frame_index}|{prompt[:80]}"
-    return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16) % (2**32)
+    return int(hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()[:8], 16) % (2**32)
 
 
 def _free_comfyui_memory(cfg: dict) -> None:

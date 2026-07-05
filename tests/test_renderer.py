@@ -202,10 +202,9 @@ def test_render_html_wsl_user_and_quiet_false(monkeypatch, tmp_path):
         assert "-u" in args
         assert "operator" in args
         assert "Alpine" in args
-        # check hyperframes command in bash
-        bash_cmd = args[-1]
-        assert "--quiet" not in bash_cmd
-        assert "variables" in bash_cmd
+        assert "--quiet" not in args
+        assert "--variables" in args
+        assert '{"x": 2}' in args
 
 
 def test_render_html_wsl_distro_error(monkeypatch, tmp_path):

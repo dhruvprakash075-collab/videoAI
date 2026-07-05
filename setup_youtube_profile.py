@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Any
 
 
-def sync_playwright():
+def sync_playwright() -> Any:
     """Placeholder sync_playwright to allow tests to patch this symbol."""
     raise RuntimeError("playwright not available in this environment")
 

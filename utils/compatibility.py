@@ -9,8 +9,16 @@ since CrewAI 1.14+ is independent of langchain and we target Python 3.12.
 import logging
 import sys
 from importlib.util import find_spec
+from typing import Any, cast
 
 log = logging.getLogger(__name__)
+
+
+def _has_module(name: str) -> bool:
+    try:
+        return find_spec(name) is not None
+    except ValueError:
+        return name in sys.modules
 
 
 def setup_compatibility():
@@ -24,9 +32,9 @@ def setup_compatibility():
     if sys.platform == "win32":
         try:
             if hasattr(sys.stdout, "reconfigure"):
-                sys.stdout.reconfigure(encoding="utf-8")
+                cast(Any, sys.stdout).reconfigure(encoding="utf-8")
             if hasattr(sys.stderr, "reconfigure"):
-                sys.stderr.reconfigure(encoding="utf-8")
+                cast(Any, sys.stderr).reconfigure(encoding="utf-8")
         except (AttributeError, OSError):
             pass
 
@@ -36,22 +44,22 @@ def check_dependencies():
     missing = []
 
     try:
-        import crewai
+        __import__("crewai")
     except ImportError:
         missing.append("crewai")
 
     try:
-        import ollama
+        __import__("ollama")
     except ImportError:
         missing.append("ollama")
 
     # ponytail: dependency checks run during CLI/module startup; do not touch
     # CUDA here because torch.cuda.is_available() can hang on flaky drivers.
-    if find_spec("torch") is None:
+    if not _has_module("torch"):
         missing.append("torch")
 
     try:
-        import diffusers
+        __import__("diffusers")
     except ImportError:
         missing.append("diffusers")
 
@@ -59,7 +67,7 @@ def check_dependencies():
     # paths on Windows. For startup validation we only need to know whether the
     # distribution is installed; functional PEFT failures should surface at the
     # actual call site.
-    if find_spec("peft") is None:
+    if not _has_module("peft"):
         missing.append("peft")
 
     return missing
@@ -78,7 +86,7 @@ def apply_all_patches():
             f"Missing packages: {', '.join(missing)}. Install with: pip install {' '.join(missing)}"
         )
 
-    sys._video_ai_compat_applied = True
+    cast(Any, sys)._video_ai_compat_applied = True
     log.info("Compatibility layer initialized")
 
 

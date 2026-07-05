@@ -29,7 +29,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # ── Bootstrap: PYTHONPATH + telemetry suppression (matches old behavior) ──
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -82,11 +82,11 @@ log = logging.getLogger(__name__)
 # ── Re-exports for backwards compatibility (tests, TUI, etc.) ────────────
 from core.pre_production import (
     _deep_merge,
-    _sanitize_narration,  # noqa: F401  (used by tests)
+    _sanitize_narration,
     _seed_director_memory,
-    format_chapters_time,  # noqa: F401
+    format_chapters_time,
     format_time_hms,
-    get_video_duration,  # noqa: F401
+    get_video_duration,
     plan_outline,
     run_pre_production,
     run_preflight_checks,
@@ -109,6 +109,22 @@ _evict_ollama_models = evict_ollama_models
 _log_vram_usage = log_vram_usage
 _aggressive_vram_cleanup = aggressive_vram_cleanup
 _director_aborted = get_director_abort
+
+__all__ = [
+    "_aggressive_vram_cleanup",
+    "_deep_merge",
+    "_director_aborted",
+    "_evict_ollama_models",
+    "_log_vram_usage",
+    "_sanitize_narration",
+    "_seed_director_memory",
+    "format_chapters_time",
+    "format_time_hms",
+    "get_video_duration",
+    "plan_outline",
+    "run_pre_production",
+    "run_preflight_checks",
+]
 
 
 # ── Public abort control (TUI calls these) ───────────────────────────
@@ -457,37 +473,39 @@ def run_long_pipeline(
         cp_list = seg_plan.get("char_presence")
         if not isinstance(cp_list, list) or not cp_list:
             continue
+        cp_frames = cast(list[Any], cp_list)
         n_frames = len(cp_list)
         n_env_needed = max(1, int(n_frames * _env_ratio))
+        def _presence_weight(frame: object) -> float:
+            return max(frame.values()) if isinstance(frame, dict) and frame else 0.0
+
         env_indices = [
             j
-            for j, frame in enumerate(cp_list)
-            if isinstance(frame, dict) and (max(frame.values()) if frame else 0) <= 0.2
+            for j, frame in enumerate(cp_frames)
+            if isinstance(frame, dict) and _presence_weight(frame) <= 0.2
         ]
         if len(env_indices) < n_env_needed:
             sorted_by_weight = sorted(
                 range(n_frames),
-                key=lambda j: (
-                    max(cp_list[j].values()) if isinstance(cp_list[j], dict) and cp_list[j] else 0
-                ),
+                key=lambda j: _presence_weight(cp_frames[j]),
             )
             for j in sorted_by_weight:
                 if len(env_indices) >= n_env_needed:
                     break
                 if j not in env_indices:
-                    if isinstance(cp_list[j], dict):
-                        cp_list[j] = {k: min(0.1, v) for k, v in cp_list[j].items()}
+                    if isinstance(cp_frames[j], dict):
+                        cp_frames[j] = {k: min(0.1, v) for k, v in cp_frames[j].items()}
                     else:
-                        cp_list[j] = {}
+                        cp_frames[j] = {}
                     env_indices.append(j)
         # With only two frames, forcing both first and last to environment
         # eliminates every character shot. Keep the final frame character-led.
         _forced_environment_indices = [0] if n_frames <= 2 else [0, n_frames - 1]
         for _force_idx in _forced_environment_indices:
-            if isinstance(cp_list[_force_idx], dict) and cp_list[_force_idx]:
-                cp_list[_force_idx] = {k: min(0.15, v) for k, v in cp_list[_force_idx].items()}
+            if isinstance(cp_frames[_force_idx], dict) and cp_frames[_force_idx]:
+                cp_frames[_force_idx] = {k: min(0.15, v) for k, v in cp_frames[_force_idx].items()}
             else:
-                cp_list[_force_idx] = {}
+                cp_frames[_force_idx] = {}
 
     # Segment Preview (dry-run)
     if not dry_run and n_segs > 1:
