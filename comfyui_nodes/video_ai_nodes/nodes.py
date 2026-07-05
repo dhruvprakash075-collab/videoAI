@@ -1,5 +1,4 @@
 """Video.AI ComfyUI V3 custom nodes."""
-# ruff: noqa: N801, ARG003
 
 from __future__ import annotations
 
@@ -29,7 +28,7 @@ BARRIER = io.Custom("VIDEOAI_BARRIER")
 _KSAMPLER_SEED_STATE: dict[str, int] = {}
 
 
-class VideoAI_ProjectConfigLoader(io.ComfyNode):
+class VideoAI_ProjectConfigLoader(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -55,13 +54,13 @@ class VideoAI_ProjectConfigLoader(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, config_path: str, repo_root: str = "", barrier=None) -> io.NodeOutput:
+    def execute(cls, config_path: str, repo_root: str = "", barrier=None) -> io.NodeOutput:  # noqa: ARG003
         root = resolve_repo_root(repo_root)
         cfg = load_yaml(resolve_config_path(config_path, root))
         return io.NodeOutput(*read_image_gen_values(cfg))
 
 
-class VideoAI_ConfigCheckpointLoader(io.ComfyNode):
+class VideoAI_ConfigCheckpointLoader(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -93,13 +92,12 @@ class VideoAI_ConfigCheckpointLoader(io.ComfyNode):
         return comfy.get("checkpoint") or image_gen.get("checkpoint") or ""
 
     @classmethod
-    def execute(cls, config_path="config/config.yaml", repo_root="", checkpoint_override="", barrier=None) -> io.NodeOutput:
-        import comfy.sd
-        import folder_paths
-
+    def execute(cls, config_path="config/config.yaml", repo_root="", checkpoint_override="", barrier=None) -> io.NodeOutput:  # noqa: ARG003
         ckpt_name = cls._checkpoint_name(config_path, repo_root, checkpoint_override)
         if not ckpt_name:
             raise ValueError("No checkpoint configured at image_gen.comfyui.checkpoint")
+        import comfy.sd
+        import folder_paths
         ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
         if not ckpt_path:
             raise FileNotFoundError(f"Checkpoint '{ckpt_name}' not found")
@@ -112,7 +110,7 @@ class VideoAI_ConfigCheckpointLoader(io.ComfyNode):
         return io.NodeOutput(model, clip, vae, ckpt_name)
 
     @classmethod
-    def fingerprint_inputs(cls, config_path="config/config.yaml", repo_root="", checkpoint_override="", barrier=None):
+    def fingerprint_inputs(cls, config_path="config/config.yaml", repo_root="", checkpoint_override="", barrier=None):  # noqa: ARG003
         ckpt = cls._checkpoint_name(config_path, repo_root, checkpoint_override)
         if not ckpt:
             return "unknown"
@@ -127,7 +125,7 @@ class VideoAI_ConfigCheckpointLoader(io.ComfyNode):
         return ckpt
 
 
-class VideoAI_ConfigKSampler(io.ComfyNode):
+class VideoAI_ConfigKSampler(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -172,7 +170,7 @@ class VideoAI_ConfigKSampler(io.ComfyNode):
         return int(seed)
 
     @classmethod
-    def execute(cls, model, positive, negative, latent, config_path="config/config.yaml", repo_root="", seed=0, seed_control="fixed", denoise=1.0, sampler_override="", scheduler_override="", steps_override=0, cfg_override=0.0, barrier=None) -> io.NodeOutput:
+    def execute(cls, model, positive, negative, latent, config_path="config/config.yaml", repo_root="", seed=0, seed_control="fixed", denoise=1.0, sampler_override="", scheduler_override="", steps_override=0, cfg_override=0.0, barrier=None) -> io.NodeOutput:  # noqa: ARG003
         import comfy.samplers
         from nodes import common_ksampler
 
@@ -194,13 +192,13 @@ class VideoAI_ConfigKSampler(io.ComfyNode):
         return io.NodeOutput(out_latent, sampler_name, scheduler, steps, cfg_scale, effective_seed)
 
     @classmethod
-    def fingerprint_inputs(cls, model=None, positive=None, negative=None, latent=None, config_path="config/config.yaml", repo_root="", seed=0, seed_control="fixed", denoise=1.0, sampler_override="", scheduler_override="", steps_override=0, cfg_override=0.0, barrier=None):
+    def fingerprint_inputs(cls, model=None, positive=None, negative=None, latent=None, config_path="config/config.yaml", repo_root="", seed=0, seed_control="fixed", denoise=1.0, sampler_override="", scheduler_override="", steps_override=0, cfg_override=0.0, barrier=None):  # noqa: ARG003
         if seed_control != "fixed":
             return float("nan")
         return f"{seed}:{config_path}:{repo_root}:{denoise}:{sampler_override}:{scheduler_override}:{steps_override}:{cfg_override}"
 
 
-class VideoAI_CharacterPortraitLoader(io.ComfyNode):
+class VideoAI_CharacterPortraitLoader(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -259,7 +257,7 @@ class VideoAI_CharacterPortraitLoader(io.ComfyNode):
         return f"missing:{project_name}:{character_name}"
 
 
-class VideoAI_FreeMemoryBarrier(io.ComfyNode):
+class VideoAI_FreeMemoryBarrier(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -297,7 +295,7 @@ class VideoAI_FreeMemoryBarrier(io.ComfyNode):
         return io.NodeOutput(label)
 
 
-class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):
+class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):  # noqa: N801
     @staticmethod
     def _lora_options():
         try:
@@ -306,6 +304,9 @@ class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):
             return folder_paths.get_filename_list("loras") or ["None"]
         except Exception:
             return ["None"]
+    # ponytail: _lora_options returns a static snapshot at schema-registration time.
+    #   If a new LoRA is added while ComfyUI runs the user won't see it in the dropdown
+    #   until restart. ComfyUI-wide limitation — all node packs behave this way.
 
     @staticmethod
     def _detect_family(checkpoint_name: str) -> str:
@@ -359,7 +360,7 @@ class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):
         return io.NodeOutput(model, clip, True)
 
 
-class VideoAI_VideoFrameSaver(io.ComfyNode):
+class VideoAI_VideoFrameSaver(io.ComfyNode):  # noqa: N801
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
@@ -381,7 +382,7 @@ class VideoAI_VideoFrameSaver(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, images, output_dir, scene_index, filename_prefix="scene", metadata_json="", overwrite=True, barrier=None) -> io.NodeOutput:
+    def execute(cls, images, output_dir, scene_index, filename_prefix="scene", metadata_json="", overwrite=True, barrier=None) -> io.NodeOutput:  # noqa: ARG003
         from PIL.PngImagePlugin import PngInfo
 
         out_dir = Path(output_dir)

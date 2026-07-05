@@ -99,7 +99,7 @@ jobs:
         run: |
           python -c "import sys; sys.path.insert(0, 'comfyui_nodes'); import video_ai_nodes; assert hasattr(video_ai_nodes, 'comfy_entrypoint')"
       - name: Run Video.AI ComfyUI node tests
-        run: python -m pytest tests/test_video_ai_nodes.py -q
+        run: python -m pytest tests/test_video_ai_nodes.py tests/test_video_ai_nodes_execution.py -q --tb=short
       - name: Run CI test suite with coverage report
         run: |
           python -m pytest tests/test_config.py tests/test_config_schemas.py \
