@@ -113,7 +113,18 @@ class VideoAI_ConfigCheckpointLoader(io.ComfyNode):
 
     @classmethod
     def fingerprint_inputs(cls, config_path="config/config.yaml", repo_root="", checkpoint_override="", barrier=None):
-        return cls._checkpoint_name(config_path, repo_root, checkpoint_override) or "unknown"
+        ckpt = cls._checkpoint_name(config_path, repo_root, checkpoint_override)
+        if not ckpt:
+            return "unknown"
+        try:
+            import folder_paths
+            resolved = folder_paths.get_full_path("checkpoints", ckpt)
+            if resolved:
+                st = Path(resolved).stat()
+                return f"{ckpt}:{st.st_mtime_ns}:{st.st_size}"
+        except Exception:
+            pass
+        return ckpt
 
 
 class VideoAI_ConfigKSampler(io.ComfyNode):
