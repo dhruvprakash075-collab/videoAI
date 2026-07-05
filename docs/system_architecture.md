@@ -35,6 +35,7 @@ Operator CLI/UI
 | `audio/` | IndicF5, Supertonic, OmniVoice, audio effects, mastering |
 | `config/` | YAML loader and Pydantic schemas |
 | `core/` | Pipeline orchestration and staged segment execution |
+| `core/runtime/` | Ollama server management, VRAM polling, eviction, server lifecycle |
 | `jobs/` | SQLite job queue and worker |
 | `memory/` | Story memory, blackboard, project store |
 | `utils/` | Source loading, research, critic, SEO, preflight, shutdown, URL security |
@@ -76,3 +77,9 @@ Qwen image edit is configured under `image_gen.qwen_edit`. Admission checks prot
 - Local/remote URL access is validated through `utils/url_security.py`.
 - Sentry is optional and initialized from environment variables.
 - `bootstrap_pipeline.py --sentry-smoke` sends a deliberate smoke exception.
+
+## CI / Test Architecture
+
+Tests use `unittest.mock.patch` extensively — no real GPU, Ollama, or
+network required. See `docs/testing_and_linting.md` for commands, test
+counts, type checking, and CI dependency details.

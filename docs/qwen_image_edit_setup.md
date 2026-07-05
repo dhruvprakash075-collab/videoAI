@@ -266,6 +266,13 @@ If Qwen dispatch preflight fails, the render uses normal one-pass ComfyUI. If an
 
 ## Rollback
 
+## CI / Test Dependencies
+
+Tests for Qwen-related modules (`test_qwen_repose.py`, `test_preflight.py`)
+mock all GPU interactions via `patch("torch.cuda.*")`. On CI, `torch` is
+stubbed in `tests/conftest.py` — no real CUDA or torch download needed.
+Run GPU-spike tests locally in the root `venv` (torch 2.11.0+cu128).
+
 To return to the stable path, set:
 
 ```yaml

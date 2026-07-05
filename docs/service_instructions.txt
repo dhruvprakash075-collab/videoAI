@@ -34,3 +34,8 @@ Notes
 - Ensure `C:\Video.AI\logs` exists and is writable by the service account.
 - Before installing a service, run `run_worker.bat` manually once to validate the environment.
 - `scripts\run_worker_service.ps1` starts the worker detached, but it is not a real Windows service.
+
+CI / Test Dependencies
+  CI installs lightweight deps only (pydub, soundfile, psutil, playwright, etc).
+  Heavy packages like torch are stubbed in tests/conftest.py. Tests run fully
+  offline with no GPU, no Ollama, no network. See docs/testing_and_linting.md.

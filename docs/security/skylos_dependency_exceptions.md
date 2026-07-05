@@ -14,8 +14,8 @@ that are either (a) in vendored/external code not owned by this repo, or
 | File | Package | Version | Vulnerability ID | Disposition | Reason |
 |------|---------|---------|-----------------|-------------|--------|
 | `requirements.txt` | pytest | >=8.0.0 (installed: 9.0.3) | GHSA-6w46-j5rx-g56g | No action needed | Installed version is 9.0.3 which is not affected. Lower bound `>=8.0.0` is a minimum version spec, not a pin to a vulnerable version. |
-| `dashboard/package.json` | vite | ^8.0.12 (installed: 8.0.16) | GHSA-fx2h-pf6j-xcff | No action needed | Installed version is 8.0.16 which is not affected. `^8.0.12` is a semver range; npm installs 8.0.16. |
-| `dashboard/package.json` | vite | ^8.0.12 (installed: 8.0.16) | GHSA-v6wh-96g9-6wx3 | No action needed | Same as above — installed version is safe. |
+| `dashboard/package.json` | vite | ^8.0.16 (installed: 8.0.16) | GHSA-fx2h-pf6j-xcff | No action needed | Installed 8.0.16 not affected. `^8.0.16` is a semver range; npm installs 8.0.16. |
+| `dashboard/package.json` | vite | ^8.0.16 (installed: 8.0.16) | GHSA-v6wh-96g9-6wx3 | No action needed | Same as above. |
 
 ## Vendored External Dependencies (not owned by this repo)
 
@@ -36,3 +36,9 @@ that are either (a) in vendored/external code not owned by this repo, or
 - Do not modify vendored dependency files unless this repo owns the dependency.
 - If a vendored dependency's upstream releases a fix, the vendored copy should
   be updated as part of a routine external dependency refresh.
+
+## CI / Test Dependencies
+
+On CI, `torch` and other heavy packages are never installed. They are
+stubbed in `tests/conftest.py:_install_optional_dependency_stubs()`.
+See `docs/testing_and_linting.md`.

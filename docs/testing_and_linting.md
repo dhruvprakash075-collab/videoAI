@@ -1,6 +1,6 @@
 # Testing and Linting
 
-This repo is verified with backend tests, Ruff, and BasedPyright. Tests are mock-heavy and do not require a live GPU, Ollama server, ComfyUI server, or external network.
+This repo is verified with backend tests, Ruff, and mypy (CI) / BasedPyright (local). Tests are mock-heavy and do not require a live GPU, Ollama server, ComfyUI server, or external network.
 
 ## Backend Tests
 
@@ -8,9 +8,10 @@ This repo is verified with backend tests, Ruff, and BasedPyright. Tests are mock
 .\venv\Scripts\python.exe -m pytest -q
 ```
 
-Current local result: `1969 passed, 5 skipped`.
+Current local result: `2053 collected, 0 errors`. Test
+files with `pytest.mark.skip` are skipped as expected.
 
-Targeted examples:
+To run individual test files:
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest tests/test_retry_manager.py -q
@@ -20,7 +21,10 @@ Targeted examples:
 Important test fixtures:
 
 - `tests/conftest.py` resets `UIState` between tests.
-- The pyarrow stub in `tests/conftest.py` avoids Windows native-DLL shutdown crashes.
+- `tests/conftest.py:_install_optional_dependency_stubs()` injects lightweight
+  `types.ModuleType` stubs for heavy packages (`torch`, `pyarrow`, `crewai`,
+  `faster_whisper`, `whisper`) so tests using `patch(...)` never load real
+  GPU or native DLLs. No 200MB torch download on CI.
 - The pytest temp cleanup patch suppresses benign Windows `PermissionError` during numbered temp directory cleanup.
 
 ## Ruff
@@ -32,9 +36,22 @@ Important test fixtures:
 
 Current local result: clean.
 
-## BasedPyright
+## Type Checking
 
-The repo has `pyrightconfig.json`. The current local checker setup uses the scanner package path plus lightweight checker-only dependency stubs:
+### CI: mypy
+
+The CI workflow runs `mypy` against selected modules:
+
+```powershell
+.\venv\Scripts\python.exe -m mypy --follow-imports=skip --ignore-missing-imports config/config.py config/config_schemas.py utils/errors.py ...
+```
+
+Configured in `.github/workflows/ci.yml`.
+
+### Local: BasedPyright
+
+The repo has `pyrightconfig.json` for local type checking with BasedPyright.
+The scanner package path plus lightweight checker-only dependency stubs:
 
 ```powershell
 $env:PYTHONPATH="C:\Video.AI\codex_tmp\scanner_pkgs;C:\Video.AI\codex_tmp\checker_deps"
@@ -50,7 +67,7 @@ Current local result: `0 errors, 0 warnings, 0 notes`.
 .\venv\Scripts\python.exe -m coverage report
 ```
 
-Coverage configuration lives in `pyproject.toml`.
+Coverage configuration lives in `pyproject.toml`. CI enforces 80% coverage minimum.
 
 ## Dashboard Tests
 

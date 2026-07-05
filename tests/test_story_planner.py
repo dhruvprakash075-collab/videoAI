@@ -3,6 +3,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from utils import story_planner
 from utils.story_planner import (
     SegmentPlan,
     StoryOutline,
@@ -318,6 +319,7 @@ def test_plan_batch_pads_when_short():
     ):
         out = plan_story("topic", 3, {}, agent)
     assert len(out) == 3
+    assert story_planner._default_outline_used is False
 
 
 def test_plan_batch_truncates_when_long():
