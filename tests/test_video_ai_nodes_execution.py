@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import json
 import math
-import os
-import random
 import sys
-import tempfile
 import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -46,25 +43,25 @@ class _NodeOutput:
 
 class _IOFactory:
     @classmethod
-    def Input(cls, name=None, **kwargs):
+    def Input(cls, name=None, **kwargs):  # noqa: N802
         return (name, kwargs) if name else kwargs
     @classmethod
-    def Output(cls, **kwargs):
+    def Output(cls, **kwargs):  # noqa: N802
         return kwargs
 
 class _Custom:
     def __init__(self, type_name):
         self._type = type_name
-    def Input(self, name=None, **kwargs):
+    def Input(self, name=None, **kwargs):  # noqa: N802
         return {"name": name, "type": self._type, **kwargs} if name else {"type": self._type, **kwargs}
-    def Output(self, **kwargs):
+    def Output(self, **kwargs):  # noqa: N802
         return {"type": self._type, **kwargs}
 
 class _Hidden:
     prompt = "STUB_PROMPT"
     extra_pnginfo = "STUB_EXTRA"
 
-class _io:
+class _io:  # noqa: N801
     ComfyNode = object
     Schema = _Schema
     NodeOutput = _NodeOutput
@@ -92,7 +89,6 @@ sys.modules["comfy_api"] = _comfy_api_mod
 sys.modules["comfy_api.v0_0_2"] = _comfy_api_v0
 
 # Now safe to import node classes
-# ruff: noqa: E402
 
 def _with_mock_comfy_modules(**mocks):
     """Context manager that patches sys.modules with mock comfy modules."""
@@ -126,19 +122,6 @@ def _with_mock_comfy_modules(**mocks):
     return _Ctx()
 
 from video_ai_nodes import nodes as video_nodes
-from video_ai_nodes.nodes import (
-    CATEGORY,
-    VideoAI_ProjectConfigLoader,
-    VideoAI_ConfigCheckpointLoader,
-    VideoAI_ConfigKSampler,
-    VideoAI_CharacterPortraitLoader,
-    VideoAI_FreeMemoryBarrier,
-    VideoAI_SmartFaceIDLoraRouter,
-    VideoAI_VideoFrameSaver,
-    VideoAIExtension,
-    comfy_entrypoint,
-    _KSAMPLER_SEED_STATE,
-)
 from video_ai_nodes.helpers import (
     bootstrap_repo_import,
     char_key_from,
@@ -149,7 +132,19 @@ from video_ai_nodes.helpers import (
     resolve_repo_root,
     sha256_file,
 )
-
+from video_ai_nodes.nodes import (
+    _KSAMPLER_SEED_STATE,
+    CATEGORY,
+    VideoAI_CharacterPortraitLoader,
+    VideoAI_ConfigCheckpointLoader,
+    VideoAI_ConfigKSampler,
+    VideoAI_FreeMemoryBarrier,
+    VideoAI_ProjectConfigLoader,
+    VideoAI_SmartFaceIDLoraRouter,
+    VideoAI_VideoFrameSaver,
+    VideoAIExtension,
+    comfy_entrypoint,
+)
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. Seed control
@@ -237,7 +232,7 @@ class TestConfigCheckpointLoader:
         mock_fp.get_full_path.return_value = None
         mock_sd = MagicMock()
         with _with_mock_comfy_modules(folder_paths=mock_fp, **{"comfy.sd": mock_sd}):
-            with pytest.raises(FileNotFoundError, match="ghost.safetensors"):
+            with pytest.raises(FileNotFoundError, match=r"ghost\.safetensors"):
                 VideoAI_ConfigCheckpointLoader.execute(str(cfg), str(tmp_path))
 
     def test_fingerprint_inputs_unknown_when_no_checkpoint(self, tmp_path):
@@ -381,7 +376,7 @@ class TestConfigKSampler:
         cfg = tmp_path / "config.yaml"
         cfg.write_text("image_gen:\n  comfyui:\n    sampler_name: imaginary\n    scheduler: normal\n", encoding="utf-8")
         with _with_mock_comfy_modules(**self._ksampler_mocks(samplers=["euler"])):
-            with pytest.raises(ValueError, match="sampler_name.*imaginary"):
+            with pytest.raises(ValueError, match=r"sampler_name.*imaginary"):
                 VideoAI_ConfigKSampler.execute(
                     MagicMock(), MagicMock(), MagicMock(), MagicMock(),
                     str(cfg), str(tmp_path), seed=0,
@@ -392,7 +387,7 @@ class TestConfigKSampler:
         cfg = tmp_path / "config.yaml"
         cfg.write_text("image_gen:\n  comfyui:\n    sampler_name: euler\n    scheduler: magic\n", encoding="utf-8")
         with _with_mock_comfy_modules(**self._ksampler_mocks(schedulers=["normal"])):
-            with pytest.raises(ValueError, match="scheduler.*magic"):
+            with pytest.raises(ValueError, match=r"scheduler.*magic"):
                 VideoAI_ConfigKSampler.execute(
                     MagicMock(), MagicMock(), MagicMock(), MagicMock(),
                     str(cfg), str(tmp_path), seed=0,
@@ -446,14 +441,14 @@ class TestCharacterPortraitLoader:
         portrait = tmp_path / "hero_portrait.png"
         portrait.write_text("fake image data", encoding="utf-8")
 
-        monkeypatch.setattr("sys.path", [str(tmp_path)] + sys.path)
+        monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
         from memory import project_store
 
         monkeypatch.setattr(project_store, "PROJECTS_ROOT", tmp_path / "studio_projects")
         store = project_store.ProjectStore("testproj", root=tmp_path / "studio_projects")
         store.set_master_portrait("hero", str(portrait), "abc123")
 
-        store2, key, char, path = VideoAI_CharacterPortraitLoader._resolve(
+        _store2, key, _char, path = VideoAI_CharacterPortraitLoader._resolve(
             "testproj", "Hero", str(tmp_path)
         )
         assert key == "hero"
@@ -466,7 +461,7 @@ class TestCharacterPortraitLoader:
         (project_dir / "project.json").write_text(
             '{"characters": {"hero": {"name": "Hero"}}}', encoding="utf-8"
         )
-        monkeypatch.setattr("sys.path", [str(tmp_path)] + sys.path)
+        monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
         from memory import project_store
 
         monkeypatch.setattr(project_store, "PROJECTS_ROOT", tmp_path / "studio_projects")
@@ -475,7 +470,7 @@ class TestCharacterPortraitLoader:
         face.write_text("face", encoding="utf-8")
         store.set_character_assets("hero", face_reference_path=str(face))
 
-        store2, key, char, path = VideoAI_CharacterPortraitLoader._resolve(
+        _store2, _key, _char, path = VideoAI_CharacterPortraitLoader._resolve(
             "testproj", "Hero", str(tmp_path)
         )
         assert path is not None and path.exists()
@@ -486,7 +481,7 @@ class TestCharacterPortraitLoader:
         (project_dir / "project.json").write_text(
             '{"characters": {"hero": {"name": "Hero"}}}', encoding="utf-8"
         )
-        monkeypatch.setattr("sys.path", [str(tmp_path)] + sys.path)
+        monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
         from memory import project_store
 
         monkeypatch.setattr(project_store, "PROJECTS_ROOT", tmp_path / "studio_projects")
@@ -501,7 +496,7 @@ class TestCharacterPortraitLoader:
         (project_dir / "project.json").write_text(
             '{"characters": {"hero": {"name": "Hero"}}}', encoding="utf-8"
         )
-        monkeypatch.setattr("sys.path", [str(tmp_path)] + sys.path)
+        monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
         with pytest.raises(FileNotFoundError, match="No portrait"):
             VideoAI_CharacterPortraitLoader.execute("testproj", "Hero", str(tmp_path))
 
@@ -511,7 +506,7 @@ class TestCharacterPortraitLoader:
         (project_dir / "project.json").write_text(
             '{"characters": {"hero": {"name": "Hero"}}}', encoding="utf-8"
         )
-        monkeypatch.setattr("sys.path", [str(tmp_path)] + sys.path)
+        monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
         fp = VideoAI_CharacterPortraitLoader.fingerprint_inputs("testproj", "Hero", str(tmp_path))
         assert fp.startswith("missing:")
 
@@ -611,7 +606,7 @@ class TestFreeMemoryBarrier:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True
         with patch.dict("sys.modules", {"torch": mock_torch}):
-            out = VideoAI_FreeMemoryBarrier.execute(enabled=True, free_cuda_cache=True)
+            _out = VideoAI_FreeMemoryBarrier.execute(enabled=True, free_cuda_cache=True)
             assert mock_torch.cuda.empty_cache.called
             assert mock_torch.cuda.ipc_collect.called
 
@@ -631,8 +626,8 @@ class TestVideoFrameSaver:
     @pytest.fixture(autouse=True)
     def _mock_pil_images(self, monkeypatch):
         """Replace tensor_to_images with a fake that returns PIL Images."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
         def _fake_tensor_to_images(image):
             batch = image.shape[0] if hasattr(image, 'shape') else 1
             return [Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8)) for _ in range(batch)]
