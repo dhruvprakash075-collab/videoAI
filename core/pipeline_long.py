@@ -397,7 +397,6 @@ def run_long_pipeline(
     outline = shape_outline(
         outline, config,
         images_per_segment_locked=_images_per_segment_locked,
-        seg_count_locked=_seg_count_locked,
     )
 
     # Segment Preview (dry-run)
@@ -583,7 +582,4 @@ def run_long_pipeline(
 # ── run_long_pipeline_async is imported from core.pipeline_cli ───────────
 
 
-if __name__ == "__main__":
-    from core.pipeline_cli import main as _cli_main
 
-    _cli_main()

@@ -6,7 +6,7 @@ from typing import Any, cast
 
 __all__ = ["shape_outline"]
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("core.pipeline_long")
 
 
 def shape_outline(
@@ -14,7 +14,6 @@ def shape_outline(
     config: dict,
     *,
     images_per_segment_locked: bool,
-    seg_count_locked: bool,
 ) -> list[dict]:
     """Apply image caps, char_presence normalization, positional-alias mapping,
     and env-frame-ratio enforcement. outline in, outline out.
@@ -23,7 +22,7 @@ def shape_outline(
 
     # Cap images per segment
     _max_imgs = config.get("script", {}).get("max_images_per_segment", 10)
-    _default_imgs = config["script"].get("default_images_per_segment", 6)
+    _default_imgs = config.get("script", {}).get("default_images_per_segment", 6)
     for seg_plan in outline:
         if images_per_segment_locked:
             _old_ni = seg_plan.get("num_images", _default_imgs)
