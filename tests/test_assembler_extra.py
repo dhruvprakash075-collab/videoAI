@@ -63,7 +63,7 @@ def test_get_whisper_model_final_cpu():
 
 
 def test_get_whisper_model_preview_gpu():
-    """Test _get_whisper_model for preview/dry run."""
+    pytest.importorskip("torch")
     mock_config = {
         "performance": {
             "whisper_model": "tiny",
@@ -143,7 +143,8 @@ def test_encoder_args():
             "encoder_extra": "-spatial-aq 1 -temporal-aq 1",
         }
     }
-    args = assembler._encoder_args(config)
+    with patch("video.renderer.assembler._ffmpeg_supports_encoder", return_value=True):
+        args = assembler._encoder_args(config)
     assert "-c:v" in args
     assert "h264_nvenc" in args
     assert "-preset" in args

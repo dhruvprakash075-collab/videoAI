@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from core import segment_runner
 
 
@@ -238,6 +240,7 @@ def test_make_process_segment_decision_record_failure_and_source_chunk(tmp_path)
 
 
 def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
+    pytest.importorskip("torch")
     from PIL import Image
 
     img = tmp_path / "frame.png"
@@ -313,6 +316,7 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
 
 
 def test_make_process_segment_tts_duration_retry_then_success(tmp_path):
+    pytest.importorskip("torch")
     wav = tmp_path / "voice.wav"
     wav.write_bytes(b"RIFF")
     kwargs = _process_kwargs(tmp_path, dry_run=False)
