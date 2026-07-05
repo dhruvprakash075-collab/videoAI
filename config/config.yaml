@@ -145,6 +145,7 @@ image_gen:
     server: 127.0.0.1
     host: 127.0.0.1
     port: 8188
+    reuse_ports: [8189]
     root: external/ComfyUI
     python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true

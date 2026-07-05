@@ -503,6 +503,15 @@ def make_process_segment(
                     f"[TTS] Per-segment target from locked duration: "
                     f"{_dur.value}min / {n_segs} segs = {_requested_duration_per_seg_s:.1f}s"
                 )
+                from config.config import get_language as _get_lang_budget
+
+                _budget = _tts_word_budget(config, _requested_duration_per_seg_s, _get_lang_budget(config))
+                if _budget and _budget > words_per_seg:
+                    log.warning(
+                        f"[TTS] Locked duration needs ~{_budget} words/seg at target TTS rate; "
+                        f"raising writer budget from {words_per_seg}"
+                    )
+                    words_per_seg = _budget
     except Exception as _e:
         log.debug(f"[TTS] Could not read DecisionRecord for segment target: {_e}")
 
@@ -783,13 +792,7 @@ def make_process_segment(
                             script, plan, state["context"]
                         )
                 if not devanagari_script:
-                    from agents.ui_state import UIState
-
-                    UIState.add_degradation(
-                        i,
-                        "translate_node",
-                        "Director translation failed -- falling back to English narration",
-                    )
+                    raise RuntimeError("Director translation failed for Hindi TTS")
                 if devanagari_script:
                     en_words = max(1, len(script.split()))
                     hi_words = len(devanagari_script.split())
@@ -800,19 +803,15 @@ def make_process_segment(
                         log.warning(
                             f"  Seg {i}: Director translation bloated "
                             f"({hi_words} Hindi words vs {en_words} English words); "
-                            "using original script for TTS"
+                            "rejecting Hindi TTS input"
                         )
-                        devanagari_script = None
+                        raise RuntimeError(
+                            f"Director translation bloated ({hi_words} Hindi words vs {en_words} English words)"
+                        )
                     log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
-                log.warning(f"  Seg {i}: Director translation failed ({e})")
-                from agents.ui_state import UIState
-
-                UIState.add_degradation(
-                    i,
-                    "translate_node",
-                    f"Director translation failed ({e}) — falling back to original script",
-                )
+                log.error(f"  Seg {i}: Director translation failed ({e}); refusing English fallback")
+                raise
 
         _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
         try:

@@ -580,7 +580,7 @@ def run_long_pipeline(
             _seg_retry_counts,
         )
 
-        _staged = config.get("performance", {}).get("staged_loop", False)
+        _staged = config.get("performance", {}).get("staged_loop", False) and n_segs > 1
         _lookahead = int(config.get("performance", {}).get("lookahead_segments", 1))
 
         if _staged:

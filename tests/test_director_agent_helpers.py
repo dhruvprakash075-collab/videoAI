@@ -1701,6 +1701,13 @@ def test_produce_runtime_config_whitespace_character_name_skipped(agent):
     assert "a" in result["characters"]
 
 
+def test_produce_runtime_config_drops_mickey_mouse_hallucination(agent):
+    vision = {"characters": [{"name": "Mickey Mouse"}, {"name": "Tiny Mouse"}]}
+    result = agent.produce_runtime_config(vision, {}, {})
+    assert "mickey_mouse" not in result["characters"]
+    assert "tiny_mouse" in result["characters"]
+
+
 def test_produce_runtime_config_pacing_section(agent):
     """Pacing section is built from writer_input."""
     vision = {"characters": [{"name": "A"}], "pacing": "moderate"}

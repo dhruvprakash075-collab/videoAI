@@ -32,6 +32,10 @@ def test_tts_word_budget_uses_configured_rates():
     assert _tts_word_budget(config, 30, "en") == 60
 
 
+def test_tts_word_budget_30s_default_hi_needs_50_words():
+    assert _tts_word_budget({}, 30, "hi") == 50
+
+
 def test_trim_script_hard_caps_run_on_sentence():
     script = " ".join(f"word{i}" for i in range(100))
     assert len(_trim_script_to_word_limit(script, 25).split()) == 25

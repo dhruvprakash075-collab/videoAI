@@ -149,7 +149,8 @@ def test_translate_node_translation_failure(mock_dependencies):
         mock_score.return_value = mock_score_obj
 
         process_seg, *_ = make_process_segment(**mock_dependencies)
-        process_seg(1)
+        with pytest.raises(Exception, match="trans fail"):
+            process_seg(1)
 
         assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
 

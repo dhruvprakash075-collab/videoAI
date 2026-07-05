@@ -55,7 +55,8 @@ class ComfyUIClient:
             from utils.url_security import open_validated_url
 
             with open_validated_url(req, timeout=self.timeout) as response:
-                res = json.loads(response.read().decode("utf-8"))
+                raw = response.read().decode("utf-8").strip()
+                res = json.loads(raw) if raw else {}
                 cb.record_success()
                 return res
         except urllib.error.HTTPError as e:

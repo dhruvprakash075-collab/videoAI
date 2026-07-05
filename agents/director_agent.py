@@ -1557,6 +1557,9 @@ class DirectorAgent:
                 continue
             raw_name = str(c.get("name", "")).strip()
             key = re.sub(r"[^a-z0-9_]", "", raw_name.lower().replace(" ", "_"))
+            if key == "mickey_mouse":
+                log.warning("[DIRECTOR] Dropping hallucinated character 'Mickey Mouse'")
+                continue
             if not key or len(key.replace("_", "").strip()) < 1:
                 log.warning(f"[DIRECTOR] Skipping character with empty/whitespace name: {c}")
                 continue

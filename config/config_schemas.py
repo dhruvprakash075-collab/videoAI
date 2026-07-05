@@ -330,6 +330,7 @@ class ComfyUIConfig(BaseModel):
     poll_seconds: float = 1.0
     auto_start_timeout: int = 60
     unload_after_batch: bool = True
+    reuse_ports: list[int] = Field(default_factory=list)
 
 
 class UpscalerConfig(BaseModel):

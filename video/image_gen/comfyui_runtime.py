@@ -87,10 +87,23 @@ class ComfyUIRuntime:
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
             return False
 
+    def _reuse_running_port(self) -> bool:
+        for port in self.config.get("reuse_ports", []):
+            old_port, old_url = self.port, self._base_url
+            self.port = int(port)
+            self._base_url = f"http://{self.host}:{self.port}"
+            if self.is_running(timeout=1.0):
+                log.info(f"[ComfyUI] Reusing running instance at {self._base_url}")
+                return True
+            self.port, self._base_url = old_port, old_url
+        return False
+
     def ensure_running(self, timeout: float = 60.0) -> bool:
         """Ensure ComfyUI is running, starting it if auto_start is enabled."""
         if self.is_running():
             log.info(f"[ComfyUI] Already running at {self._base_url}")
+            return True
+        if self._reuse_running_port():
             return True
 
         if not self.auto_start:
