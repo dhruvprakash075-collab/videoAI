@@ -25,41 +25,23 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import re
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+# ── moved verbatim from core/runtime/abort.py ──
+from core.runtime.abort import (  # noqa: F401
+    _director_aborted,
+    get_director_abort,
+    set_director_abort,
+)
 from utils import build_prompts
 from utils.emotion_control import inject_emotion
 from utils.url_security import build_validated_url, validate_service_base_url
 
 log = logging.getLogger(__name__)
-
-# Re-use the same locks as the orchestrator
-_director_abort = False
-_director_abort_lock = threading.Lock()
-
-
-def _director_aborted() -> bool:
-    with _director_abort_lock:
-        return _director_abort
-
-
-def set_director_abort(val: bool = True) -> None:
-    """Public API to flip the Director abort flag (used by segment runner and orchestrator)."""
-    with _director_abort_lock:
-        global _director_abort
-        _director_abort = val
-
-
-def get_director_abort() -> bool:
-    """Read the Director abort flag (public, for orchestrator to reset between runs)."""
-    with _director_abort_lock:
-        return _director_abort
-
 
 _pending_ollama_timer = None
 _pending_ollama_timer_lock = threading.Lock()
@@ -105,54 +87,9 @@ def _ollama_alive(config, timeout: float = 2.0) -> bool:
         return False
 
 
-# ── TTS length budgeting ──────────────────────────────────────────────
-
-def _tts_word_budget(config: dict, target_seconds: float, lang: str) -> int:
-    """Max words a segment may contain to fit its spoken-duration target.
-
-    Ties script length to the director's per-segment TIME budget instead of a
-    fixed word count. Uses a configurable speaking rate (words/min); Hindi is
-    slower AND expands vs English, so its default rate is lower. Returns 0 when
-    no usable target is available (caller then keeps its existing word logic).
-
-    The defaults below are CONSERVATIVE starting estimates. Tune them from a real
-    run by comparing the '[DIRECTOR] ... N chars' / word-count logs against the
-    final segment audio duration, via config keys:
-        script.tts_words_per_minute_hi   (default 100)
-        script.tts_words_per_minute_en   (default 150)
-    """
-    if not target_seconds or target_seconds <= 0:
-        return 0
-    _cfg = config.get("script", {}) if isinstance(config, dict) else {}
-    wpm = float(
-        _cfg.get(
-            "tts_words_per_minute_hi" if lang == "hi" else "tts_words_per_minute_en",
-            100.0 if lang == "hi" else 150.0,
-        )
-    )
-    return max(1, int((target_seconds / 60.0) * wpm))
-
-
-def _trim_script_to_word_limit(script: str, limit: int) -> str:
-    """Trim narration at a sentence boundary, with a hard word-limit fallback."""
-    if limit <= 0 or len(script.split()) <= limit:
-        return script
-
-    sentences = re.split(r"(?<=[.!?\u0964])\s+", script)
-    parts: list[str] = []
-    running = 0
-    for sentence in sentences:
-        sentence_words = len(sentence.split())
-        if running + sentence_words > limit:
-            break
-        parts.append(sentence)
-        running += sentence_words
-
-    if parts:
-        return " ".join(parts).strip()
-    # ponytail: A hard cut is preferable to over-length audio when the LLM emits
-    # one run-on sentence; upgrade to clause-aware trimming only if quality needs it.
-    return " ".join(script.split()[:limit]).strip()
+# ── moved verbatim from core/segment/budget.py / identity.py ──
+from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget
+from core.segment.identity import _detect_important_trigger, _perceptual_hash
 
 # ── VRAM management (shared with orchestrator) ────────────────────────
 
@@ -1047,130 +984,7 @@ def make_process_segment(
 
         return {"mp4_path": str(mp4_path)}
 
-    # ── Identity-critical image trigger detection ─────────────────────
-    _OUTFIT_KEYWORDS = {
-        "outfit",
-        "gown",
-        "robe",
-        "armor",
-        "cloak",
-        "uniform",
-        "dress",
-        "suit",
-        "costume",
-        "garment",
-    }
-    _JEWELRY_KEYWORDS = {
-        "necklace",
-        "ring",
-        "earring",
-        "bracelet",
-        "crown",
-        "tiara",
-        "amulet",
-        "pendant",
-        "brooch",
-        "gem",
-        "jewel",
-    }
-    _WEAPON_KEYWORDS = {
-        "sword",
-        "dagger",
-        "bow",
-        "arrow",
-        "spear",
-        "axe",
-        "shield",
-        "staff",
-        "wand",
-        "blade",
-        "mace",
-        "scythe",
-    }
-    _CLOSEUP_TOKENS = {"close-up", "closeup", "portrait", "medium close-up"}
-    _INTRO_TOKENS = {"wearing", "introducing", "reveals", "new", "emerges", "appears"}
-
-    def _perceptual_hash(image_path: str | Path, hash_size: int = 8) -> str:
-        """Compute a perceptual difference hash (dhash) for an image.
-
-        Returns a hex string of length ``hash_size * hash_size // 4``.
-        Similar images produce similar hashes; a Hamming-distance
-        threshold of 10—14 is typical for ``hash_size=8``.
-        """
-        try:
-            from PIL import Image
-
-            with Image.open(str(image_path)) as img:
-                grey = img.convert("L")
-                resized = grey.resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
-            bits = []
-            for row in range(hash_size):
-                for col in range(hash_size):
-                    left = int(cast(Any, resized.getpixel((col, row))))
-                    right = int(cast(Any, resized.getpixel((col + 1, row))))
-                    bits.append(1 if left < right else 0)
-            # Pack into hex
-            hex_hash = ""
-            for i in range(0, len(bits), 4):
-                nibble = 0
-                for j in range(4):
-                    if i + j < len(bits):
-                        nibble |= bits[i + j] << (3 - j)
-                hex_hash += format(nibble, "x")
-            return hex_hash
-        except Exception:
-            return ""
-
-    def _detect_important_trigger(
-        idx: int,
-        frame_cp: dict,
-        prompt: str,
-        script: str,
-    ) -> tuple[bool, str]:
-        """Return (is_important, trigger_reason) for the given frame."""
-        weights = list(frame_cp.values())
-        max_w = max(weights) if weights else 0.0
-        prompt_lower = prompt.lower()
-
-        # Frame 0 is always a character sheet / establishing identity
-        if idx == 0:
-            return True, "character_sheet"
-
-        # Multi-character key frame (two+ characters with significant presence)
-        significant = sum(1 for w in weights if w >= 0.3)
-        if significant >= 2:
-            return True, "multi_char_key_frame"
-
-        # Major close-up / face reference
-        if max_w >= 0.8:
-            return True, "face_reference"
-
-        # Full-body reference (medium shot with identity description)
-        full_body_hint = (
-            any(tok in prompt_lower for tok in _CLOSEUP_TOKENS) and "full body" in prompt_lower
-        )
-        if full_body_hint and max_w >= 0.5:
-            return True, "full_body_reference"
-
-        # New outfit / garment detected in prompt
-        outfit_hit = any(tok in prompt_lower for tok in _OUTFIT_KEYWORDS)
-        intro_hit = any(tok in prompt_lower for tok in _INTRO_TOKENS)
-        if outfit_hit and intro_hit and max_w >= 0.5:
-            return True, "new_outfit"
-
-        # Jewelry detected in prompt
-        if any(tok in prompt_lower for tok in _JEWELRY_KEYWORDS) and max_w >= 0.3:
-            return True, "jewelry"
-
-        # Weapon detected in prompt
-        if any(tok in prompt_lower for tok in _WEAPON_KEYWORDS) and max_w >= 0.3:
-            return True, "weapon"
-
-        # Fallback: weight >= 0.5 (legacy heuristic)
-        if max_w >= 0.5:
-            return True, "high_importance_frame"
-
-        return False, ""
+    # ── moved verbatim to core/segment/identity.py ──
 
     class LocalGraphContext:
         def __init__(self):

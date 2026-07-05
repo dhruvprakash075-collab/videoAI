@@ -316,7 +316,8 @@ def test_make_process_segment_tts_duration_retry_then_success(tmp_path):
     wav = tmp_path / "voice.wav"
     wav.write_bytes(b"RIFF")
     kwargs = _process_kwargs(tmp_path, dry_run=False)
-    kwargs["director_agent_instance"].translate_to_devanagari.return_value = None
+    kwargs["tts_cfg"] = {"lang": "en"}
+    kwargs["config"]["tts"] = {"lang": "en"}
     score = MagicMock(total=90, issues=[], suggestions=[])
     tts_calls = []
 

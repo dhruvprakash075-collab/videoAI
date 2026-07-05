@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import core.main as cm
@@ -81,7 +83,7 @@ def test_ollama_model_available_rejects_metadata_host():
     urlopen_mock.assert_not_called()
 
 
-def test_translate_node_fallback_records_degradation(monkeypatch):
+def test_translate_node_raises_on_crash():
     UIState.reset_run("test")
 
     import threading
@@ -89,10 +91,13 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
     from core.segment_runner import make_process_segment
     from utils.source_splitter import SegmentChunk
 
-    # Create dummy dependencies for make_process_segment
     mock_director = MagicMock()
-    # Force translate_to_devanagari to raise exception
     mock_director.translate_to_devanagari.side_effect = RuntimeError("Translation model crashed")
+
+    _scheduler = MagicMock()
+    _scheduler.active_heavy_count = 0
+    _scheduler.task.return_value.__enter__.return_value = None
+    _scheduler.task.return_value.__exit__.return_value = False
 
     mp4s = [None]
     counter = [0]
@@ -122,7 +127,7 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
         words_per_seg=100,
         seg_min=2,
         shared_prompt_executor=MagicMock(),
-        global_scheduler=MagicMock(),
+        global_scheduler=_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
         completed_segs_counter_holder=counter,
@@ -133,17 +138,12 @@ def test_translate_node_fallback_records_degradation(monkeypatch):
         source_chunks=[
             SegmentChunk(
                 index=1,
-                text="This is a very long and safe and clean script for testing the translation node fallback without getting filtered by the safety sanitization block.",
+                text="This is a very long and safe and clean script for testing translation crash without getting filtered by safety sanitization.",
                 source_chapter="Chapter 1"
             )
         ]
     )
 
     with patch("crewai.Crew"), patch("crewai.Task"):
-        with contextlib.suppress(Exception):
+        with pytest.raises(RuntimeError, match="Translation model crashed"):
             process_seg(1)
-
-    # Verification: should have recorded translation degradation in UIState
-    assert len(UIState.degradations) > 0
-    stages = [d["stage"] for d in UIState.degradations]
-    assert "translate_node" in stages

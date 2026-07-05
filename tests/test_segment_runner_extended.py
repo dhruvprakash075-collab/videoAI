@@ -255,7 +255,8 @@ def test_critic_node_llm_unavailable(mock_dependencies):
 def test_segment_runner_graph_nodes_live(mock_dependencies):
     mock_dependencies["dry_run"] = False
     mock_dependencies["resume"] = False
-    mock_dependencies["director_agent_instance"].translate_to_devanagari.return_value = None
+    mock_dependencies["tts_cfg"] = {"lang": "en"}
+    mock_dependencies["config"]["tts"] = {"lang": "en"}
 
     mock_crew = MagicMock()
     mock_crew.kickoff.return_value = "crewai script response"
