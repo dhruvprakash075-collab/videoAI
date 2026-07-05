@@ -103,6 +103,7 @@ external/ComfyUI/
 external/supertonic_embed/
 external/ponytail/
 external/shadcn-improve/
+external/comfyui-custom-node-skills/
 
 # ── Model files (multi-GB, never commit) ──────────────────────────
 *.gguf

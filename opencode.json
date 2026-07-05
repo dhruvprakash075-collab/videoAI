@@ -1,7 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "skills": {
-    "paths": ["C:\\Video.AI\\external\\ponytail\\skills"]
+    "paths": [
+      "C:\\Video.AI\\external\\ponytail\\skills",
+      "C:\\Video.AI\\external\\comfyui-custom-node-skills\\plugins\\comfyui-custom-nodes\\skills"
+    ]
   },
   "mcp": {
     "codebase-memory-mcp": {

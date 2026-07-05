@@ -111,6 +111,9 @@ class ComfyUIRuntime:
 
             log.info(f"[ComfyUI] Starting at {self._base_url} (root: {root_path})")
 
+            for subdir in ("input", "output"):
+                (root_path / subdir).mkdir(parents=True, exist_ok=True)
+
             try:
                 cmd = [
                     str(python_path),

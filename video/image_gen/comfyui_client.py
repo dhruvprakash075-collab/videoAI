@@ -242,7 +242,7 @@ class ComfyUIClient:
 
     def free_memory(self) -> dict:
         """Trigger garbage collection to free GPU memory."""
-        return self._request("/free", method="POST")
+        return self._request("/free", method="POST", data={"unload_models": True, "free_memory": True})
 
     def queue_prompt(self, prompt: dict, prompt_id: str | None = None) -> dict:
         """Queue a prompt for execution."""
