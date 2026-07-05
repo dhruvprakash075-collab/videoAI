@@ -22,6 +22,7 @@ def mock_dependencies(tmp_path):
         "script": {"word_count_tolerance": 0.25, "words_per_segment": 50},
         "video": {"output_path": str(tmp_path / "final.mp4")},
         "checkpoint": {"enabled": True, "dir": str(tmp_path)},
+        "performance": {"vram_evict_wait_s": 0},
     }
     outline = [{"title": "Intro"}, {"title": "Body"}]
 

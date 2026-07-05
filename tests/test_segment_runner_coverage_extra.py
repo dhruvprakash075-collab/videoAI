@@ -19,6 +19,7 @@ def _process_kwargs(tmp_path, **overrides):
             "video": {"output_path": str(tmp_path / "final.mp4")},
             "checkpoint": {"enabled": True, "dir": str(tmp_path)},
             "tts": {"lang": "hi"},
+            "performance": {"vram_evict_wait_s": 0},
         },
         "outline": [{"title": "Intro", "summary": "Summary", "mood": "calm"}],
         "n_segs": 1,
@@ -275,6 +276,7 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
             "tts": {"lang": "hi"},
             "image_gen": {"backend": "comfyui"},
             "subtitles": {"language": "hi"},
+            "performance": {"vram_evict_wait_s": 0},
         },
         outline=[
             {

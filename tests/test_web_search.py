@@ -232,7 +232,7 @@ def test_search_duckduckgo_403_retry():
         ctx.__enter__.return_value.read.return_value = b"<html></html>"
         return ctx
 
-    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), patch("time.sleep"):
         web_search._search_duckduckgo("test")
     assert call_count[0] == 2
 

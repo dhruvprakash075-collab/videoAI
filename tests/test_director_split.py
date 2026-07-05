@@ -169,7 +169,7 @@ def test_call_ollama_streaming_skips_blank_lines():
 
     from agents.llm_client import DirectorLlmClient
 
-    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://localhost:11434"}})
 
     chunks_lines = [
         b"\n",  # blank line — must be skipped
@@ -195,7 +195,7 @@ def test_call_ollama_streaming_preview_every_20_tokens():
 
     from agents.llm_client import DirectorLlmClient
 
-    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://localhost:11434"}})
 
     # 20 token chunks then done
     chunks_lines = [
@@ -227,11 +227,11 @@ def test_call_ollama_streaming_retries_on_failure():
 
     from agents.llm_client import DirectorLlmClient
 
-    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://x"}})
+    client = DirectorLlmClient({"models": {"director": "h"}, "ollama": {"host": "http://localhost:11434"}})
 
     with (
         patch("urllib.request.urlopen", side_effect=OSError("Connection refused")),
-        patch("time.sleep"),  # skip actual sleep
+        patch("agents.llm_client.time.sleep"),  # skip actual sleep
     ):
         import pytest
 

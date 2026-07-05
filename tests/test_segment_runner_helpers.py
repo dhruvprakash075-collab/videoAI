@@ -828,7 +828,7 @@ def test_process_segment_no_ctx_mgr(tmp_path):
 
     process_seg, *_ = make_process_segment(
         topic="test",
-        config={},
+        config={"performance": {"vram_evict_wait_s": 0}},
         outline=[{"title": "Intro"}],
         n_segs=1,
         out_base=tmp_path,
@@ -855,7 +855,14 @@ def test_process_segment_no_ctx_mgr(tmp_path):
         mp4s_lock=threading.Lock(),
         run_start_ts=time.time(),
     )
-    with patch("crewai.Crew"), patch("crewai.Task"):
+    with (
+        patch("crewai.Crew"),
+        patch("crewai.Task"),
+        patch("core.segment_runner._ollama_alive", return_value=True),
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value='{"narration": "Short test narration."}'),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=MagicMock(total=80, issues=[], suggestions=[])),
+    ):
         process_seg(1)
     assert counter[0] == 1
 
