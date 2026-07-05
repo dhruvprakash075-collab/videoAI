@@ -223,7 +223,7 @@ def _plan_batch(
                 log.info(
                     f"Outline returned {len(outline)} segments; padding to requested {batch_size}"
                 )
-                _defaults = _default_outline(topic, batch_size)
+                _defaults = _make_default_segments(topic, batch_size)
                 outline = outline + _defaults[len(outline) : batch_size]
 
         return outline
@@ -308,11 +308,8 @@ def _parse_outline(raw: str, expected: int) -> list[dict]:
     return _default_outline("story", expected)
 
 
-def _default_outline(topic: str, n: int) -> list[dict]:
-    """Generate a default outline when LLM planning fails."""
-    global _default_outline_used
-    _default_outline_used = True
-    log.warning(f"[DEGRADED] Director outline failed — using default outline for {n} segments")
+def _make_default_segments(topic: str, n: int) -> list[dict]:
+    """Build n generic segment dicts (no side effects)."""
     moods = ["mysterious", "horror", "action", "dramatic", "calm", "epic"]
     _num_images = 6
     return [
@@ -332,3 +329,11 @@ def _default_outline(topic: str, n: int) -> list[dict]:
         }
         for i in range(n)
     ]
+
+
+def _default_outline(topic: str, n: int) -> list[dict]:
+    """Generate a default outline when LLM planning fails entirely."""
+    global _default_outline_used
+    _default_outline_used = True
+    log.warning(f"[DEGRADED] Director outline failed — using default outline for {n} segments")
+    return _make_default_segments(topic, n)

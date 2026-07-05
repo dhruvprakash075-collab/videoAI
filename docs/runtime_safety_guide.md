@@ -8,7 +8,7 @@ To guarantee stable local execution on consumer hardware with **6GB VRAM** limit
 
 ComfyUI / DreamShaper_8 (image generation), IndicF5 / Supertonic / OmniVoice (voice rendering), and local LLMs (Ollama) compete for local CPU/GPU memory. Supertonic is CPU-only, but GPU-backed engines and ComfyUI must be serialized to avoid Out-of-Memory failures.
 
-### Two-Stage Eviction Process (`core/segment_runner.py`)
+### Two-Stage Eviction Process (`core/runtime/ollama.py`)
 
 Stage 1 — **Soft Evict**: Calls Ollama's `/api/generate` with `keep_alive=0` to force-unload the model.
 
@@ -33,19 +33,38 @@ After eviction, the system polls `torch.cuda.mem_get_info()` in a loop, waiting 
 
 ---
 
-## 3. Circuit Breaker System (`utils/crewai_breaker.py` + `utils/ollama_client.py`)
+## 3. Circuit Breaker System (`utils/circuit_breaker.py` core, `utils/crewai_breaker.py` + `utils/ollama_client.py` consumers)
 
-The codebase guards against hung LLMs via a **shared per-model circuit breaker** state machine:
+The core implementation lives in `utils/circuit_breaker.py`:
+- `CircuitBreaker` — per-instance 3-state machine (CLOSED/OPEN/HALF_OPEN)
+- `CircuitBreakerRegistry` — global dict of named breakers, auto-creates on first access
+- `BreakerOpen(name, cooldown_s)` — exception carrying the real remaining cooldown
 
 ### States
 - **Closed** (normal): requests flow through to Ollama/CrewAI.
-- **Open** (tripped): requests immediately raise `BreakerOpen(model, cooldown_s)` without waiting. `cooldown_s` is the **real remaining** cooldown (P5-1 fix — was hardcoded 0 before).
+- **Open** (tripped): requests immediately raise `BreakerOpen` without waiting. `cooldown_s` is the **real remaining** cooldown (P5-1 fix — was hardcoded 0 before).
 - **Half-Open**: after cooldown expires, the next request is tried. Success resets to Closed; failure re-opens.
 
 ### Key Rule: Shared Breaker State
-`OllamaClient._breaker()` and `guarded_crewai_kickoff()` **share the same breaker state** per model. A model that fails via `OllamaClient.generate()` and via `crew.kickoff()` both open the same breaker — preventing double-loading attempts.
+`OllamaClient._breaker()` and `guarded_crewai_kickoff()` both resolve to the same `CircuitBreakerRegistry` — they share breaker state per model name. A model that fails via `OllamaClient.generate()` and via `crew.kickoff()` both open the same breaker, preventing double-loading attempts.
 
-### Usage Pattern
+### Direct access pattern
+```python
+from utils.circuit_breaker import CircuitBreakerRegistry, BreakerOpen
+
+cb = CircuitBreakerRegistry.get("ollama:zephyr-writer", fails=3, cooldown=30)
+if cb.allow_request():
+    try:
+        result = call_service()
+        cb.record_success()
+    except Exception:
+        cb.record_failure()
+        raise
+else:
+    raise BreakerOpen("zephyr-writer", cb.cooldown_remaining_s())
+```
+
+### CrewAI wrapper pattern (preferred for LLM calls)
 ```python
 from utils.crewai_breaker import guarded_crewai_kickoff, BreakerOpen
 
@@ -93,24 +112,36 @@ Use: venv\Scripts\python.exe bootstrap_pipeline.py
 This prevents cryptic `ModuleNotFoundError` crashes from missing
 dependencies (system Python is 3.14.5; the venv is 3.12.13).
 
-### Pyarrow stub (Windows atexit crash)
+### Optional dependency stubs (CI / test env)
 
-On Windows, importing `pyarrow` triggers native DLL loading
-(`arrow_python.dll`, etc.). At process exit, CPython's module cleanup
-can unload these DLLs in an order that causes an access violation
-(0xC0000005) — a hard crash that masks the test exit code.
+`tests/conftest.py:_install_optional_dependency_stubs()` (called from `tests/conftest.py:_setup_stubs()`) injects
+lightweight `types.ModuleType` stubs for heavy or native-DLL packages
+so tests using `patch(...)` never load the real modules:
 
-**Fix (in `tests/conftest.py`):**
-1. `os.environ["PYARROW_IGNORE_CPP_SHUTDOWN"] = "1"` — tells pyarrow to
-   skip C++ shutdown on exit
-2. A module-level stub replaces `pyarrow` in `sys.modules` before any
-   real import can occur
-3. `cleanup_numbered_dir` monkeypatch wraps `os.rmdir` in
-   `contextlib.suppress(PermissionError)` — suppresses the benign
-   `PermissionError` from `pytest-current` symlink cleanup
+| Package | Reason for stub |
+|---------|----------------|
+| `torch` (+ `torch.cuda`) | Avoid 200MB download on CI. Tests mock `torch.cuda.*` — no real GPU calls. |
+| `pyarrow` | Avoids Windows native-DLL shutdown crash (access violation at exit). |
+| `crewai` | Avoids pulling in litellm / 100+ transitive deps. |
+| `faster_whisper` | Not installed on CI; tests only need it importable for `patch()`. |
+| `whisper` | Same as `faster_whisper`. |
 
-**If a test needs real pyarrow:** `del sys.modules["pyarrow"]` and
-import the real module inside that test only.
+**Mechanism:** Each stub is a plain `types.ModuleType` with the minimal
+attributes needed for `unittest.mock.patch` to resolve the dotted path.
+When a test does `patch("torch.cuda.is_available")`, `patch` finds the
+stub in `sys.modules` and swaps the target attribute for a mock. The
+tested code's lazy `import torch` inside the function body gets the
+same stub — no real CUDA initialisation, no GPU memory allocated.
+
+**If a test needs a real module:** `del sys.modules["m"]` before
+importing it inside that test only.
+
+**CI install strategy:** Lightweight test deps are installed via
+`pip install` in `.github/workflows/ci.yml`:
+`pytest`, `pytest-mock`, `pytest-cov`, `pydantic`, `pyyaml`, `httpx`,
+`tqdm`, `langgraph`, `requests`, `beautifulsoup4`, `fastapi`,
+`python-multipart`, `pydub`, `soundfile`, `psutil`, `playwright`.
+Torch (200MB+) is never downloaded — the stub covers all test needs.
 
 ## 6. TTS Worker Subprocess Safety (2026-06-04)
 

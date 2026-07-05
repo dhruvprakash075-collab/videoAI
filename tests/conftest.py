@@ -8,6 +8,7 @@ field before each test so tests are isolated and order-independent.
 """
 
 import contextlib
+import importlib.machinery
 import os
 import sys
 import threading
@@ -149,6 +150,21 @@ def _install_optional_dependency_stubs() -> None:
 
         whisper.load_model = _load_model
         sys.modules["whisper"] = whisper
+
+    # Stub torch so tests using patch("torch.cuda.*") don't download 200MB.
+    # Tests never call real GPU functions — all torch.cuda.* are mocked.
+    if "torch" not in sys.modules:
+        torch_stub = types.ModuleType("torch")
+        torch_stub.__version__ = "0.0.0"
+        torch_stub.__spec__ = importlib.machinery.ModuleSpec("torch", None, is_package=True)
+        cuda_stub = types.ModuleType("torch.cuda")
+        cuda_stub.__spec__ = importlib.machinery.ModuleSpec("torch.cuda", None)
+        cuda_stub.is_available = lambda: False
+        cuda_stub.empty_cache = lambda: None
+        cuda_stub.mem_get_info = lambda device=None: (0, 0)
+        torch_stub.cuda = cuda_stub
+        sys.modules["torch"] = torch_stub
+        sys.modules["torch.cuda"] = cuda_stub
 
 
 _install_optional_dependency_stubs()

@@ -63,7 +63,6 @@ def test_get_whisper_model_final_cpu():
 
 
 def test_get_whisper_model_preview_gpu():
-    pytest.importorskip("torch")
     mock_config = {
         "performance": {
             "whisper_model": "tiny",

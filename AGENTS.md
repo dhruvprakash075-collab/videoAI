@@ -28,3 +28,21 @@ Not lazy about: input validation at trust boundaries, error handling that preven
 Tests use `comfy_api.v0_0_2` stubs (`tests/test_video_ai_nodes_execution.py:26-80`).
 If ComfyUI updates `comfy_api`, the stubs must be updated too — `_Schema` validates required fields so drift surfaces as test failures.
 After any ComfyUI update, run the starter workflow at `config/comfyui/workflows/video_ai_text_to_image.json` on a real instance to verify execution end-to-end.
+
+## CI / Test Dependencies
+
+CI installs lightweight test deps via `pip install` in `.github/workflows/ci.yml`:
+`pytest`, `pytest-mock`, `pytest-cov`, `pydantic`, `pyyaml`, `httpx`, `tqdm`,
+`langgraph`, `requests`, `beautifulsoup4`, `fastapi`, `python-multipart`,
+`pydub`, `soundfile`, `psutil`, `playwright`.
+
+Heavy (200MB+) packages like `torch` are **not** installed on CI. Instead,
+`tests/conftest.py:_install_optional_dependency_stubs()` injects lightweight
+`types.ModuleType` stubs into `sys.modules` for `torch` (and `torch.cuda`).
+Tests using `patch("torch.cuda.*")` resolve against the stub — no real CUDA
+calls are ever made. Same pattern for `pyarrow`, `crewai`, `faster_whisper`,
+`whisper`.
+
+If a test needs real GPU calls (unusual — all GPU interaction is mocked),
+run it locally in the root `venv` (torch 2.11.0+cu128) or ComfyUI `.venv`
+(torch 2.9.0+cu128).
