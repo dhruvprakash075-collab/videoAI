@@ -38,6 +38,7 @@ def pytest_collection_modifyitems(config, items):
             if "smoke" in item.keywords:
                 item.add_marker(skip_smoke)
 
+
 # Disable CUDA globally in tests to prevent GPU driver crashes on low-VRAM
 # cards (RTX 4050 6GB). Many source files do `import torch` inside functions,
 # which initializes CUDA (~500MB-1GB VRAM). Tests don't need real CUDA — they
@@ -68,6 +69,10 @@ _pp.cleanup_numbered_dir = _safe_cleanup_numbered_dir
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+_COMFYUI_NODES = _ROOT / "comfyui_nodes"
+if _COMFYUI_NODES.is_dir() and str(_COMFYUI_NODES) not in sys.path:
+    sys.path.insert(0, str(_COMFYUI_NODES))
 
 
 def _install_optional_dependency_stubs() -> None:

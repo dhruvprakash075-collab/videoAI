@@ -1,0 +1,12 @@
+[project]
+name = "video-ai-nodes"
+version = "0.1.0"
+description = "Video.AI ComfyUI V3 custom node suite"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+license = { text = "MIT" }
+
+[tool.comfy]
+PublisherId = "dhruvprakash075-collab"
+DisplayName = "Video.AI Nodes"
+license = { text = "MIT" }
