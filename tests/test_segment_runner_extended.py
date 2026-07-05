@@ -253,6 +253,7 @@ def test_critic_node_llm_unavailable(mock_dependencies):
 
 
 def test_segment_runner_graph_nodes_live(mock_dependencies):
+    pytest.importorskip("torch")
     mock_dependencies["dry_run"] = False
     mock_dependencies["resume"] = False
     mock_dependencies["tts_cfg"] = {"lang": "en"}
@@ -300,6 +301,7 @@ def test_evict_ollama_models_exceptions():
 
 
 def test_evict_ollama_models_harder_evict():
+    pytest.importorskip("torch")
     from core.segment_runner import evict_ollama_models
 
     mock_res = MagicMock()

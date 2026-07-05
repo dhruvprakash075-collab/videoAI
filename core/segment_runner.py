@@ -26,7 +26,6 @@ import contextlib
 import logging
 import os
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -39,338 +38,27 @@ from core.runtime.abort import (  # noqa: F401
 )
 from utils import build_prompts
 from utils.emotion_control import inject_emotion
-from utils.url_security import build_validated_url, validate_service_base_url
 
 log = logging.getLogger(__name__)
 
-_pending_ollama_timer = None
-_pending_ollama_timer_lock = threading.Lock()
-
-
-def touch_ollama_active():
-    """Cancel any pending Ollama server stop (task still needs it)."""
-    global _pending_ollama_timer
-    with _pending_ollama_timer_lock:
-        if _pending_ollama_timer is not None:
-            _pending_ollama_timer.cancel()
-            _pending_ollama_timer = None
-
-
-def schedule_ollama_stop(config, delay: float = 3.0):
-    """Schedule Ollama server stop in `delay` seconds.
-
-    Automatically cancels any previously scheduled stop (debounce).
-    Only fires if no task calls touch_ollama_active() within the delay window.
-    """
-    global _pending_ollama_timer
-    touch_ollama_active()
-    import threading as _t
-    with _pending_ollama_timer_lock:
-        _pending_ollama_timer = _t.Timer(
-            delay,
-            lambda: stop_ollama_server(config, reason="debounced-timer"),
-        )
-        _pending_ollama_timer.daemon = True
-        _pending_ollama_timer.start()
-
-
-def _ollama_alive(config, timeout: float = 2.0) -> bool:
-    """Quick check if Ollama server is reachable (no process restart)."""
-    import urllib.error as _ue
-    host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
-    try:
-        from utils.url_security import open_validated_url
-
-        with open_validated_url(build_validated_url(host, "/api/tags"), timeout=timeout):
-            return True
-    except (ConnectionRefusedError, _ue.URLError, OSError):
-        return False
-
+# ── moved verbatim to core/runtime/ollama.py ──
+from core.preview import _preview_gate  # noqa: F401
+from core.runtime.ollama import (  # noqa: F401
+    _ollama_alive,
+    evict_ollama_models,
+    schedule_ollama_stop,
+    start_ollama_server,
+    stop_ollama_server,
+    touch_ollama_active,
+)
+from core.runtime.vram import (
+    aggressive_vram_cleanup,
+    log_vram_usage,
+)
 
 # ── moved verbatim from core/segment/budget.py / identity.py ──
 from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget
 from core.segment.identity import _detect_important_trigger, _perceptual_hash
-
-# ── VRAM management (shared with orchestrator) ────────────────────────
-
-
-def evict_ollama_models(config: dict, reason: str = "") -> None:
-    """Force-evict ALL Ollama models from VRAM (keep_alive=0) before a GPU task.
-
-    On a 6GB GPU only one model fits, so before Stable Diffusion or TTS takes the
-    GPU we must unload every Ollama LLM. keep_alive timer would eventually do
-    this, but we force it instantly to hand the GPU over cleanly.
-
-    A1: After evicting, poll torch.cuda.mem_get_info() until free VRAM ≥
-    performance.vram_sd_threshold_gb (default 4.5 GB), up to
-    performance.vram_evict_wait_s (default 15 s). If VRAM never frees, log a
-    loud WARNING and proceed anyway (non-fatal).
-    """
-    try:
-        import json as _js
-        import urllib.request as _ur
-
-        host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
-        models_cfg = config.get("models", {})
-        seen = set()
-        for _key in ("director", "writer", "reviewer", "translator", "image_engineer"):
-            _mdl = models_cfg.get(_key, "")
-            if _mdl and _mdl not in seen:
-                seen.add(_mdl)
-                import urllib.error as _ue
-                with contextlib.suppress(_ue.URLError, TimeoutError, OSError):
-                    from utils.url_security import open_validated_url
-
-                    open_validated_url(
-                        _ur.Request(
-                            build_validated_url(host, "/api/generate"),
-                            data=_js.dumps({"model": _mdl, "keep_alive": 0}).encode(),
-                            headers={"Content-Type": "application/json"},
-                        ),
-                        timeout=3,
-                    )
-        log.debug(f"  Ollama VRAM released{(' before ' + reason) if reason else ''}")
-    except Exception as e:
-        log.debug(f"Ollama VRAM release failed: {e}")
-    try:
-        import gc
-
-        import torch
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception:
-        pass
-
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            return
-        perf = config.get("performance", {})
-        wait_s = float(perf.get("vram_evict_wait_s", 15))
-        threshold_gb = float(perf.get("vram_sd_threshold_gb", 4.5))
-        threshold_bytes = threshold_gb * (1024**3)
-        deadline = time.time() + wait_s
-        while time.time() < deadline:
-            free, _total = torch.cuda.mem_get_info()
-            free_gb = free / (1024**3)
-            if free >= threshold_bytes:
-                log.info(
-                    f"[VRAM] Free: {free_gb:.2f} GB — threshold met ({threshold_gb} GB), SD can load"
-                )
-                return
-            time.sleep(0.5)
-        free, _total = torch.cuda.mem_get_info()
-        free_gb = free / (1024**3)
-        if free < threshold_bytes:
-            log.warning(
-                f"[VRAM] WARNING: VRAM still low after {wait_s:.0f}s wait "
-                f"({free_gb:.2f} GB free, need {threshold_gb} GB). "
-                "Attempting harder evict via /api/ps..."
-            )
-            try:
-                import json as _js2
-                import urllib.request as _ur2
-
-                host2 = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
-                from utils.url_security import open_validated_url
-
-                with open_validated_url(build_validated_url(host2, "/api/ps"), timeout=3) as _r:
-                    ps_data = _js2.loads(_r.read().decode())
-                for _m in ps_data.get("models", []):
-                    _name = _m.get("name", "")
-                    if _name:
-                        import urllib.error as _ue2
-                        with contextlib.suppress(_ue2.URLError, TimeoutError, OSError):
-                            open_validated_url(
-                                _ur2.Request(
-                                    build_validated_url(host2, "/api/generate"),
-                                    data=_js2.dumps({"model": _name, "keep_alive": 0}).encode(),
-                                    headers={"Content-Type": "application/json"},
-                                ),
-                                timeout=3,
-                            )
-                torch.cuda.empty_cache()
-            except Exception as _he:
-                log.debug(f"[VRAM] Harder evict failed: {_he}")
-            log.warning("[VRAM] Proceeding with SD load despite low VRAM — may OOM")
-    except ImportError:
-        pass
-    except Exception as _ve:
-        log.debug(f"[VRAM] Poll failed: {_ve}")
-
-
-def stop_ollama_server(config: dict, reason: str = "") -> None:
-    """Kill the Ollama server process to free ~1-2 GB RAM between staged batches.
-
-    The server must be restarted before the next batch's LLM calls.
-    """
-    import subprocess
-    import sys
-
-    try:
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/IM", "ollama.exe"],
-                capture_output=True, timeout=5,
-            )
-        else:
-            subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True, timeout=5)
-        log.info(f"[Ollama] Server stopped{(' (' + reason + ')') if reason else ''} — RAM freed")
-    except Exception as e:
-        log.debug(f"[Ollama] Server stop failed (non-fatal): {e}")
-
-
-def start_ollama_server(config: dict, reason: str = "") -> bool:
-    """Start Ollama server in background and wait until it responds.
-
-    Returns True if server is reachable within the timeout.
-    """
-    import subprocess
-    import sys
-
-    try:
-        if sys.platform == "win32":
-            subprocess.Popen(
-                ["ollama", "serve"],
-                creationflags=subprocess.DETACHED_PROCESS,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        else:
-            subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-    except Exception as e:
-        log.warning(f"[Ollama] Failed to start server: {e}")
-        return False
-
-    host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
-    import urllib.error as _ue
-
-    for _i in range(20):
-        time.sleep(0.5)
-        try:
-            from utils.url_security import open_validated_url
-
-            with open_validated_url(build_validated_url(host, "/api/tags"), timeout=2):
-                log.info(f"[Ollama] Server started{(' (' + reason + ')') if reason else ''}")
-                return True
-        except (ConnectionRefusedError, _ue.URLError, OSError):
-            continue
-    log.warning("[Ollama] Server started but not reachable after 10s — LLM calls may fail")
-    return False
-
-
-def log_vram_usage(label: str = "") -> None:
-    """Log current CUDA VRAM usage (free / total GB). Safe to call if torch isn't available."""
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            free, total = torch.cuda.mem_get_info()
-            used = total - free
-            free_gb = free / (1024**3)
-            used_gb = used / (1024**3)
-            total_gb = total / (1024**3)
-            pct = (used / total) * 100 if total > 0 else 0
-            tag = f"[{label}] " if label else ""
-            vram_str = f"{used_gb:.1f}/{total_gb:.1f}GB ({pct:.0f}%)"
-            log.info(
-                f"{tag}VRAM: {used_gb:.2f}GB / {total_gb:.2f}GB used ({pct:.0f}%) — {free_gb:.2f}GB free"
-            )
-            try:
-                from agents.director_agent import UIState
-
-                UIState.vram_text = vram_str
-                UIState.vram_peaks.append(round(used_gb, 2))
-            except Exception:
-                pass
-    except ImportError:
-        pass
-    except Exception as e:
-        log.debug(f"VRAM check failed ({e})")
-
-
-def aggressive_vram_cleanup(global_scheduler) -> None:
-    """Aggressive VRAM + GC cleanup. Called after every segment via finally block."""
-    import gc
-
-    gc.collect()
-    if global_scheduler.active_heavy_count > 0:
-        return
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-            import time as _t
-
-            _t.sleep(0.3)
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-
-def _preview_gate(mp4_path, config: dict) -> None:
-    """Preview gate (R13): pause after segment 1 for operator approval."""
-    from agents.director_agent import UIState
-
-    seg_path_str = str(mp4_path) if mp4_path else "segment not available"
-
-    if UIState.is_ui_mode:
-        UIState.add_log(f"[PREVIEW] Segment 1 ready: {seg_path_str}")
-        UIState.active_question = (
-            f"PREVIEW: Segment 1 is ready. Review it and decide:\n"
-            f"  Path: {seg_path_str}\n"
-            f"  Type 'approve' to continue, anything else to abort."
-        )
-        UIState.status = "paused"
-        UIState.pause_event.clear()
-        timeout = int(os.environ.get("DIRECTOR_TIMEOUT", "0")) or 600
-        if not UIState.pause_event.wait(timeout=timeout):
-            log.warning("[PREVIEW] Timeout — proceeding with production")
-            UIState.status = "running"
-            UIState.active_question = None
-            return
-        UIState.status = "running"
-        UIState.active_question = None
-        reply = (UIState.user_reply or "").strip().lower()
-        UIState.user_reply = None
-        if "approve" not in reply:
-            log.info("[PREVIEW] Operator rejected — aborting pipeline")
-            set_director_abort(True)
-        else:
-            log.info("[PREVIEW] Operator approved — continuing production")
-        return
-
-    sep = "=" * 60
-    print(f"\n{sep}")
-    print("  PREVIEW — Segment 1 Ready")
-    print(sep)
-    print(f"\n  Segment 1 video: {seg_path_str}")
-    print("  Open the file, review the look and sound, then decide.\n")
-
-    try:
-        import sys as _sys
-
-        if not _sys.stdin.isatty():
-            log.info("[PREVIEW] Non-interactive stdin — auto-approving")
-            return
-        choice = input("  [ENTER] Approve & continue  |  [q] Abort: ").strip().lower()
-        if choice == "q":
-            log.info("[PREVIEW] Operator aborted after preview")
-            set_director_abort(True)
-        else:
-            log.info("[PREVIEW] Operator approved — continuing production")
-    except (EOFError, KeyboardInterrupt):
-        log.info("[PREVIEW] No input — auto-approving")
-    print(sep + "\n")
-
 
 # ── Main per-segment processor ─────────────────────────────────
 
@@ -1516,35 +1204,4 @@ def make_process_segment(
     return process_segment, run_scripts_phase, run_translations_phase, run_tts_phase, run_images_phase, run_renders_phase
 
 
-def build_retry_wrapper(
-    process_segment, max_retries: int, segment_idx: int, retry_counts: dict
-) -> Callable[[int], None]:
-    """Wrap process_segment with the A7 per-segment retry budget."""
-
-    def _with_budget(i: int) -> None:
-        retry_counts.setdefault(i, 0)
-        while retry_counts[i] <= max_retries:
-            try:
-                process_segment(i)
-                return
-            except Exception as _e:
-                retry_counts[i] += 1
-                if retry_counts[i] > max_retries:
-                    log.exception(
-                        f"Segment {i}: retry budget exhausted ({max_retries} retries). "
-                        f"Skipping segment. Last error: {_e}"
-                    )
-                    try:
-                        from agents.director_agent import UIState as _UIS
-
-                        _UIS.add_degradation(
-                            i, "segment_skip", f"retry budget exhausted: {str(_e)[:100]}"
-                        )
-                    except Exception:
-                        pass
-                    return
-                log.warning(
-                    f"Segment {i}: attempt {retry_counts[i]}/{max_retries} failed ({_e}), retrying..."
-                )
-
-    return _with_budget
+from core.segment.retry import build_retry_wrapper  # noqa: F401

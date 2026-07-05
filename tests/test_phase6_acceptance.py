@@ -9,6 +9,7 @@ from PIL import Image
 
 from scripts import phase6_acceptance
 from scripts.phase6_acceptance import (
+    COMFY_ROOT,
     WHEEL_NAME,
     AcceptanceError,
     FirewallBlock,
@@ -73,6 +74,7 @@ def test_output_validation_rejects_input_copy(tmp_path: Path):
         raise AssertionError("copied input was accepted")
 
 
+@pytest.mark.skipif(not COMFY_ROOT.is_dir(), reason="ComfyUI assets not present")
 def test_static_files_validate_committed_workflow():
     report = validate_static_files()
     assert report["ok"], json.dumps(report, indent=2)
