@@ -5,14 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from importlib.util import find_spec
 from unittest.mock import patch
-
-import pytest
-
-pytestmark = pytest.mark.skipif(
-    not find_spec("torch"), reason="torch not installed"
-)
 
 
 def _make_config(wait_s=2, threshold_gb=4.5):
