@@ -497,8 +497,9 @@ class TestCharacterPortraitLoader:
             '{"characters": {"hero": {"name": "Hero"}}}', encoding="utf-8"
         )
         monkeypatch.setattr("sys.path", [str(tmp_path), *sys.path])
-        with pytest.raises(FileNotFoundError, match="No portrait"):
-            VideoAI_CharacterPortraitLoader.execute("testproj", "Hero", str(tmp_path))
+        with patch.dict("sys.modules", {"PIL": MagicMock(), "PIL.Image": MagicMock()}):
+            with pytest.raises(FileNotFoundError, match="No portrait"):
+                VideoAI_CharacterPortraitLoader.execute("testproj", "Hero", str(tmp_path))
 
     def test_fingerprint_inputs_returns_missing(self, tmp_path, monkeypatch):
         project_dir = tmp_path / "studio_projects" / "testproj"
@@ -599,8 +600,11 @@ class TestFreeMemoryBarrier:
 
     def test_enabled_without_torch(self):
         """exercises the gc.collect() path when torch import fails"""
-        out = VideoAI_FreeMemoryBarrier.execute(enabled=True, label="cleanup_ok")
-        assert out[0] == "cleanup_ok"
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            out = VideoAI_FreeMemoryBarrier.execute(enabled=True, label="cleanup_ok")
+            assert out[0] == "cleanup_ok"
 
     def test_enabled_with_torch_mock(self):
         mock_torch = MagicMock()
@@ -748,16 +752,16 @@ class TestHelpers:
 
     def test_resolve_repo_root_explicit(self):
         root = resolve_repo_root("C:/custom/path")
-        assert str(root) == "C:\\custom\\path"
+        assert root == Path("C:/custom/path")
 
     def test_resolve_repo_root_env(self, monkeypatch):
         monkeypatch.setenv("VIDEO_AI_ROOT", "C:/from_env")
         root = resolve_repo_root()
-        assert str(root) == "C:\\from_env"
+        assert root == Path("C:/from_env")
 
     def test_resolve_config_path_absolute(self):
-        result = resolve_config_path("C:/absolute/path.yaml", Path("/repo"))
-        assert result == Path("C:/absolute/path.yaml")
+        result = resolve_config_path("/absolute/path.yaml", Path("/repo"))
+        assert result == Path("/absolute/path.yaml")
 
     def test_resolve_config_path_relative(self):
         result = resolve_config_path("relative/path.yaml", Path("/repo"))
