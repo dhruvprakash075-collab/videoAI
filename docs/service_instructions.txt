@@ -1,29 +1,36 @@
 Windows service / background runner instructions
 
-Options to run the Video.AI worker as a persistent background process on Windows:
+The default background worker is the Python queue worker started by
+run_worker.bat. The optional Rust worker sidecar is documented in README.md.
 
-1) NSSM (recommended for simple services)
- - Download NSSM: https://nssm.cc/download
- - Install service:
-   nssm install videoai-worker "C:\Video.AI\venv\Scripts\python.exe" "C:\Video.AI\-m" "jobs.run_worker"
-   (Alternatively set Application to C:\Windows\System32\cmd.exe and Arguments to "/c start "" C:\Video.AI\run_worker.bat"")
- - Configure stdout/stderr file paths in NSSM GUI to C:\Video.AI\logs\worker.log
- - Start service: nssm start videoai-worker
+Option 1: NSSM
 
-2) Scheduled Task at logon (no admin required)
- - Create a scheduled task that runs at user logon and starts run_worker.bat hidden.
- - Example:
+1. Download NSSM from https://nssm.cc/download.
+2. Install the service:
+
+   nssm install videoai-worker "C:\Video.AI\run_worker.bat"
+
+3. Configure stdout/stderr paths to:
+
+   C:\Video.AI\logs\worker.log
+
+4. Start the service:
+
+   nssm start videoai-worker
+
+Option 2: Scheduled Task at logon
+
+Create a scheduled task that runs at user logon:
+
    schtasks /Create /TN "VideoAI Worker" /TR "C:\Video.AI\run_worker.bat" /SC ONLOGON /RL HIGHEST /F
- - To run immediately:
+
+Run immediately:
+
    schtasks /Run /TN "VideoAI Worker"
 
-3) Windows Service with sc.exe (advanced)
- - Running arbitrary Python scripts as a native service is more involved. Use a service wrapper like NSSM or create a Python service with pywin32.
+Notes
 
-Notes:
- - Ensure the venv is activated by the run_worker.bat (it calls venv\Scripts\activate.bat).
- - Logs directory: create C:\Video.AI\logs and ensure the service account has write permission.
- - For troubleshooting, run run_worker.bat manually to validate behavior before installing as a service.
-
-PowerShell convenience script:
- - scripts\run_worker_service.ps1 starts the worker detached. It is not a full service; prefer NSSM or scheduled task for production.
+- `run_worker.bat` activates the project venv before starting the worker.
+- Ensure `C:\Video.AI\logs` exists and is writable by the service account.
+- Before installing a service, run `run_worker.bat` manually once to validate the environment.
+- `scripts\run_worker_service.ps1` starts the worker detached, but it is not a real Windows service.

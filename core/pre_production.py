@@ -21,9 +21,10 @@ import json as _json
 import logging
 import os
 import shutil
+import sys
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from utils import _safe_filename
 from utils.url_security import build_validated_url, validate_service_base_url
@@ -197,7 +198,7 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         checks["OmniVoice Python Environment"]["info"] = str(omnivoice_python.resolve())
     else:
         checks["OmniVoice Python Environment"]["status"] = "OK"
-        checks["OmniVoice Python Environment"]["info"] = f"Using system Python: {os.sys.executable}"
+        checks["OmniVoice Python Environment"]["info"] = f"Using system Python: {sys.executable}"
 
     # 2.7 TTS engine — validate only supported engines
     _KNOWN_TTS_ENGINES = {"supertonic", "omnivoice"}
@@ -249,7 +250,9 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
             tags_url,
             headers={"User-Agent": "Video.AI Preflight"},
         )
-        with urllib.request.urlopen(req, timeout=3) as response:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(req, timeout=3) as response:
             data = _json.loads(response.read().decode("utf-8"))
             checks["Ollama Endpoint Connection"]["status"] = "OK"
             checks["Ollama Endpoint Connection"]["info"] = f"Connected to {ollama_host}"
@@ -781,9 +784,10 @@ def run_pre_production(
     # for resume/debug. Runtime also enforces this after merging, but saving the
     # pre-lock overlay can reintroduce Director style drift on later resumes.
     try:
-        from utils.scene_director import _enforce_visual_style_lock
+        from utils import scene_director
 
-        config_overlay = _enforce_visual_style_lock(config_overlay, config)
+        style_lock = cast(Any, scene_director)._enforce_visual_style_lock
+        config_overlay = style_lock(config_overlay, config)
     except Exception as _style_lock_err:
         log.debug(f"[PRE-PROD] Visual style lock skipped before overlay save: {_style_lock_err}")
 
@@ -822,8 +826,8 @@ def plan_outline(
         try:
             from agents.director_agent import UIState as _UIState
 
-            _UIState.record_degradation(
-                seg="all",
+            _UIState.add_degradation(
+                seg=0,
                 stage="plan_outline",
                 reason="Director LLM failed — outline is generic defaults",
             )

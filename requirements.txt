@@ -5,6 +5,7 @@
 # ── LLM / Agent orchestration ──────────────────────────────────────
 crewai>=1.14.0
 ollama>=0.6.0
+sentry-sdk>=2.54.0
 
 # ── TTS Engines ────────────────────────────────────────────────────
 # OmniVoice TTS (install separately: pip install omnivoice)
@@ -93,8 +94,9 @@ requests>=2.34.2
 # LINTING / FORMATTING
 # ══════════════════════════════════════════════════════════════════
 # Single tool: ruff replaces flake8 + isort + pyupgrade + bugbear.
-# See LINTING.md for the full rationale.
+# See docs/testing_and_linting.md for the full rationale.
 ruff>=0.15.15
+basedpyright>=1.34.0
 coverage>=7.14.1
 
 # ══════════════════════════════════════════════════════════════════

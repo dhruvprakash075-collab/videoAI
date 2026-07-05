@@ -59,7 +59,7 @@ The **Bug Finder** automatically double-checks every line of code you or the Cod
 * **Automatic Checks run on every push**:
   1. **Python Quality**: Runs `Ruff` for code formatting and `Pytest` for testing.
   2. **Frontend Quality**: Runs ESLint, front-end tests, and builds the UI.
-  3. **Security (Skylos Scan)**: Scans the codebase for security issues, hardcoded secrets, and dead code, saving a concise scan report as a downloadable artifact (`diagnostics/skylos_ci_scan.txt`).
+  3. **Security (Skylos Scan)**: Scans the codebase for security issues, hardcoded secrets, and dead code, saving a concise scan report as a downloadable CI artifact named `diagnostics/skylos_ci_scan.txt`.
 * **How to use**: When you push code, check **Build > Pipelines** in GitLab. A green checkmark means the Bug Finder approved your code; a red cross means it found a bug that needs fixing.
 
 ### 3. 💻 The Coder (Antigravity)

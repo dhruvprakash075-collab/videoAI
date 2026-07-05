@@ -8,6 +8,7 @@ Applies compatibility patches and environment setup before importing pipeline mo
 import os
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 
 def bootstrap():
@@ -42,6 +43,13 @@ def bootstrap():
         print(f"Warning: Could not apply compatibility patches: {e}")
     except Exception as e:
         print(f"Warning: Error applying compatibility patches: {e}")
+
+    try:
+        from utils.sentry import init_sentry
+
+        init_sentry()
+    except Exception as e:
+        print(f"Warning: Could not initialize Sentry: {e}")
 
     # Disable CrewAI telemetry
     os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -85,9 +93,9 @@ def bootstrap():
     if sys.platform == "win32":
         try:
             if hasattr(sys.stdout, "reconfigure"):
-                sys.stdout.reconfigure(encoding="utf-8")
+                cast(Any, sys.stdout).reconfigure(encoding="utf-8")
             if hasattr(sys.stderr, "reconfigure"):
-                sys.stderr.reconfigure(encoding="utf-8")
+                cast(Any, sys.stderr).reconfigure(encoding="utf-8")
         except (AttributeError, OSError):
             pass
 
@@ -274,6 +282,11 @@ def _build_parser():
         "each chunk as the segment script (no LLM call for the body). The "
         "document title becomes the video topic. Works with --words-per-segment "
         "and --segment-count overrides.",
+    )
+    parser.add_argument(
+        "--sentry-smoke",
+        action="store_true",
+        help="Send one test event to Sentry and exit immediately.",
     )
     return parser
 
@@ -484,6 +497,17 @@ def run_pipeline_with_args():
     """Run the pipeline with command line arguments."""
     parser = _build_parser()
     args = parser.parse_args()
+
+    if getattr(args, "sentry_smoke", False):
+        try:
+            from utils.sentry import capture_smoke_exception
+
+            capture_smoke_exception()
+            print("[SENTRY] Smoke event sent")
+            sys.exit(0)
+        except Exception as e:
+            print(f"[SENTRY] Smoke event failed: {e}")
+            sys.exit(1)
 
     pf_config, _ = _run_preflight(args)
 

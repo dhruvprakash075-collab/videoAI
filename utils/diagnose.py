@@ -16,7 +16,6 @@ import json
 import os
 import subprocess
 import sys
-import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -150,7 +149,9 @@ def diagnose_ollama():
     # Check connection
     try:
         req = urllib.request.Request(f"{ollama_host}/api/tags")
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(req, timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             log_success(f"Ollama server is active at {ollama_host}")
             models = [m.get("name") for m in data.get("models", [])]
@@ -162,7 +163,9 @@ def diagnose_ollama():
     # Check active/resident models
     try:
         req = urllib.request.Request(f"{ollama_host}/api/ps")
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(req, timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             resident = data.get("models", [])
             if resident:

@@ -15,6 +15,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -377,7 +378,7 @@ async def upload_script(
         )
 
     try:
-        job_request = {"topic": topic, "content_text": script_text}
+        job_request: dict[str, Any] = {"topic": topic, "content_text": script_text}
 
         if duration is not None:
             job_request["duration"] = duration
@@ -426,7 +427,12 @@ async def upload_script(
     except Exception:
         pass
 
-    job_id = job_store.create_job(job_request, topic=topic, image_backend=job_request.get("image_backend"), comfyui_checkpoint=job_request.get("comfyui_checkpoint"))
+    job_id = job_store.create_job(
+        job_request,
+        topic=topic,
+        image_backend=job_request.get("image_backend"),
+        comfyui_checkpoint=job_request.get("comfyui_checkpoint"),
+    )
     job_store.append_event(job_id, "created via upload_script", event_type="system")
 
     return JSONResponse(content={"status": "queued", "job_id": job_id, "request": job_request, "message": "Job queued for execution."})
@@ -1217,7 +1223,7 @@ async def list_artifacts():
     try:
         for child in sorted(output_root.iterdir()):
             if child.is_dir() and child.name != "ab_test":
-                run = {"run_id": child.name, "path": str(child.name)}
+                run: dict[str, Any] = {"run_id": child.name, "path": str(child.name)}
                 video_files = list(child.glob("*.mp4")) + list(child.glob("*.webm"))
                 run["video"] = f"/studio_outputs/{child.name}/{video_files[0].name}" if video_files else None
                 thumb_files = list(child.glob("thumb*.png")) + list(child.glob("*.jpg"))
@@ -1255,7 +1261,7 @@ async def get_artifact_detail(run_id: str):
     if not run_dir.exists() or not run_dir.is_dir():
         return JSONResponse(status_code=404, content={"error": "Run not found"})
 
-    result = {"run_id": safe}
+    result: dict[str, Any] = {"run_id": safe}
     manifest_path = run_dir / "run_manifest.json"
     if manifest_path.exists():
         try:
@@ -1281,7 +1287,7 @@ async def get_artifact_detail(run_id: str):
 
     segments_dir = run_dir / "segments"
     if segments_dir.exists():
-        segments = []
+        segments: list[dict[str, object]] = []
         for seg_dir in sorted(segments_dir.iterdir()):
             if seg_dir.is_dir():
                 images = [f"/studio_outputs/{safe}/segments/{seg_dir.name}/images/{p.name}" for p in (seg_dir / "images").glob("*.png")] if (seg_dir / "images").exists() else []
@@ -1390,7 +1396,7 @@ async def list_characters():
                 for char_dir in chars_dir.iterdir():
                     if not char_dir.is_dir():
                         continue
-                    char = {
+                    char: dict[str, Any] = {
                         "name": char_dir.name,
                         "project": proj_dir.name,
                     }

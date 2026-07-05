@@ -73,7 +73,7 @@ def _split_sentences(text: str) -> list[str]:
     return [p for p in parts if p.strip()]
 
 
-def _parse_md_headings(text: str) -> list[tuple[str, str]]:
+def _parse_md_headings(text: str) -> list[tuple[int, str]]:
     """Return [(level, title), ...] for # / ## headings in markdown text.
 
     Level is 1 for H1, 2 for H2. Empty list if no headings found.

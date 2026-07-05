@@ -126,6 +126,25 @@ def build_validated_url(base_url: str, path: str) -> str:
     return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
 
+def open_validated_url(
+    url_or_request: str | urllib.request.Request,
+    *,
+    timeout: float = 30,
+    local_service: bool = True,
+):
+    """Open a URL after scheme/host validation.
+
+    `local_service=True` is for Ollama/ComfyUI style service calls. Use
+    `local_service=False` for public source URLs.
+    """
+    raw_url = url_or_request.full_url if isinstance(url_or_request, urllib.request.Request) else url_or_request
+    if local_service:
+        validate_service_base_url(raw_url)
+    else:
+        validate_source_url(raw_url)
+    return urllib.request.urlopen(url_or_request, timeout=timeout)  # nosec B310  # nosemgrep
+
+
 def safe_url_open(
     url: str,
     *,

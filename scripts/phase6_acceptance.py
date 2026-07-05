@@ -249,7 +249,9 @@ def require_resource_headroom() -> dict[str, Any]:
     if gpu_processes:
         # Check if ComfyUI is already running
         try:
-            urllib.request.urlopen(f"{COMFY_URL}/system_stats", timeout=5)
+            from utils.url_security import open_validated_url
+
+            open_validated_url(f"{COMFY_URL}/system_stats", timeout=5)
             # ComfyUI is running, so GPU processes are expected
             pass
         except Exception:
@@ -319,7 +321,9 @@ def prove_public_network_blocked() -> None:
 
 def fetch_json(url: str, timeout: float = 10) -> dict[str, Any]:
     request = urllib.request.Request(url, headers={"User-Agent": "VideoAI-Phase6"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    from utils.url_security import open_validated_url
+
+    with open_validated_url(request, timeout=timeout, local_service=False) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -343,7 +347,9 @@ def install_matching_nunchaku(evidence_dir: Path) -> None:
     wheel = evidence_dir / WHEEL_NAME
     partial = wheel.with_suffix(wheel.suffix + ".partial")
     request = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "VideoAI-Phase6"})
-    with urllib.request.urlopen(request, timeout=120) as response, partial.open("wb") as handle:
+    from utils.url_security import open_validated_url
+
+    with open_validated_url(request, timeout=120, local_service=False) as response, partial.open("wb") as handle:
         shutil.copyfileobj(response, handle, length=1024 * 1024)
     actual = sha256_file(partial)
     expected = digest.removeprefix("sha256:")
@@ -628,7 +634,9 @@ def validate_output(output: Path, background: Path, portrait: Path) -> dict[str,
         rgba = image.convert("RGBA")
         if rgba.getchannel("A").getextrema() == (0, 0):
             raise AcceptanceError("Output is fully transparent")
-        if all(low == high for low, high in image.convert("RGB").getextrema()):
+        rgb = image.convert("RGB")
+        first_pixel = rgb.getpixel((0, 0))
+        if all(rgb.getpixel((x, y)) == first_pixel for x in range(rgb.width) for y in range(rgb.height)):
             raise AcceptanceError("Output is uniform")
         with Image.open(background) as bg:
             bg_rgb = bg.convert("RGB").resize(image.size)

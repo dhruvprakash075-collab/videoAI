@@ -234,7 +234,7 @@ def restore_hinglish(text: str, token_map: dict[str, str]) -> str:
 
     def _sub(m: re.Match) -> str:
         n = m.group(1).translate(_TOKEN_ASCII_DIGITS)
-        return token_map.get(f"@@{n}@@", m.group(0))
+        return token_map.get(f"@@{n}@@") or m.group(0)
 
     return _TOKEN_RE.sub(_sub, text)
 

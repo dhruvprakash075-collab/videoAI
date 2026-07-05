@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 from config import _safe_filename, get_character, load_config
 
@@ -34,7 +35,7 @@ def setup_run_logging(log_dir: Path) -> None:
     # Console handler
     import sys
 
-    sys.stdout.reconfigure(errors='replace')  # ponytail: replaces SafeStream wrapper
+    cast(Any, sys.stdout).reconfigure(errors="replace")  # ponytail: replaces SafeStream wrapper
 
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)

@@ -46,32 +46,40 @@ def render_html(html_path, output_path, variables=None, quiet=True, duration=0.0
 
     os.environ.setdefault("WSL_WIN_PATH_MAP", "1")
 
-    hf_cmd = (
-        f"cd {wsl_project} && "
-        f"npx hyperframes render '{wsl_dir}' --output '{wsl_out}' "
-        f"--workers 1 --quality draft --fps 24"
-    )
-    if variables:
-        var_json = json.dumps(variables).replace('"', '\\"')
-        hf_cmd += f' --variables "{var_json}"'
-    if quiet:
-        hf_cmd += " --quiet"
-
     cmd = ["wsl", "-d", wsl_distro]
     if wsl_user:
         cmd += ["-u", wsl_user]
-    cmd += ["-e", "bash", "-c", hf_cmd]
+    cmd += [
+        "--cd",
+        wsl_project,
+        "-e",
+        "npx",
+        "hyperframes",
+        "render",
+        wsl_dir,
+        "--output",
+        wsl_out,
+        "--workers",
+        "1",
+        "--quality",
+        "draft",
+        "--fps",
+        "24",
+    ]
+    if variables:
+        cmd += ["--variables", json.dumps(variables)]
+    if quiet:
+        cmd.append("--quiet")
 
-    env = {**os.environ}
     log.info("Hyperframes (WSL distro=%s): %s -> %s", wsl_distro, html_path.name, output_path.name)
+    proc = None
     try:
         proc = subprocess.Popen(
-            cmd,
+            cmd,  # nosemgrep
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
-            env=env,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         hf_timeout = max(120, int(duration * 3))
@@ -80,6 +88,8 @@ def render_html(html_path, output_path, variables=None, quiet=True, duration=0.0
         if proc.returncode != 0:
             raise RuntimeError("Hyperframes failed: " + err.strip()[-200:])
     except subprocess.TimeoutExpired as e:
+        if proc is None:
+            raise RuntimeError("Hyperframes timed out before process start") from e
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
         else:

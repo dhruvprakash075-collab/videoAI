@@ -30,8 +30,8 @@ that are either (a) in vendored/external code not owned by this repo, or
 
 ## Notes
 
-- All vendored dependencies under `external/` are excluded from Skylos scanning
-  via the `exclude` pattern in `.skylos.yml`.
+- When Skylos is run, vendored dependencies under `external/` should be excluded
+  in the scanner configuration.
 - The above entries are documented here for audit trail purposes only.
 - Do not modify vendored dependency files unless this repo owns the dependency.
 - If a vendored dependency's upstream releases a fix, the vendored copy should

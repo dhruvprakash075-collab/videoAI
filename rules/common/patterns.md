@@ -30,7 +30,7 @@ except BreakerOpen as e:
 
 All tunables in config, not hardcoded:
 - `config/config.yaml` for values
-- `config/config_schema.py` for validation
+- `config/config_schemas.py` for validation
 - Access via `config.get("section", {}).get("key", default)`
 
 ## Atomic Write Pattern

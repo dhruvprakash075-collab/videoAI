@@ -21,6 +21,8 @@ class WorkflowPatcher:
         """Load a workflow JSON file."""
         with open(workflow_path, encoding="utf-8") as f:
             self.workflow = json.load(f)
+        if not isinstance(self.workflow, dict):
+            raise TypeError(f"Workflow JSON must be an object: {workflow_path}")
         self.workflow_path = workflow_path
         self._build_node_cache()
         log.info(f"[ComfyUI] Loaded workflow from {workflow_path}")
@@ -66,6 +68,7 @@ class WorkflowPatcher:
         if not self.workflow:
             return positive_ids, negative_ids
 
+        workflow = self.workflow
         encode_nodes = self.find_nodes("CLIPTextEncode")
 
         # 1) Follow KSampler conditioning links (most reliable).
@@ -74,7 +77,7 @@ class WorkflowPatcher:
                 return set()
             visited.add(node_id)
 
-            node = self.workflow.get(node_id)
+            node = workflow.get(node_id)
             if not node or not isinstance(node, dict):
                 return set()
 
@@ -84,6 +87,8 @@ class WorkflowPatcher:
 
             results = set()
             inputs = node.get("inputs", {})
+            if not isinstance(inputs, dict):
+                return set()
             if isinstance(inputs, dict):
                 for val in inputs.values():
                     if isinstance(val, list) and len(val) >= 2:

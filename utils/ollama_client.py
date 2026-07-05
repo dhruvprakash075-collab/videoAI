@@ -61,12 +61,15 @@ class OllamaClient:
         validate_local_service_base_url(url)
         data = json.dumps(payload).encode("utf-8")
         last_err = None
+        attempt = 0
         for attempt in range(1, 4):
             try:
                 req = urllib.request.Request(
                     url, data=data, headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                from utils.url_security import open_validated_url
+
+                with open_validated_url(req, timeout=timeout) as resp:
                     return json.loads(resp.read().decode("utf-8"))
             except (urllib.error.URLError, OSError, TimeoutError) as e:
                 last_err = e
@@ -192,7 +195,9 @@ class OllamaClient:
                 data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=300) as resp:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=300) as resp:
                 for raw_line in resp:
                     line = raw_line.decode("utf-8").strip()
                     if not line:
@@ -224,7 +229,9 @@ class OllamaClient:
         """Return list of currently loaded model names via /api/ps."""
         try:
             req = urllib.request.Request(self._build_url(self._host, "/api/ps"))
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
         except Exception:

@@ -91,7 +91,9 @@ def retry_with_backoff(
                     )
                     time.sleep(delay)
             log.error(f"{func.__name__} failed after {max_retries} attempts")
-            raise last_exc
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError(f"{func.__name__} failed without an exception")
 
         return wrapper
 

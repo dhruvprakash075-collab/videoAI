@@ -10,7 +10,12 @@ def test_no_broad_suppress_in_logic_paths():
     # Walk the repository
     for root, dirs, files in os.walk(repo_root):
         # Skip tests, venv, git, cache, and external dependency dirs
-        dirs[:] = [d for d in dirs if d not in ("tests", "venv", ".git", ".venv", "__pycache__", ".pytest_cache", "external")]
+        dirs[:] = [
+            d
+            for d in dirs
+            if d
+            not in ("tests", "venv", ".git", ".venv", "__pycache__", ".pytest_cache", "external", "codex_tmp")
+        ]
 
         for file in files:
             if not file.endswith(".py"):

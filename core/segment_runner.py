@@ -28,7 +28,9 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from utils import build_prompts
 from utils.emotion_control import inject_emotion
@@ -93,10 +95,11 @@ def schedule_ollama_stop(config, delay: float = 3.0):
 def _ollama_alive(config, timeout: float = 2.0) -> bool:
     """Quick check if Ollama server is reachable (no process restart)."""
     import urllib.error as _ue
-    import urllib.request as _ur
     host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
     try:
-        with _ur.urlopen(build_validated_url(host, "/api/tags"), timeout=timeout):
+        from utils.url_security import open_validated_url
+
+        with open_validated_url(build_validated_url(host, "/api/tags"), timeout=timeout):
             return True
     except (ConnectionRefusedError, _ue.URLError, OSError):
         return False
@@ -179,7 +182,9 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                 seen.add(_mdl)
                 import urllib.error as _ue
                 with contextlib.suppress(_ue.URLError, TimeoutError, OSError):
-                    _ur.urlopen(
+                    from utils.url_security import open_validated_url
+
+                    open_validated_url(
                         _ur.Request(
                             build_validated_url(host, "/api/generate"),
                             data=_js.dumps({"model": _mdl, "keep_alive": 0}).encode(),
@@ -233,14 +238,16 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
                 import urllib.request as _ur2
 
                 host2 = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
-                with _ur2.urlopen(build_validated_url(host2, "/api/ps"), timeout=3) as _r:
+                from utils.url_security import open_validated_url
+
+                with open_validated_url(build_validated_url(host2, "/api/ps"), timeout=3) as _r:
                     ps_data = _js2.loads(_r.read().decode())
                 for _m in ps_data.get("models", []):
                     _name = _m.get("name", "")
                     if _name:
                         import urllib.error as _ue2
                         with contextlib.suppress(_ue2.URLError, TimeoutError, OSError):
-                            _ur2.urlopen(
+                            open_validated_url(
                                 _ur2.Request(
                                     build_validated_url(host2, "/api/generate"),
                                     data=_js2.dumps({"model": _name, "keep_alive": 0}).encode(),
@@ -305,12 +312,13 @@ def start_ollama_server(config: dict, reason: str = "") -> bool:
 
     host = validate_service_base_url(config.get("ollama", {}).get("host", "http://localhost:11434"))
     import urllib.error as _ue
-    import urllib.request as _ur
 
     for _i in range(20):
         time.sleep(0.5)
         try:
-            with _ur.urlopen(build_validated_url(host, "/api/tags"), timeout=2):
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(build_validated_url(host, "/api/tags"), timeout=2):
                 log.info(f"[Ollama] Server started{(' (' + reason + ')') if reason else ''}")
                 return True
         except (ConnectionRefusedError, _ue.URLError, OSError):
@@ -512,8 +520,8 @@ def make_process_segment(
             log.debug(f"  Seg {i}: script from checkpoint")
             return {"script": script}
 
-        if state.get("source_chunk"):
-            chunk = state["source_chunk"]
+        chunk = state.get("source_chunk")
+        if chunk:
             log.debug(
                 f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
             )
@@ -652,7 +660,7 @@ def make_process_segment(
                     except Exception:
                         record_breaker_failure(_writer_model)
                         raise
-                script = str(result.raw if hasattr(result, "raw") else result).strip()
+                script = str(getattr(result, "raw", result)).strip()
 
         return {"script": script}
 
@@ -873,6 +881,8 @@ def make_process_segment(
             else seg_min * 60
         )
 
+        audio_path = None
+        word_timestamps = None
         for _tts_retry in range(2):  # at most 1 retry
             with global_scheduler.task("heavy", f"Seg{i}:TTS"):
                 tts_out = tts_generate(
@@ -912,6 +922,9 @@ def make_process_segment(
                 raise
 
             break  # success
+
+        if audio_path is None:
+            raise RuntimeError(f"Seg {i}: TTS did not produce audio")
 
         cp_mgr.save(
             key,
@@ -1090,12 +1103,12 @@ def make_process_segment(
 
             with Image.open(str(image_path)) as img:
                 grey = img.convert("L")
-                resized = grey.resize((hash_size + 1, hash_size), Image.LANCZOS)
+                resized = grey.resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
             bits = []
             for row in range(hash_size):
                 for col in range(hash_size):
-                    left = resized.getpixel((col, row))
-                    right = resized.getpixel((col + 1, row))
+                    left = int(cast(Any, resized.getpixel((col, row))))
+                    right = int(cast(Any, resized.getpixel((col + 1, row))))
                     bits.append(1 if left < right else 0)
             # Pack into hex
             hex_hash = ""
@@ -1241,7 +1254,7 @@ def make_process_segment(
                     and getattr(self.mem, "_project", None) is not None
                 ):
                     try:
-                        dom_char = max(frame_cp, key=frame_cp.get)
+                        dom_char = max(frame_cp, key=lambda name: frame_cp[name])
                         if frame_cp[dom_char] >= 0.3:
                             stored = self.mem._project.get_character_assets(dom_char)
                             stored_hash = (stored or {}).get("identity_hash", "")
@@ -1275,7 +1288,7 @@ def make_process_segment(
                         }
 
                     if frame_cp:
-                        dom_char = max(frame_cp, key=frame_cp.get)
+                        dom_char = max(frame_cp, key=lambda name: frame_cp[name])
                         if frame_cp[dom_char] >= 0.3:
                             try:
                                 if getattr(self.mem, "_project", None) is None:
@@ -1388,7 +1401,7 @@ def make_process_segment(
 
     # ── Task-wise phase helpers (ponytail: sequential phases, checkpoint exchange) ──
 
-    def _build_segment_state(seg_idx: int) -> dict:
+    def _build_segment_state(seg_idx: int) -> SegmentState:
         """Build initial state dict for a segment index, shared across all phases."""
         plan = outline[seg_idx - 1] if seg_idx - 1 < len(outline) else outline[-1]
         ws_block = world_state.to_prompt_block()
@@ -1453,7 +1466,7 @@ def make_process_segment(
             from agents.director_agent import UIState as _UIState
             _UIState.add_degradation(seg_idx, "memory_context_injection", str(e))
 
-        state = {
+        state: dict[str, Any] = {
             "i": seg_idx,
             "plan": plan,
             "context": context,
@@ -1464,12 +1477,12 @@ def make_process_segment(
         }
         if source_chunks and 0 <= (seg_idx - 1) < len(source_chunks):
             state["source_chunk"] = source_chunks[seg_idx - 1]
-        return state
+        return cast(SegmentState, state)
 
     _MAX_REWRITES = config.get("critic", {}).get("max_rewrites", 2)
     _MAX_PHASE_RETRIES = int(config.get("performance", {}).get("max_segment_retries", 2))
 
-    def _retry_segment_phase(seg_idx: int, phase_fn: callable) -> None:
+    def _retry_segment_phase(seg_idx: int, phase_fn: Callable[[int], None]) -> None:
         """Retry wrapper for a single segment-phase call (matches build_retry_wrapper pattern)."""
         for _attempt in range(_MAX_PHASE_RETRIES + 1):
             try:
@@ -1642,7 +1655,9 @@ def make_process_segment(
                 try:
                     from core.pre_production import get_video_duration
 
-                    duration_s = round(get_video_duration(mp4s[i - 1]), 1)
+                    mp4 = mp4s[i - 1]
+                    if mp4 is not None:
+                        duration_s = round(get_video_duration(mp4), 1)
                 except Exception:
                     pass
 
@@ -1690,7 +1705,7 @@ def make_process_segment(
 
 def build_retry_wrapper(
     process_segment, max_retries: int, segment_idx: int, retry_counts: dict
-) -> callable:
+) -> Callable[[int], None]:
     """Wrap process_segment with the A7 per-segment retry budget."""
 
     def _with_budget(i: int) -> None:

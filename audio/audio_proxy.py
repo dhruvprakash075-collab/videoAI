@@ -290,8 +290,12 @@ class _SupertonicWorker:
                 )
                 self._reader_t.start()
             try:
-                self._proc.stdin.write(json.dumps(req) + "\n")
-                self._proc.stdin.flush()
+                proc = self._proc
+                stdout_q = self._stdout_q
+                if proc is None or proc.stdin is None or stdout_q is None:
+                    raise RuntimeError("Supertonic worker pipe unavailable")
+                proc.stdin.write(json.dumps(req) + "\n")
+                proc.stdin.flush()
                 import queue
                 import time as _t
 
@@ -299,7 +303,7 @@ class _SupertonicWorker:
                 while _t.time() < deadline:
                     try:
                         rem = max(0.1, deadline - _t.time())
-                        line = self._stdout_q.get(timeout=rem)
+                        line = stdout_q.get(timeout=rem)
                     except queue.Empty as exc:
                         raise RuntimeError("Supertonic worker response timeout") from exc
 
@@ -331,8 +335,9 @@ class _SupertonicWorker:
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 try:
-                    self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
-                    self._proc.stdin.flush()
+                    if self._proc.stdin is not None:
+                        self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
+                        self._proc.stdin.flush()
                     self._proc.wait(timeout=10)
                 except Exception:
                     pass
@@ -557,8 +562,12 @@ class _OmniVoiceWorker:
                 )
                 self._reader_t.start()
             try:
-                self._proc.stdin.write(json.dumps(req) + "\n")
-                self._proc.stdin.flush()
+                proc = self._proc
+                stdout_q = self._stdout_q
+                if proc is None or proc.stdin is None or stdout_q is None:
+                    raise RuntimeError("OmniVoice worker pipe unavailable")
+                proc.stdin.write(json.dumps(req) + "\n")
+                proc.stdin.flush()
                 import queue
                 import time as _t
 
@@ -568,7 +577,7 @@ class _OmniVoiceWorker:
                 while _t.time() < deadline:
                     try:
                         rem = max(0.1, deadline - _t.time())
-                        line = self._stdout_q.get(timeout=rem)
+                        line = stdout_q.get(timeout=rem)
                     except queue.Empty as exc:
                         raise RuntimeError(
                             "worker response timeout (no progress within idle window)"
@@ -605,8 +614,9 @@ class _OmniVoiceWorker:
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 try:
-                    self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
-                    self._proc.stdin.flush()
+                    if self._proc.stdin is not None:
+                        self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
+                        self._proc.stdin.flush()
                     self._proc.wait(timeout=10)
                 except Exception:
                     pass

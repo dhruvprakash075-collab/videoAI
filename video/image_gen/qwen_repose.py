@@ -130,7 +130,7 @@ def validate_qwen_workflow_template(
     try:
         from utils.path_utils import is_safe_path
 
-        if not path.is_absolute() and not is_safe_path(Path.cwd(), workflow_path):
+        if not path.is_absolute() and not is_safe_path(Path.cwd(), str(workflow_path)):
             return [f"qwen_edit workflow path escapes project directory: {path}"]
         with path.open(encoding="utf-8") as f:
             workflow = json.load(f)

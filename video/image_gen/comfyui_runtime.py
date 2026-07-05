@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import BinaryIO
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +30,8 @@ class ComfyUIRuntime:
         from utils.url_security import validate_local_service_base_url
         validate_local_service_base_url(self._base_url)
         self._project_root = Path(__file__).resolve().parents[2]
-        self._stdout_handle = None
-        self._stderr_handle = None
+        self._stdout_handle: BinaryIO | None = None
+        self._stderr_handle: BinaryIO | None = None
 
     def _resolve_path(
         self,
@@ -53,7 +54,7 @@ class ComfyUIRuntime:
             return path
         return candidates[-1]
 
-    def _open_log_handles(self, root_path: Path) -> tuple[object, object]:
+    def _open_log_handles(self, root_path: Path) -> tuple[BinaryIO, BinaryIO]:
         self._close_log_handles()
         stdout_path = root_path / "comfyui_stdout.log"
         stderr_path = root_path / "comfyui_stderr.log"
@@ -79,7 +80,9 @@ class ComfyUIRuntime:
 
             validated = validate_local_service_base_url(self._base_url)
             req = urllib.request.Request(build_validated_url(validated, "/system_stats"))
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            from utils.url_security import open_validated_url
+
+            with open_validated_url(req, timeout=timeout) as response:
                 return response.status == 200
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
             return False
@@ -164,8 +167,10 @@ class ComfyUIRuntime:
                 self._close_log_handles()
                 return False
 
-        start_time = time.time()
-        while time.time() - start_time < timeout:
+        deadline = time.time() + timeout
+        while True:
+            if time.time() >= deadline:
+                break
             if self.is_running(timeout=2.0):
                 log.info(f"[ComfyUI] Ready at {self._base_url}")
                 return True

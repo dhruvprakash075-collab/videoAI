@@ -230,15 +230,12 @@ def _fetch_rss(query: str, config: dict) -> list[ResearchItem]:
         return []
 
     headers = _headers(config)
-    timeout = _timeout(config)
     limit = _per_source_limit(config)
 
     items: list[ResearchItem] = []
     for feed_url in feeds:
         try:
-            parsed = feedparser.parse(
-                feed_url, agent=headers.get("User-Agent", ""), timeout=timeout
-            )
+            parsed = feedparser.parse(feed_url, agent=headers.get("User-Agent", ""))
         except Exception as e:
             log.debug(f"[researcher] RSS parse failed for {feed_url}: {e}")
             continue

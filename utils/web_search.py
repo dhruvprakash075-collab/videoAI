@@ -14,9 +14,12 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
+
+from utils.url_security import open_validated_url
 
 log = logging.getLogger(__name__)
 
@@ -158,14 +161,14 @@ def _filter_sections(text: str, topic: str = "") -> str:
     return result
 
 
-def _wiki_api_request(params: dict) -> dict:
+def _wiki_api_request(params: dict[str, Any]) -> dict[str, Any]:
     """Make a Wikipedia API request. Classification: fixed trusted public API."""
     resp = requests.get(_WIKI_API, params=params, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
 
-def _search_wikipedia(query: str) -> list[dict]:
+def _search_wikipedia(query: str) -> list[dict[str, str]]:
     """Search Wikipedia and return spoiler-safe results."""
     results = []
 
@@ -227,7 +230,7 @@ def _search_wikipedia(query: str) -> list[dict]:
     return results
 
 
-def _search_duckduckgo(query: str) -> list[dict]:
+def _search_duckduckgo(query: str) -> list[dict[str, str]]:
     """Search DuckDuckGo via HTML endpoint (API was deprecated in 2024)."""
     data = urllib.parse.urlencode({"q": query}).encode("utf-8")
     headers = {**_HEADERS, "Content-Type": "application/x-www-form-urlencoded"}
@@ -238,7 +241,7 @@ def _search_duckduckgo(query: str) -> list[dict]:
         # P3-17 fix: urlopen RAISES urllib.error.HTTPError on 403 — it never returns
         # a response object with .status == 403. Retry once after a short delay.
         try:
-            resp_ctx = urllib.request.urlopen(req, timeout=10)
+            resp_ctx = open_validated_url(req, timeout=10, local_service=False)
         except urllib.error.HTTPError as e:
             if e.code == 403:
                 log.warning("DDG returned 403 — retrying after 3s delay...")
@@ -246,7 +249,7 @@ def _search_duckduckgo(query: str) -> list[dict]:
 
                 time.sleep(3)
                 req2 = urllib.request.Request(_DDG_HTML, data=data, headers=headers)
-                resp_ctx = urllib.request.urlopen(req2, timeout=10)
+                resp_ctx = open_validated_url(req2, timeout=10, local_service=False)
             else:
                 raise
 
@@ -324,7 +327,7 @@ def _strip_spoilers(text: str, topic: str = "") -> str:
     return result
 
 
-def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict:
+def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict[str, Any]:
     """Search the web for story/character context across multiple sources.
 
     Returns:
@@ -362,7 +365,7 @@ def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict:
 
         # DDG dedup: use URL as key when present; fall back to (title, summary) tuple
         # when URL is empty so distinct results with empty URLs are not dropped.
-        seen_ddg_keys: set = set()
+        seen_ddg_keys: set[str | tuple[str, str]] = set()
         for r in all_ddg:
             url = r.get("url", "")
             key = url if url else (r.get("title", ""), r.get("summary", ""))

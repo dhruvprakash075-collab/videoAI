@@ -1,7 +1,7 @@
 import json
 import subprocess
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,17 +9,22 @@ from PIL import Image
 
 from scripts import phase6_acceptance
 from scripts.phase6_acceptance import (
+    WHEEL_NAME,
     AcceptanceError,
     FirewallBlock,
     MemorySample,
     Watchdog,
-    WHEEL_NAME,
+    _comfyui_is_running,
     approve_output,
     build_config,
     create_background,
+    directory_snapshot,
     fetch_json,
     gpu_compute_processes,
+    install_matching_nunchaku,
     parse_args,
+    prepare_identity,
+    prove_public_network_blocked,
     quote_ps,
     require_resource_headroom,
     run_command,
@@ -27,15 +32,10 @@ from scripts.phase6_acceptance import (
     sha256_file,
     start_comfy,
     stop_process_tree,
-    install_matching_nunchaku,
-    prove_public_network_blocked,
-    directory_snapshot,
-    prepare_identity,
     validate_live_workflow,
     validate_output,
     validate_static_files,
     wait_for_comfy,
-    _comfyui_is_running,
 )
 
 
@@ -157,7 +157,7 @@ def test_require_resource_headroom_success_and_failures(monkeypatch):
     )
     monkeypatch.setattr(phase6_acceptance.shutil, "disk_usage", lambda _root: SimpleNamespace(free=20 * 1024**3))
     monkeypatch.setattr(phase6_acceptance, "gpu_memory_mib", lambda: 10)
-    monkeypatch.setattr(phase6_acceptance, "gpu_compute_processes", lambda: [])
+    monkeypatch.setattr(phase6_acceptance, "gpu_compute_processes", list)
 
     report = require_resource_headroom()
     assert report["available_ram_gib"] == 8

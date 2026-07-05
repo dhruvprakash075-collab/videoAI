@@ -920,13 +920,13 @@ def _write_srt(
             for i in range(0, len(words), words_per_caption)
         ]
         total_words = len(words) or 1
-        lines: list[str] = []
+        caption_lines: list[str] = []
         t = 0.0
         for idx, text in enumerate(chunks):
             t_end = t + (len(text.split()) / total_words) * duration
-            lines += [str(idx + 1), f"{_ts(t)} --> {_ts(t_end)}", text, ""]
+            caption_lines += [str(idx + 1), f"{_ts(t)} --> {_ts(t_end)}", text, ""]
             t = t_end
-        path.write_text("\n".join(lines), encoding="utf-8-sig")
+        path.write_text("\n".join(caption_lines), encoding="utf-8-sig")
         return
 
     sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?=\s|$)|[!?।]+", script) if s.strip()]

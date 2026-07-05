@@ -1,8 +1,7 @@
+import itertools
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
-import subprocess
 
 from video.image_gen.comfyui_runtime import ComfyUIRuntime, get_comfyui_runtime
 
@@ -125,10 +124,11 @@ def test_start_success_permission_retry_failure_and_timeout(tmp_path: Path):
         assert runtime._process is None
 
     runtime = _runtime(tmp_path)
+    fake_clock = itertools.count().__next__
     with (
         patch.object(runtime, "is_running", return_value=False),
         patch("subprocess.Popen", return_value=MagicMock(pid=789)),
-        patch("time.time", side_effect=[0, 1, 2]),
+        patch("time.time", side_effect=fake_clock),
         patch("time.sleep"),
     ):
         assert runtime.start(timeout=1) is False
