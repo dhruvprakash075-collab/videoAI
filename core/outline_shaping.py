@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+__all__ = ["shape_outline"]
+
 log = logging.getLogger(__name__)
 
 

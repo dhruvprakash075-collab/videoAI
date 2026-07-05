@@ -6,6 +6,8 @@ import logging
 import sys
 from pathlib import Path
 
+__all__ = ["main", "run_long_pipeline_async"]
+
 log = logging.getLogger(__name__)
 
 

@@ -121,12 +121,15 @@ __all__ = [
     "format_time_hms",
     "get_video_duration",
     "plan_outline",
+    "request_cancel",
+    "run_long_pipeline",
+    "run_long_pipeline_async",
     "run_pre_production",
     "run_preflight_checks",
 ]
 
 from core.outline_shaping import shape_outline
-from core.pipeline_cli import run_long_pipeline_async  # noqa: F401 — re-export
+from core.pipeline_cli import run_long_pipeline_async
 
 # ── Public abort control (TUI calls these) ───────────────────────────
 
