@@ -1,1 +1,0 @@
-'nunchaku_versions.json' not found. Node will start in minimal mode. Use 'update node' to fetch versions.

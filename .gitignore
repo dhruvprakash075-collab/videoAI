@@ -129,3 +129,12 @@ skylos_*.json
 # ── Local agent tooling ───────────────────────────────────────────
 .agents/
 skills-lock.json
+
+# ── Ponytail tool output ──────────────────────────────────────────
+.ponytail/
+
+# ── ComfyUI test artifacts ────────────────────────────────────────
+comfy_*.json
+comfy_test_*.txt
+color_output.png
+fast_output.png
