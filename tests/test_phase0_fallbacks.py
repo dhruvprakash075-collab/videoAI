@@ -5,8 +5,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import core.main as cm
@@ -83,7 +81,7 @@ def test_ollama_model_available_rejects_metadata_host():
     urlopen_mock.assert_not_called()
 
 
-def test_translate_node_raises_on_crash():
+def test_translate_node_falls_back_on_crash():
     UIState.reset_run("test")
 
     import threading
@@ -145,5 +143,4 @@ def test_translate_node_raises_on_crash():
     )
 
     with patch("crewai.Crew"), patch("crewai.Task"):
-        with pytest.raises(RuntimeError, match="Translation model crashed"):
-            process_seg(1)
+        process_seg(1)

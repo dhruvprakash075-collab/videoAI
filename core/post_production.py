@@ -291,7 +291,12 @@ def finalize_production(
         _rec = _bb.read_decision()
         if _rec is not None:
             _dur = _rec.total_duration_min
-            if _dur.locked and _dur.provenance in ("user", "cli_flag"):
+            _duration_was_clamped = any(
+                a.get("field") == "total_duration_min" and a.get("type") == "clamp"
+                for a in getattr(_rec, "adjustments", [])
+                if isinstance(a, dict)
+            )
+            if _dur.locked and _dur.provenance in ("user", "cli_flag") and not _duration_was_clamped:
                 _requested_duration_s = _dur.value * 60
                 log.info(
                     f"[QC] User locked duration = {_dur.value}min "

@@ -417,7 +417,9 @@ def make_process_segment(
                             script, plan, state["context"]
                         )
                 if not devanagari_script:
-                    raise RuntimeError("Director translation failed for Hindi TTS")
+                    log.warning(
+                        f"  Seg {i}: Director translation failed; falling back to English TTS"
+                    )
                 if devanagari_script:
                     en_words = max(1, len(script.split()))
                     hi_words = len(devanagari_script.split())
@@ -428,15 +430,14 @@ def make_process_segment(
                         log.warning(
                             f"  Seg {i}: Director translation bloated "
                             f"({hi_words} Hindi words vs {en_words} English words); "
-                            "rejecting Hindi TTS input"
+                            "falling back to English TTS"
                         )
-                        raise RuntimeError(
-                            f"Director translation bloated ({hi_words} Hindi words vs {en_words} English words)"
-                        )
-                    log.info(f"  Seg {i}: Director translated to Devanagari")
+                        devanagari_script = None
+                    else:
+                        log.info(f"  Seg {i}: Director translated to Devanagari")
             except Exception as e:
-                log.error(f"  Seg {i}: Director translation failed ({e}); refusing English fallback")
-                raise
+                log.warning(f"  Seg {i}: Director translation failed ({e}); falling back to English TTS")
+                devanagari_script = None
 
         _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
         try:

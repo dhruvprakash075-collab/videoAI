@@ -407,6 +407,32 @@ class TestFinalizeProduction:
         result = self._run_production(tmp_path, monkeypatch)
         assert result["quality"]["passed"] is True
 
+    def test_clamped_cli_duration_not_passed_as_requested_qc_target(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = _minimal_config()
+        fake_final = tmp_path / "final.mp4"
+        fake_final.write_bytes(b"x")
+        fake_rec = types.SimpleNamespace(
+            total_duration_min=types.SimpleNamespace(value=0.5, locked=True, provenance="cli_flag"),
+            adjustments=[{"field": "total_duration_min", "type": "clamp"}],
+        )
+        fake_bb = MagicMock()
+        fake_bb.read_decision.return_value = fake_rec
+
+        with (
+            patch("core.segment_runner.log_vram_usage"),
+            patch("memory.blackboard.get_blackboard", return_value=fake_bb),
+            patch("video.renderer.assembler.concatenate_segments", return_value=fake_final),
+            patch("core.post_production.get_video_duration", return_value=13.0),
+            patch(
+                "utils.quality_check.check_video",
+                return_value={"passed": True, "issues": [], "details": {"duration_s": 13.0}},
+            ) as check_video,
+        ):
+            pp.finalize_production("Topic", cfg, _outline(1), 1, [tmp_path / "seg1.mp4"], 5.0)
+
+        assert check_video.call_args.kwargs["requested_duration_s"] is None
+
     def test_qc_failure_returns_error_status(self, tmp_path, monkeypatch):
         qc = {"passed": False, "issues": ["short video"], "details": {"duration_s": 5.0}}
         result = self._run_production(tmp_path, monkeypatch, qc_result=qc)

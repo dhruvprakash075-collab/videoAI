@@ -150,8 +150,29 @@ def test_translate_node_translation_failure(mock_dependencies):
         mock_score.return_value = mock_score_obj
 
         process_seg, *_ = make_process_segment(**mock_dependencies)
-        with pytest.raises(Exception, match="trans fail"):
-            process_seg(1)
+        process_seg(1)
+
+        assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
+
+
+def test_translate_node_bloated_translation_falls_back(mock_dependencies):
+    mock_crew = MagicMock()
+    mock_crew.kickoff.return_value = "hello world"
+    mock_dependencies["director_agent_instance"].translate_to_devanagari.return_value = "हिंदी " * 200
+
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", side_effect=Exception("ollama fail")),
+        patch("crewai.Task"),
+        patch("crewai.Crew", return_value=mock_crew),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script") as mock_score,
+    ):
+        mock_score_obj = MagicMock()
+        mock_score_obj.total = 80
+        mock_score.return_value = mock_score_obj
+
+        process_seg, *_ = make_process_segment(**mock_dependencies)
+        process_seg(1)
 
         assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
 
