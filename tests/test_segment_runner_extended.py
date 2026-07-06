@@ -107,7 +107,7 @@ def test_critic_node_reject_and_rewrite(mock_dependencies):
         assert mock_crew.kickoff.call_count == 2
 
 
-def test_translate_node_word_count_trimming(mock_dependencies):
+def test_translate_node_does_not_budget_trim_writer_output(mock_dependencies):
     long_script = "Word word word. " * 30
     mock_crew = MagicMock()
     mock_crew.kickoff.return_value = long_script
@@ -128,7 +128,7 @@ def test_translate_node_word_count_trimming(mock_dependencies):
         process_seg(1)
 
         called_script = mock_sanitize.call_args[0][0]
-        assert len(called_script.split()) <= 62
+        assert called_script == long_script.strip()
 
 
 def test_translate_node_translation_failure(mock_dependencies):

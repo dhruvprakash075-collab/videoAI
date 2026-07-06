@@ -6,7 +6,6 @@ work that runs N times (one per segment):
   • Preview gate (after segment 1 in --preview mode)
   • Script generation (W2: structured Ollama, CrewAI fallback)
   • Script review + revision
-  • Local word-count enforcement (W4)
   • Devanagari translation (Director or fallback)
   • WorldState update (B3)
   • TTS (Supertonic / OmniVoice) + SFX + mastering
@@ -57,7 +56,7 @@ from core.runtime.vram import (
 )
 
 # ── moved verbatim from core/segment/budget.py / identity.py ──
-from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget
+from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget  # noqa: F401
 from core.segment.identity import _detect_important_trigger, _perceptual_hash
 
 # ── Main per-segment processor ─────────────────────────────────
@@ -102,7 +101,6 @@ def make_process_segment(
     """
     # Lazy imports to avoid circular import at module load
 
-    from config import _safe_filename
     from core.pre_production import _reject_unsafe_narration, _sanitize_narration
 
     try:
@@ -113,32 +111,6 @@ def make_process_segment(
 
     with contextlib.suppress(ImportError):
         pass
-
-    # Compute per-segment TTS duration target from DecisionRecord (if user-locked)
-    _requested_duration_per_seg_s: float | None = None
-    try:
-        from memory.blackboard import get_blackboard as _gb
-
-        _rec = _gb(config, topic_slug=_safe_filename(topic)).read_decision()
-        if _rec is not None:
-            _dur = _rec.total_duration_min
-            if _dur.locked and _dur.provenance in ("user", "cli_flag"):
-                _requested_duration_per_seg_s = (_dur.value * 60) / max(1, n_segs)
-                log.info(
-                    f"[TTS] Per-segment target from locked duration: "
-                    f"{_dur.value}min / {n_segs} segs = {_requested_duration_per_seg_s:.1f}s"
-                )
-                from config.config import get_language as _get_lang_budget
-
-                _budget = _tts_word_budget(config, _requested_duration_per_seg_s, _get_lang_budget(config))
-                if _budget and _budget > words_per_seg:
-                    log.warning(
-                        f"[TTS] Locked duration needs ~{_budget} words/seg at target TTS rate; "
-                        f"raising writer budget from {words_per_seg}"
-                    )
-                    words_per_seg = _budget
-    except Exception as _e:
-        log.debug(f"[TTS] Could not read DecisionRecord for segment target: {_e}")
 
     from core.pipeline_graph import SegmentGraphBuilder, SegmentState
 
@@ -179,20 +151,6 @@ def make_process_segment(
         lo = int(words_per_seg * (1 - tolerance))
         hi = int(words_per_seg * (1 + tolerance))
         seg_words = max(lo, min(hi, seg_words))
-        # Cap the writer's word target by the segment's spoken-duration budget so
-        # a segment is never asked for more words than its time allows. This is
-        # director-driven: the cap comes from the per-segment time target, and
-        # Hindi gets fewer words for the same seconds (slower speech).
-        from config.config import get_language as _get_lang_ws
-
-        _seg_target_s = (
-            _requested_duration_per_seg_s
-            if _requested_duration_per_seg_s is not None
-            else seg_min * 60
-        )
-        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_ws(config))
-        if _dur_budget:
-            seg_words = min(seg_words, _dur_budget)
         persona = config.get("narrator_persona", "")
 
         from utils.story_planner import build_segment_prompt
@@ -359,33 +317,6 @@ def make_process_segment(
                 log.warning(f"  Seg {i}: world_state.update (translate, dry-run) failed: {_ws_e}")
             return {"devanagari_script": None, "script_for_tts": script}
 
-        # Word count enforcement.
-        # Clamp the planner's per-segment target to the writer's actual budget so
-        # an LLM overshoot gets trimmed instead of sailing past an inflated
-        # planner value (root cause of the multi-minute TTS over-length audio).
-        _wc_tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
-        _wc_lo = int(words_per_seg * (1 - _wc_tolerance))
-        _wc_clamp_hi = int(words_per_seg * (1 + _wc_tolerance))
-        seg_words = plan.get("target_word_count", words_per_seg) or words_per_seg
-        seg_words = max(_wc_lo, min(_wc_clamp_hi, seg_words))
-        # Hard cap by the segment's spoken-duration budget (director-driven
-        # seconds -> words; Hindi speaks slower so fewer words per second).
-        from config.config import get_language as _get_lang_wc
-
-        _seg_target_s = (
-            _requested_duration_per_seg_s
-            if _requested_duration_per_seg_s is not None
-            else seg_min * 60
-        )
-        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_wc(config))
-        if _dur_budget:
-            seg_words = min(seg_words, _dur_budget)
-        _actual_wc = len(script.split())
-        _wc_hi = int(seg_words * (1 + _wc_tolerance))
-
-        if _actual_wc > _wc_hi:
-            script = _trim_script_to_word_limit(script, _wc_hi)
-
         # Sanitize BEFORE checkpointing so TTS never sees artifacts
         script = _sanitize_narration(script)
 
@@ -496,57 +427,14 @@ def make_process_segment(
             torch.cuda.empty_cache()
 
         from audio.audio_proxy import tts_generate
-        from utils import get_audio_duration as _get_audio_duration
-
-        # Segment target duration in seconds for TTS duration guard
-        # Use user-locked target if available; otherwise fall back to seg_min * 60
-        _seg_target_s = (
-            _requested_duration_per_seg_s
-            if _requested_duration_per_seg_s is not None
-            else seg_min * 60
-        )
-
-        audio_path = None
-        word_timestamps = None
-        for _tts_retry in range(2):  # at most 1 retry
-            with global_scheduler.task("heavy", f"Seg{i}:TTS"):
-                tts_out = tts_generate(
-                    script_for_tts, lang=tts_lang, output_dir=out_base / "audio", speed=_tts_speed
-                )
-                audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
-                word_timestamps = (
-                    tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
-                )
-
-            # TTS duration guard: compare WAV duration against segment target
-            try:
-                _wav_dur = _get_audio_duration(Path(audio_path))
-                _dur_limit = max(_seg_target_s * 1.5, _seg_target_s + 30)
-                if _wav_dur > _dur_limit and _tts_retry == 0:
-                    log.warning(
-                        f"  Seg {i}: TTS audio duration {_wav_dur:.0f}s exceeds "
-                        f"limit {_dur_limit:.0f}s — retrying with truncated narration"
-                    )
-                    # Truncate to ~60% of segment target words
-                    _words = script_for_tts.split()
-                    _trunc_words = _words[: max(10, int(len(_words) * 0.6))]
-                    script_for_tts = " ".join(_trunc_words)
-                    continue
-                if _wav_dur > _dur_limit:
-                    log.error(
-                        f"  Seg {i}: TTS audio duration {_wav_dur:.0f}s exceeds "
-                        f"limit {_dur_limit:.0f}s after retry — failing segment"
-                    )
-                    raise RuntimeError(
-                        f"TTS duration {_wav_dur:.0f}s exceeds limit {_dur_limit:.0f}s"
-                    )
-            except Exception as _dur_err:
-                if _tts_retry == 0 and not isinstance(_dur_err, RuntimeError):
-                    log.warning(f"  Seg {i}: TTS duration check error ({_dur_err}), retrying")
-                    continue
-                raise
-
-            break  # success
+        with global_scheduler.task("heavy", f"Seg{i}:TTS"):
+            tts_out = tts_generate(
+                script_for_tts, lang=tts_lang, output_dir=out_base / "audio", speed=_tts_speed
+            )
+            audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
+            word_timestamps = (
+                tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
+            )
 
         if audio_path is None:
             raise RuntimeError(f"Seg {i}: TTS did not produce audio")

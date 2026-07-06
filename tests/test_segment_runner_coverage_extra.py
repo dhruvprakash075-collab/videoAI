@@ -314,7 +314,7 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
     perm.return_value.save_memory_item.assert_called_once_with({"kind": "fact"})
 
 
-def test_make_process_segment_tts_duration_retry_then_success(tmp_path):
+def test_make_process_segment_tts_does_not_budget_retry_or_truncate(tmp_path):
     wav = tmp_path / "voice.wav"
     wav.write_bytes(b"RIFF")
     kwargs = _process_kwargs(tmp_path, dry_run=False)
@@ -333,7 +333,7 @@ def test_make_process_segment_tts_duration_retry_then_success(tmp_path):
         patch("utils.critic.score_script", return_value=score),
         patch("utils.critic.is_approved", return_value=True),
         patch("audio.audio_proxy.tts_generate", side_effect=fake_tts),
-        patch("utils.get_audio_duration", side_effect=[999, 20]),
+        patch("utils.get_audio_duration", return_value=999),
         patch("video.image_gen.image_gen.generate_images", return_value=[]),
         patch("video.renderer.renderer.render_with_assets", return_value=tmp_path / "out.mp4"),
         patch("torch.cuda.is_available", return_value=False),
@@ -341,8 +341,8 @@ def test_make_process_segment_tts_duration_retry_then_success(tmp_path):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
-    assert len(tts_calls) == 2
-    assert len(tts_calls[1].split()) < len(tts_calls[0].split())
+    assert len(tts_calls) == 1
+    assert len(tts_calls[0].split()) >= 80
 
 
 def test_returned_phase_functions_checkpoint_skips_and_render_phase(tmp_path):
