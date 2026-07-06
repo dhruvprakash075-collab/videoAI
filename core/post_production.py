@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import shutil
-import subprocess
 from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any
@@ -28,43 +26,6 @@ from core.pre_production import format_chapters_time, get_video_duration
 from utils import _safe_filename
 
 log = logging.getLogger(__name__)
-
-
-def _pad_video_to_duration(video_path: Path, target_s: float, config: dict) -> Path:
-    duration_s = get_video_duration(video_path)
-    if duration_s <= 0 or duration_s >= target_s * 0.8:
-        return video_path
-
-    pad_s = max(0.0, target_s - duration_s)
-    tmp = video_path.with_name(f"{video_path.stem}_duration_pad{video_path.suffix}")
-    fps = int(config.get("video", {}).get("fps", 24))
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        f"tpad=stop_mode=clone:stop_duration={pad_s:.3f},fps={fps}",
-        "-af",
-        f"apad=pad_dur={pad_s:.3f}",
-        "-t",
-        f"{target_s:.3f}",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        str(tmp),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
-    shutil.move(str(tmp), str(video_path))
-    log.info(f"[QC] Padded final video from {duration_s:.1f}s to {target_s:.1f}s")
-    return video_path
 
 
 def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_time_s: float) -> None:
@@ -336,7 +297,6 @@ def finalize_production(
                     f"[QC] User locked duration = {_dur.value}min "
                     f"({_requested_duration_s:.0f}s) — will validate against this target"
                 )
-                final_video = _pad_video_to_duration(Path(final_video), _requested_duration_s, config)
     except Exception as _e:
         log.debug(f"[QC] Could not read DecisionRecord for duration target: {_e}")
 
