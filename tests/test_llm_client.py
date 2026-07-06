@@ -112,6 +112,8 @@ def test_call_ollama_chat_success():
             [{"role": "user", "content": "translate this"}],
             model="test-translator",
             system_msg="custom system",
+            temperature=0.0,
+            num_predict=768,
         )
 
 

@@ -109,10 +109,19 @@ class DirectorLlmClient:
             from utils.ollama_client import get_ollama_client
 
             client = get_ollama_client(self.llm_config if isinstance(self.llm_config, dict) else {})
+            chat_kwargs = {}
+            if model_type == "translator":
+                cfg = self.llm_config if isinstance(self.llm_config, dict) else {}
+                deva_cfg = cfg.get("tts", {}).get("devanagari", {})
+                chat_kwargs = {
+                    "temperature": 0.0,
+                    "num_predict": int(deva_cfg.get("max_predict_tokens", 768)),
+                }
             return client.chat(
                 [{"role": "user", "content": prompt}],
                 model=m,
                 system_msg=system_msg,
+                **chat_kwargs,
             )
         except Exception as e:
             log.exception(f"[OLLAMA] {model_type} client.chat failed: {e}")

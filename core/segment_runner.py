@@ -130,7 +130,10 @@ def make_process_segment(
                 )
                 from config.config import get_language as _get_lang_budget
 
-                _budget = _tts_word_budget(config, _requested_duration_per_seg_s, _get_lang_budget(config))
+                _lang = _get_lang_budget(config)
+                _budget = _tts_word_budget(config, _requested_duration_per_seg_s, _lang)
+                if _lang == "hi":
+                    _budget = max(_budget, _tts_word_budget(config, _requested_duration_per_seg_s, "en"))
                 if _budget and _budget > words_per_seg:
                     log.warning(
                         f"[TTS] Locked duration needs ~{_budget} words/seg at target TTS rate; "
@@ -190,7 +193,10 @@ def make_process_segment(
             if _requested_duration_per_seg_s is not None
             else seg_min * 60
         )
-        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_ws(config))
+        _lang = _get_lang_ws(config)
+        _dur_budget = _tts_word_budget(config, _seg_target_s, _lang)
+        if _lang == "hi":
+            _dur_budget = max(_dur_budget, _tts_word_budget(config, _seg_target_s, "en"))
         if _dur_budget:
             seg_words = min(seg_words, _dur_budget)
         persona = config.get("narrator_persona", "")
@@ -377,7 +383,10 @@ def make_process_segment(
             if _requested_duration_per_seg_s is not None
             else seg_min * 60
         )
-        _dur_budget = _tts_word_budget(config, _seg_target_s, _get_lang_wc(config))
+        _lang = _get_lang_wc(config)
+        _dur_budget = _tts_word_budget(config, _seg_target_s, _lang)
+        if _lang == "hi":
+            _dur_budget = max(_dur_budget, _tts_word_budget(config, _seg_target_s, "en"))
         if _dur_budget:
             seg_words = min(seg_words, _dur_budget)
         _actual_wc = len(script.split())
@@ -438,6 +447,17 @@ def make_process_segment(
             except Exception as e:
                 log.warning(f"  Seg {i}: Director translation failed ({e}); falling back to English TTS")
                 devanagari_script = None
+
+        _tts_lang_for_budget = "hi" if _audio_lang == "hi" and devanagari_script else "en"
+        _tts_budget = _tts_word_budget(config, _seg_target_s, _tts_lang_for_budget)
+        if _tts_budget:
+            if _tts_lang_for_budget == "hi" and devanagari_script:
+                if len(devanagari_script.split()) > _tts_budget:
+                    devanagari_script = _trim_script_to_word_limit(devanagari_script, _tts_budget)
+                    log.info(f"  Seg {i}: trimmed Hindi TTS script to {_tts_budget} words")
+            elif len(script.split()) > _tts_budget:
+                script = _trim_script_to_word_limit(script, _tts_budget)
+                log.info(f"  Seg {i}: trimmed English TTS fallback script to {_tts_budget} words")
 
         _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
         try:

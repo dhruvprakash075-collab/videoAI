@@ -3,6 +3,7 @@
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -175,6 +176,41 @@ def test_translate_node_bloated_translation_falls_back(mock_dependencies):
         process_seg(1)
 
         assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
+
+
+def test_hi_locked_duration_writer_budget_allows_english_fallback(mock_dependencies):
+    captured = {}
+    fake_rec = types.SimpleNamespace(
+        total_duration_min=types.SimpleNamespace(value=0.5, locked=True, provenance="cli_flag")
+    )
+    fake_bb = MagicMock()
+    fake_bb.read_decision.return_value = fake_rec
+    mock_dependencies["words_per_seg"] = 20
+    mock_dependencies["n_segs"] = 1
+    mock_dependencies["director_agent_instance"].translate_to_devanagari.return_value = None
+
+    def _prompt(plan, context, n_segs, seg_words, **kwargs):
+        captured["seg_words"] = seg_words
+        return "prompt"
+
+    with (
+        patch("memory.blackboard.get_blackboard", return_value=fake_bb),
+        patch("utils.story_planner.build_segment_prompt", side_effect=_prompt),
+        patch(
+            "utils.crewai_breaker.guarded_ollama_call",
+            return_value='{"narration": "hello world"}',
+        ),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script") as mock_score,
+    ):
+        mock_score_obj = MagicMock()
+        mock_score_obj.total = 80
+        mock_score.return_value = mock_score_obj
+
+        process_seg, *_ = make_process_segment(**mock_dependencies)
+        process_seg(1)
+
+    assert captured["seg_words"] == 75
 
 
 def test_tts_node_resume_cache(mock_dependencies):

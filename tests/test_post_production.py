@@ -433,6 +433,36 @@ class TestFinalizeProduction:
 
         assert check_video.call_args.kwargs["requested_duration_s"] is None
 
+    def test_short_locked_duration_output_is_padded_before_qc(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = _minimal_config()
+        fake_final = tmp_path / "final.mp4"
+        fake_final.write_bytes(b"x")
+        fake_rec = types.SimpleNamespace(
+            total_duration_min=types.SimpleNamespace(value=1.0, locked=True, provenance="cli_flag"),
+            adjustments=[],
+        )
+        fake_bb = MagicMock()
+        fake_bb.read_decision.return_value = fake_rec
+
+        with (
+            patch("core.segment_runner.log_vram_usage"),
+            patch("memory.blackboard.get_blackboard", return_value=fake_bb),
+            patch("video.renderer.assembler.concatenate_segments", return_value=fake_final),
+            patch("core.post_production.get_video_duration", return_value=31.0),
+            patch("core.post_production.subprocess.run") as run,
+            patch("core.post_production.shutil.move") as move,
+            patch(
+                "utils.quality_check.check_video",
+                return_value={"passed": True, "issues": [], "details": {"duration_s": 60.0}},
+            ),
+        ):
+            pp.finalize_production("Topic", cfg, _outline(1), 1, [tmp_path / "seg1.mp4"], 5.0)
+
+        assert run.called
+        assert "-t" in run.call_args.args[0]
+        move.assert_called_once()
+
     def test_qc_failure_returns_error_status(self, tmp_path, monkeypatch):
         qc = {"passed": False, "issues": ["short video"], "details": {"duration_s": 5.0}}
         result = self._run_production(tmp_path, monkeypatch, qc_result=qc)
