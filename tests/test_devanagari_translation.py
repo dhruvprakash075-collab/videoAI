@@ -140,6 +140,18 @@ def test_best_result_kept():
     assert result == _medium
 
 
+def test_oversized_retranslate_candidate_rejected():
+    """Strict retry prompt leakage must not replace the safer first translation."""
+    agent = _make_director()
+    plan = {"mood": "dramatic", "title": "T", "key_event": "E"}
+    leaked = "निर्देश " * 200 + "real story"
+
+    with patch.object(agent, "_call_ollama_chat", side_effect=[_LATIN_HEAVY, leaked]):
+        result = agent.translate_to_devanagari("Hello world.", plan)
+
+    assert result == _LATIN_HEAVY
+
+
 def test_empty_translation_signals_failure():
     """Empty translation signals the caller to use its English fallback."""
     agent = _make_director()

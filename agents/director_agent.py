@@ -2270,13 +2270,17 @@ class DirectorAgent:
             # signal: retry without steering, then fail closed rather than speak
             # instructions to the audience.
             _max_translation_chars = max(len(english_script) + 250, int(len(english_script) * 1.4))
-            if len(translated) > _max_translation_chars:
+
+            def _is_oversized_translation(text: str) -> bool:
+                return len(text) > _max_translation_chars
+
+            if _is_oversized_translation(translated):
                 log.warning(
                     "[DIRECTOR] Translation likely contains instruction leakage "
                     f"({len(translated)} > {_max_translation_chars} chars); retrying clean"
                 )
                 translated = _translate_once("")
-                if not translated or len(translated) > _max_translation_chars:
+                if not translated or _is_oversized_translation(translated):
                     log.error("[DIRECTOR] Rejecting leaked/oversized translation")
                     return None
 
@@ -2317,6 +2321,9 @@ class DirectorAgent:
                 try:
                     _candidate = _translate_once(_stricter_sys)
                     if _candidate:
+                        if _is_oversized_translation(_candidate):
+                            log.warning("[DIRECTOR] Rejecting oversized re-translation candidate")
+                            continue
                         _cand_ratio = _devanagari_ratio(_candidate)
                         if _cand_ratio > best_ratio:
                             best, best_ratio = _candidate, _cand_ratio
