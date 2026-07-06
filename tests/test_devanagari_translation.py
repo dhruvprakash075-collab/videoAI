@@ -108,7 +108,7 @@ def test_retranslate_triggers_on_latin_heavy():
 
 
 def test_retry_cap_respected():
-    """Always Latin-heavy → retries capped at max_retranslate_retries; no crash."""
+    """Always Latin-heavy → retries are capped, then translation is rejected."""
     agent = _make_director()
     plan = {"mood": "horror", "title": "T", "key_event": "E"}
     max_retries = 2
@@ -119,13 +119,11 @@ def test_retry_cap_respected():
 
     # 1 initial call + max_retries retries
     assert mock_llm.call_count == 1 + max_retries
-    # Still returns a string (best-effort, no crash)
-    assert isinstance(result, str)
-    assert len(result) > 0
+    assert result is None
 
 
-def test_best_result_kept():
-    """When retry improves ratio but not to threshold, best candidate is kept."""
+def test_below_threshold_best_result_rejected():
+    """Even the best retry is rejected when it stays too Latin-heavy for Hindi TTS."""
     agent = _make_director()
     plan = {"mood": "dramatic", "title": "T", "key_event": "E"}
 
@@ -136,12 +134,11 @@ def test_best_result_kept():
     ):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    # Should keep _medium (better ratio than _LATIN_HEAVY)
-    assert result == _medium
+    assert result is None
 
 
 def test_oversized_retranslate_candidate_rejected():
-    """Strict retry prompt leakage must not replace the safer first translation."""
+    """Strict retry prompt leakage must not replace the first failed translation."""
     agent = _make_director()
     plan = {"mood": "dramatic", "title": "T", "key_event": "E"}
     leaked = "निर्देश " * 200 + "real story"
@@ -149,7 +146,7 @@ def test_oversized_retranslate_candidate_rejected():
     with patch.object(agent, "_call_ollama_chat", side_effect=[_LATIN_HEAVY, leaked]):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    assert result == _LATIN_HEAVY
+    assert result is None
 
 
 def test_empty_translation_signals_failure():

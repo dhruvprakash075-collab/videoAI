@@ -2335,8 +2335,9 @@ class DirectorAgent:
             if best_ratio < _min_deva_ratio:
                 log.warning(
                     f"[DIRECTOR] Devanagari ratio {best_ratio:.0%} after {attempt} retries "
-                    "-- accepting best result."
+                    "-- rejecting translation."
                 )
+                return None
             log.info(
                 f"[DIRECTOR] Devanagari translation complete: {len(translated)} chars, "
                 f"ratio {best_ratio:.0%}"
