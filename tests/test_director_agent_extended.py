@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agents.director_agent import DirectorAgent
+from agents.director_agent import DirectorAgent, _devanagari_ratio
 
 
 @pytest.fixture
@@ -395,25 +395,22 @@ def test_director_translate_to_devanagari_characters_and_retries(agent):
         },
         "tts": {"devanagari": {"max_latin_ratio": 0.05, "max_retranslate_retries": 2}},
     }
-    # Initial translation must have >= 10 Devanagari chars but low ratio (contains english)
+    # Initial translation contains Romanized words; local repair should make it Hindi-TTS safe.
     first_attempt = "पहला हिंदी अनुवाद with too many english/latin letters to trigger retry"
-    with patch.object(agent, "_call_ollama_chat", side_effect=[first_attempt, "सटीक हिंदी अनुवाद"]):
+    with patch.object(agent, "_call_ollama_chat", return_value=first_attempt):
         res = agent.translate_to_devanagari(
             "English text", {"mood": "dark", "key_event": "event"}, "context"
         )
-        assert "सटीक हिंदी अनुवाद" in res
+        assert _devanagari_ratio(res) >= 0.95
 
 
 def test_director_translate_to_devanagari_retry_failure(agent):
     agent.llm_config = None  # test llm_config fallback path
-    # Initial translation has Devanagari chars but low ratio. Stricter retry raises exception/fails.
+    # Initial translation has Romanized words; local repair avoids English fallback.
     first_attempt = "पहला हिंदी अनुवाद with too many english/latin letters to trigger retry"
-    with patch.object(
-        agent, "_call_ollama_chat", side_effect=[first_attempt, Exception("Ollama disconnected")]
-    ):
+    with patch.object(agent, "_call_ollama_chat", return_value=first_attempt):
         res = agent.translate_to_devanagari("English text", {}, "")
-        # Returns best (which is the first attempt)
-        assert "पहला हिंदी अनुवाद" in res
+        assert _devanagari_ratio(res) >= 0.90
 
 
 def test_director_generate_hinglish_script(agent):

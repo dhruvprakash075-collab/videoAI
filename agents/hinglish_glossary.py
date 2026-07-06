@@ -239,6 +239,101 @@ def restore_hinglish(text: str, token_map: dict[str, str]) -> str:
     return _TOKEN_RE.sub(_sub, text)
 
 
+_CONSONANTS = {
+    "kh": "ख",
+    "gh": "घ",
+    "ch": "च",
+    "jh": "झ",
+    "th": "थ",
+    "dh": "ध",
+    "ph": "फ",
+    "bh": "भ",
+    "sh": "श",
+    "k": "क",
+    "g": "ग",
+    "c": "क",
+    "j": "ज",
+    "t": "ट",
+    "d": "ड",
+    "n": "न",
+    "p": "प",
+    "b": "ब",
+    "m": "म",
+    "y": "य",
+    "r": "र",
+    "l": "ल",
+    "v": "व",
+    "w": "व",
+    "s": "स",
+    "h": "ह",
+    "f": "फ",
+    "z": "ज़",
+    "q": "क",
+    "x": "क्स",
+}
+_VOWELS = {
+    "aa": ("आ", "ा"),
+    "ee": ("ई", "ी"),
+    "ii": ("ई", "ी"),
+    "oo": ("ऊ", "ू"),
+    "uu": ("ऊ", "ू"),
+    "ai": ("ऐ", "ै"),
+    "au": ("औ", "ौ"),
+    "a": ("अ", ""),
+    "i": ("इ", "ि"),
+    "e": ("ए", "े"),
+    "u": ("उ", "ु"),
+    "o": ("ओ", "ो"),
+}
+_VOWEL_KEYS = sorted(_VOWELS, key=len, reverse=True)
+_CONSONANT_KEYS = sorted(_CONSONANTS, key=len, reverse=True)
+
+
+def _take(chunk: str, keys: list[str]) -> str:
+    for key in keys:
+        if chunk.startswith(key):
+            return key
+    return ""
+
+
+def _roman_word_to_devanagari(word: str) -> str:
+    glossary = _lookup(word)
+    if glossary:
+        return glossary
+
+    src = word.lower().strip("'-")
+    out: list[str] = []
+    i = 0
+    while i < len(src):
+        chunk = src[i:]
+        vowel = _take(chunk, _VOWEL_KEYS)
+        if vowel:
+            out.append(_VOWELS[vowel][0])
+            i += len(vowel)
+            continue
+
+        cons = _take(chunk, _CONSONANT_KEYS)
+        if not cons:
+            i += 1
+            continue
+        base = _CONSONANTS[cons]
+        i += len(cons)
+
+        vowel = _take(src[i:], _VOWEL_KEYS)
+        if vowel:
+            out.append(base + _VOWELS[vowel][1])
+            i += len(vowel)
+        else:
+            out.append(base if i >= len(src) else base + "्")
+
+    return "".join(out) or word
+
+
+def transliterate_latin_runs(text: str) -> str:
+    """Convert leftover Roman Hindi/Hinglish words to Devanagari for Hindi TTS."""
+    return _WORD_RE.sub(lambda m: _roman_word_to_devanagari(m.group(0)), text)
+
+
 def hinglish_ratio(original_english: str, token_map: dict[str, str]) -> float:
     """Fraction of English words that were converted to Hinglish."""
     total = len(_WORD_RE.findall(original_english)) or 1

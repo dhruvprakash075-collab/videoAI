@@ -35,7 +35,12 @@ log = logging.getLogger(__name__)
 # Re-exports for backward compat (UIState + Devanagari helper live in ui_state.py).
 from utils.utils import extract_json
 
-from .hinglish_glossary import hinglish_ratio, protect_hinglish, restore_hinglish
+from .hinglish_glossary import (
+    hinglish_ratio,
+    protect_hinglish,
+    restore_hinglish,
+    transliterate_latin_runs,
+)
 from .llm_client import DirectorLlmClient
 from .ui_state import UIState, _devanagari_ratio
 
@@ -2226,18 +2231,9 @@ class DirectorAgent:
         """
         mood = segment_plan.get("mood", "mysterious")
 
-        system_msg = (
-            "You are a translator who writes MODERN, casual, everyday spoken Hindi "
-            "for YouTube narration -- the way young people actually talk today. "
-            "Use simple common words, NOT literary, Sanskritized, or archaic Hindi. "
-            "For names and common English terms, use pronunciation-friendly phonetic "
-            "Devanagari so a Hindi TTS voice says the English word naturally; never replace "
-            "a familiar English term with an awkward formal Hindi translation. "
-            "Write everything in Devanagari script. Preserve dramatic punctuation "
-            "(... ! ? --). "
-            "Keep any token like @@0@@ EXACTLY as-is -- do not translate, renumber, "
-            "add spaces inside, or alter these tokens in any way. "
-            "Output ONLY the translation, no commentary, no labels."
+        instruction = (
+            "Translate to natural spoken Hindi in Devanagari only. "
+            "Keep tokens like @@0@@ unchanged. Output only the translation:"
         )
 
         # Protect glossary words BEFORE translation so they return as
@@ -2249,18 +2245,19 @@ class DirectorAgent:
             f"{len(token_map)} Hinglish words ~{hinglish_ratio(english_script, token_map):.0%})..."
         )
 
-        def _translate_once(sys_msg: str) -> str:
+        def _translate_once(instruction_text: str) -> str:
+            prompt = f"{instruction_text}\n\nText to translate:\n{protected}" if instruction_text else protected
             raw = self._call_ollama_chat(
-                protected, model_type="translator", system_msg=sys_msg
+                prompt, model_type="translator", system_msg=""
             )
             if not raw:
                 return ""
             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
             raw = re.sub(r"<\|.*?\|>", "", raw).strip()
-            return restore_hinglish(raw, token_map)
+            return transliterate_latin_runs(restore_hinglish(raw, token_map))
 
         try:
-            translated = _translate_once(system_msg)
+            translated = _translate_once(instruction)
             if not translated:
                 log.warning("[DIRECTOR] Translation returned empty -- using original English")
                 return None
@@ -2312,14 +2309,14 @@ class DirectorAgent:
                     f"[DIRECTOR] Devanagari ratio {best_ratio:.0%} below "
                     f"{_min_deva_ratio:.0%} -- re-translating (attempt {attempt}/{_max_retries})"
                 )
-                _stricter_sys = system_msg + (
+                _stricter_instruction = instruction + (
                     " The previous attempt left English (Latin) letters in the output. "
                     "Transliterate EVERY remaining English word phonetically into "
                     "Devanagari, but STILL keep the @@N@@ tokens exactly as-is. "
                     "Output ONLY Devanagari and the tokens."
                 )
                 try:
-                    _candidate = _translate_once(_stricter_sys)
+                    _candidate = _translate_once(_stricter_instruction)
                     if _candidate:
                         if _is_oversized_translation(_candidate):
                             log.warning("[DIRECTOR] Rejecting oversized re-translation candidate")

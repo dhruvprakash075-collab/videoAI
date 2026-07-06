@@ -93,37 +93,45 @@ def test_no_retranslate_when_clean():
 
 
 def test_retranslate_triggers_on_latin_heavy():
-    """Latin-heavy first result → retry fires; clean second result is returned."""
+    """Latin-heavy first result is repaired locally instead of falling back."""
     agent = _make_director()
     plan = {"mood": "action", "title": "T", "key_event": "E"}
 
-    # First call returns Latin-heavy; second returns clean Devanagari
-    with patch.object(
-        agent, "_call_ollama_chat", side_effect=[_LATIN_HEAVY, _CLEAN_DEVA]
-    ) as mock_llm:
-        result = agent.translate_to_devanagari("Hello world.", plan)
-
-    assert result == _CLEAN_DEVA
-    assert mock_llm.call_count == 2
-
-
-def test_retry_cap_respected():
-    """Always Latin-heavy → retries are capped, then translation is rejected."""
-    agent = _make_director()
-    plan = {"mood": "horror", "title": "T", "key_event": "E"}
-    max_retries = 2
-
-    # All calls return Latin-heavy
     with patch.object(agent, "_call_ollama_chat", return_value=_LATIN_HEAVY) as mock_llm:
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    # 1 initial call + max_retries retries
-    assert mock_llm.call_count == 1 + max_retries
-    assert result is None
+    assert result
+    assert _devanagari_ratio(result) >= 0.90
+    assert mock_llm.call_count == 1
 
 
-def test_below_threshold_best_result_rejected():
-    """Even the best retry is rejected when it stays too Latin-heavy for Hindi TTS."""
+def test_roman_hinglish_transliterated_for_hindi_tts():
+    """Romanized Hindi from the translator is converted instead of falling back to English."""
+    agent = _make_director()
+    plan = {"mood": "action", "title": "T", "key_event": "E"}
+
+    with patch.object(agent, "_call_ollama_chat", return_value="Arjun ne door khola"):
+        result = agent.translate_to_devanagari("Arjun opened the door.", plan)
+
+    assert result
+    assert _devanagari_ratio(result) >= 0.90
+    assert "Arjun" not in result
+
+
+def test_retry_cap_respected():
+    """Always Latin-heavy → local repair avoids fallback."""
+    agent = _make_director()
+    plan = {"mood": "horror", "title": "T", "key_event": "E"}
+    with patch.object(agent, "_call_ollama_chat", return_value=_LATIN_HEAVY) as mock_llm:
+        result = agent.translate_to_devanagari("Hello world.", plan)
+
+    assert mock_llm.call_count == 1
+    assert result
+    assert _devanagari_ratio(result) >= 0.90
+
+
+def test_below_threshold_best_result_repaired():
+    """Mixed Roman/Hindi output is repaired for Hindi TTS."""
     agent = _make_director()
     plan = {"mood": "dramatic", "title": "T", "key_event": "E"}
 
@@ -134,7 +142,8 @@ def test_below_threshold_best_result_rejected():
     ):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
-    assert result is None
+    assert result
+    assert _devanagari_ratio(result) >= 0.90
 
 
 def test_oversized_retranslate_candidate_rejected():
@@ -143,7 +152,7 @@ def test_oversized_retranslate_candidate_rejected():
     plan = {"mood": "dramatic", "title": "T", "key_event": "E"}
     leaked = "निर्देश " * 200 + "real story"
 
-    with patch.object(agent, "_call_ollama_chat", side_effect=[_LATIN_HEAVY, leaked]):
+    with patch.object(agent, "_call_ollama_chat", return_value=leaked):
         result = agent.translate_to_devanagari("Hello world.", plan)
 
     assert result is None
