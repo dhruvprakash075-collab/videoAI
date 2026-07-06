@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # sys.path is already set above, tests don't need signal handlers.
 
 from agents.director_agent import _devanagari_ratio
+from agents.hinglish_glossary import protect_hinglish
 
 # ── Helper tests ──────────────────────────────────────────────────────────
 
@@ -41,6 +42,14 @@ def test_devanagari_ratio_no_alpha():
 def test_devanagari_ratio_all_latin():
     """All Latin → ratio 0.0."""
     assert _devanagari_ratio("hello world") == 0.0
+
+
+def test_tts_awkward_words_not_glossary_protected():
+    """Let translator choose natural Hindi for words that TTS mispronounces as loanwords."""
+    protected, token_map = protect_hinglish("city light map truth")
+
+    assert protected == "city light map truth"
+    assert token_map == {}
 
 
 # ── translate_to_devanagari bounded re-translation tests ──────────────────
