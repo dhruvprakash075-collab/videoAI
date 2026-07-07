@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-07-06T10:38:20",
+  "image_model": "unknown",
+  "tts_engine": "indicf5",
+  "acceleration": "none",
+  "upscaler": "none",
+  "images": [
+    "model_eval\\20260706_103820\\images\\scene_01_00072_.png",
+    "model_eval\\20260706_103820\\images\\scene_02_00021_.png",
+    "model_eval\\20260706_103820\\images\\scene_03_00012_.png"
+  ],
+  "tts_sample": "C:\\Video.AI\\model_eval\\20260706_103820\\tts\\indicf5_6b260fba.wav",
+  "output_dir": "model_eval\\20260706_103820"
+}

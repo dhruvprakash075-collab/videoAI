@@ -1,0 +1,282 @@
+[
+  {
+    "word": "کہ",
+    "start": 0.0,
+    "end": 0.16
+  },
+  {
+    "word": "ہیں,",
+    "start": 0.16,
+    "end": 0.4
+  },
+  {
+    "word": "Arjun",
+    "start": 0.94,
+    "end": 1.24
+  },
+  {
+    "word": "Railway",
+    "start": 1.24,
+    "end": 1.64
+  },
+  {
+    "word": "Bridge",
+    "start": 1.64,
+    "end": 1.88
+  },
+  {
+    "word": "ke",
+    "start": 1.88,
+    "end": 2.2
+  },
+  {
+    "word": "niye",
+    "start": 2.2,
+    "end": 2.36
+  },
+  {
+    "word": "ke",
+    "start": 2.36,
+    "end": 2.52
+  },
+  {
+    "word": "niche",
+    "start": 2.52,
+    "end": 2.52
+  },
+  {
+    "word": "ek",
+    "start": 2.52,
+    "end": 2.78
+  },
+  {
+    "word": "bhand",
+    "start": 2.78,
+    "end": 3.04
+  },
+  {
+    "word": "neeldur",
+    "start": 3.04,
+    "end": 3.5
+  },
+  {
+    "word": "dhundanikal.",
+    "start": 3.5,
+    "end": 4.12
+  },
+  {
+    "word": "Harrat,",
+    "start": 4.54,
+    "end": 5.1
+  },
+  {
+    "word": "Dwar",
+    "start": 5.58,
+    "end": 5.72
+  },
+  {
+    "word": "Masin",
+    "start": 5.72,
+    "end": 6.12
+  },
+  {
+    "word": "ke",
+    "start": 6.12,
+    "end": 6.3
+  },
+  {
+    "word": "tara",
+    "start": 6.3,
+    "end": 6.52
+  },
+  {
+    "word": "bhunbhunte,",
+    "start": 6.52,
+    "end": 7.12
+  },
+  {
+    "word": "leke",
+    "start": 7.62,
+    "end": 7.94
+  },
+  {
+    "word": "nki",
+    "start": 7.94,
+    "end": 8.2
+  },
+  {
+    "word": "siyaar",
+    "start": 8.2,
+    "end": 8.56
+  },
+  {
+    "word": "ko",
+    "start": 8.56,
+    "end": 8.64
+  },
+  {
+    "word": "nahi",
+    "start": 8.64,
+    "end": 8.9
+  },
+  {
+    "word": "sunedate,",
+    "start": 8.9,
+    "end": 9.38
+  },
+  {
+    "word": "jab",
+    "start": 9.86,
+    "end": 10.16
+  },
+  {
+    "word": "usne",
+    "start": 10.16,
+    "end": 10.46
+  },
+  {
+    "word": "aakhir",
+    "start": 10.46,
+    "end": 10.88
+  },
+  {
+    "word": "mainhalle",
+    "start": 10.88,
+    "end": 11.34
+  },
+  {
+    "word": "choho,",
+    "start": 11.34,
+    "end": 11.72
+  },
+  {
+    "word": "street",
+    "start": 12.12,
+    "end": 12.36
+  },
+  {
+    "word": "light",
+    "start": 12.36,
+    "end": 12.62
+  },
+  {
+    "word": "bhandh",
+    "start": 12.62,
+    "end": 13.06
+  },
+  {
+    "word": "hoge,",
+    "start": 13.06,
+    "end": 13.2
+  },
+  {
+    "word": "uske",
+    "start": 13.8,
+    "end": 14.04
+  },
+  {
+    "word": "phone",
+    "start": 14.04,
+    "end": 14.32
+  },
+  {
+    "word": "main",
+    "start": 14.32,
+    "end": 14.58
+  },
+  {
+    "word": "ANSUS",
+    "start": 14.58,
+    "end": 15.28
+  },
+  {
+    "word": "se",
+    "start": 15.28,
+    "end": 15.64
+  },
+  {
+    "word": "maptik,",
+    "start": 15.64,
+    "end": 16.22
+  },
+  {
+    "word": "کہ",
+    "start": 16.46,
+    "end": 16.52
+  },
+  {
+    "word": "ہیں,",
+    "start": 16.52,
+    "end": 16.72
+  },
+  {
+    "word": "aur",
+    "start": 17.26,
+    "end": 17.42
+  },
+  {
+    "word": "ek",
+    "start": 17.42,
+    "end": 17.6
+  },
+  {
+    "word": "avas",
+    "start": 17.6,
+    "end": 17.9
+  },
+  {
+    "word": "bhunbhunte",
+    "start": 17.9,
+    "end": 18.44
+  },
+  {
+    "word": "ki",
+    "start": 18.44,
+    "end": 18.62
+  },
+  {
+    "word": "uske",
+    "start": 18.62,
+    "end": 19.02
+  },
+  {
+    "word": "dhudd",
+    "start": 19.02,
+    "end": 19.3
+  },
+  {
+    "word": "ne",
+    "start": 19.3,
+    "end": 19.44
+  },
+  {
+    "word": "truth",
+    "start": 19.44,
+    "end": 19.86
+  },
+  {
+    "word": "usdhur",
+    "start": 19.86,
+    "end": 20.26
+  },
+  {
+    "word": "ke",
+    "start": 20.26,
+    "end": 20.42
+  },
+  {
+    "word": "pyeche",
+    "start": 20.42,
+    "end": 20.74
+  },
+  {
+    "word": "chupay",
+    "start": 20.74,
+    "end": 21.06
+  },
+  {
+    "word": "tha.",
+    "start": 21.06,
+    "end": 21.2
+  }
+]

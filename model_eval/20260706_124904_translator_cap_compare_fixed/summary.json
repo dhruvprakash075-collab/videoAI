@@ -1,0 +1,45 @@
+{
+  "sample_english": "In the old city, Arjun found a locked blue door under the railway bridge. Every night, the door hummed like a machine, but nobody else could hear it. When he finally touched the handle, the street lights died, his phone showed a map from 1947, and a voice whispered that his grandfather had hidden the truth behind that door.",
+  "translator_model": "sarvam-translate",
+  "variants": [
+    {
+      "name": "cap_768",
+      "cap": 768,
+      "lang": "hi",
+      "translated": true,
+      "tts_input_chars": 314,
+      "tts_input_words": 58,
+      "translate_seconds": 40.19,
+      "tts_seconds": 38.03,
+      "audio_seconds": 10.88,
+      "tts_input_text": "Arjun railway bridge ke neeche ek bandh नील door dhoondh nikal. Har raat, door मशीन ki tarah bhunbhunate, lekin kisi aur ko nahi sunai dete. Jab usne aakhir mein handle chhoh, street लाइट band ho gaya, uske फोन mein 1947 se मैप dikha, aur ek aawaz bhunbhunate ki uske dada ne ट्रुथ us door ke peeche chhupaaya tha.",
+      "wav_path": "C:\\Video.AI\\model_eval\\20260706_124904_translator_cap_compare_fixed\\cap_768\\tts\\indicf5_e7cec391.wav"
+    },
+    {
+      "name": "cap_1536",
+      "cap": 1536,
+      "lang": "hi",
+      "translated": true,
+      "tts_input_chars": 314,
+      "tts_input_words": 58,
+      "translate_seconds": 39.67,
+      "tts_seconds": 34.95,
+      "audio_seconds": 10.88,
+      "tts_input_text": "Arjun railway bridge ke neeche ek bandh नील door dhoondh nikal. Har raat, door मशीन ki tarah bhunbhunate, lekin kisi aur ko nahi sunai dete. Jab usne aakhir mein handle chhoh, street लाइट band ho gaya, uske फोन mein 1947 se मैप dikha, aur ek aawaz bhunbhunate ki uske dada ne ट्रुथ us door ke peeche chhupaaya tha.",
+      "wav_path": "C:\\Video.AI\\model_eval\\20260706_124904_translator_cap_compare_fixed\\cap_1536\\tts\\indicf5_f7dd4c18.wav"
+    },
+    {
+      "name": "no_limit",
+      "cap": "none",
+      "lang": "hi",
+      "translated": true,
+      "tts_input_chars": 314,
+      "tts_input_words": 58,
+      "translate_seconds": 40.34,
+      "tts_seconds": 33.24,
+      "audio_seconds": 10.88,
+      "tts_input_text": "Arjun railway bridge ke neeche ek bandh नील door dhoondh nikal. Har raat, door मशीन ki tarah bhunbhunate, lekin kisi aur ko nahi sunai dete. Jab usne aakhir mein handle chhoh, street लाइट band ho gaya, uske फोन mein 1947 se मैप dikha, aur ek aawaz bhunbhunate ki uske dada ne ट्रुथ us door ke peeche chhupaaya tha.",
+      "wav_path": "C:\\Video.AI\\model_eval\\20260706_124904_translator_cap_compare_fixed\\no_limit\\tts\\indicf5_5eba5c49.wav"
+    }
+  ]
+}
