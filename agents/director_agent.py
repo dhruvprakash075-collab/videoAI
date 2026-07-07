@@ -2245,6 +2245,23 @@ class DirectorAgent:
             f"{len(token_map)} Hinglish words ~{hinglish_ratio(english_script, token_map):.0%})..."
         )
 
+        def _looks_like_english_echo(text: str) -> bool:
+            words = re.findall(r"[A-Za-z]+", text.lower())
+            if not words:
+                return False
+            common_english = {
+                "a",
+                "all",
+                "at",
+                "few",
+                "is",
+                "just",
+                "not",
+                "the",
+                "this",
+            }
+            return sum(word in common_english for word in words) / len(words) >= 0.35
+
         def _translate_once(instruction_text: str) -> str:
             prompt = f"{instruction_text}\n\nText to translate:\n{protected}" if instruction_text else protected
             raw = self._call_ollama_chat(
@@ -2254,7 +2271,10 @@ class DirectorAgent:
                 return ""
             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
             raw = re.sub(r"<\|.*?\|>", "", raw).strip()
-            return transliterate_latin_runs(restore_hinglish(raw, token_map))
+            restored = restore_hinglish(raw, token_map)
+            if sum(1 for c in restored if "\u0900" <= c <= "\u097f") < 10 and _looks_like_english_echo(restored):
+                return restored
+            return transliterate_latin_runs(restored)
 
         try:
             translated = _translate_once(instruction)
