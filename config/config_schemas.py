@@ -154,6 +154,7 @@ class OmniVoiceSubConfig(BaseModel):
 
 class DevanagariConfig(BaseModel):
     model_config = {"extra": "forbid"}
+    hinglish_ratio: float = 0.4
     max_latin_ratio: float = 0.1
     max_retranslate_retries: int = 2
 

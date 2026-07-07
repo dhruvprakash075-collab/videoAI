@@ -205,6 +205,10 @@ class TestSplitByWordCount:
     def test_empty_text(self):
         assert _split_by_word_count("", 3, 100) == []
 
+    def test_markdown_heading_not_spoken_as_chunk_text(self):
+        chunks = _split_by_word_count("# Title\nHero walks forward.", 1, 20)
+        assert chunks[0].text == "Hero walks forward."
+
     def test_single_sentence(self):
         chunks = _split_by_word_count("Just one sentence here.", 3, 100)
         assert len(chunks) == 1

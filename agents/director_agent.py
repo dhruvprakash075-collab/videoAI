@@ -2236,9 +2236,12 @@ class DirectorAgent:
             "Keep tokens like @@0@@ unchanged. Output only the translation:"
         )
 
+        _deva_cfg = ((getattr(self, "llm_config", None) or {}).get("tts", {}) or {}).get("devanagari", {})
+        _hinglish_target = float(_deva_cfg.get("hinglish_ratio", 0.40))
+
         # Protect glossary words BEFORE translation so they return as
         # English-in-Devanagari (Hinglish) rather than literary Hindi.
-        protected, token_map = protect_hinglish(english_script)
+        protected, token_map = protect_hinglish(english_script, target_ratio=_hinglish_target)
         log.info(
             f"[DIRECTOR] Translating segment to Devanagari "
             f"(mood={mood}, {len(english_script)} chars, "

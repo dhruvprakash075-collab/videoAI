@@ -39,17 +39,15 @@ def _safe_ellipsis_latin(text: str) -> str:
 
 
 def _safe_ellipsis_deva(text: str) -> str:
-    """Add pause markers after Devanagari sentence boundaries (।)."""
-    # Replace । followed by space with ...  (pause signal for TTS)
-    text = text.replace("। ", "... ")
-    return text
+    """Keep Devanagari sentence pauses natural for TTS."""
+    return _re.sub(r"\.{2,}", "।", text)
 
 
 def _deva_inject(text: str, mood: str) -> str:
     """Apply mood-appropriate Devanagari punctuation shaping."""
     if mood in ("mysterious", "horror"):
         text = _safe_ellipsis_deva(text)
-        text = text.replace("? ", "?... ")
+        text = text.replace("? ", "? ")
     elif mood == "action":
         text = text.replace("। ", "! ")
     elif mood in ("dramatic", "epic"):
@@ -68,8 +66,8 @@ _MOOD_MARKERS = {
         "prefix": "",
         "inject_latin": lambda s: _safe_ellipsis_latin(s).replace("? ", "?... "),
         "suffix_latin": "...",
-        "suffix_deva": "...",
-        "rate": 0.9,
+        "suffix_deva": "।",
+        "rate": 0.86,
     },
     "horror": {
         "prefix": "",
@@ -77,8 +75,8 @@ _MOOD_MARKERS = {
             _safe_ellipsis_latin(s).replace("! ", "!... ").replace("? ", "?... ")
         ),
         "suffix_latin": "...",
-        "suffix_deva": "...",
-        "rate": 0.85,
+        "suffix_deva": "!",
+        "rate": 0.8,
     },
     "action": {
         "prefix": "",
@@ -92,7 +90,7 @@ _MOOD_MARKERS = {
         "inject_latin": lambda s: s.replace(". ", "... ").replace(", ", " — "),
         "suffix_latin": ".",
         "suffix_deva": "।",
-        "rate": 0.95,
+        "rate": 0.9,
     },
     "calm": {
         "prefix": "",
@@ -106,14 +104,14 @@ _MOOD_MARKERS = {
         "inject_latin": lambda s: s.replace(". ", "... ").replace("! ", "!! "),
         "suffix_latin": "!",
         "suffix_deva": "!",
-        "rate": 0.92,
+        "rate": 0.9,
     },
     "intimate": {
         "prefix": "(softly) ",
         "inject_latin": lambda s: s.replace(". ", "... ").replace("! ", ". "),
         "suffix_latin": "",
         "suffix_deva": "",
-        "rate": 0.93,
+        "rate": 0.88,
     },
 }
 

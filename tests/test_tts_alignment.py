@@ -213,7 +213,7 @@ def test_assembler_does_not_warn_when_word_json_present(tmp_path, monkeypatch, c
     assert not any("REGRESSION: Whisper fallback fired" in rec.message for rec in caplog.records)
 
 
-def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
+def test_assembler_uses_word_json_timing_for_english_subtitles_over_devanagari(
     tmp_path, monkeypatch, caplog
 ):
     dummy_audio = tmp_path / "seg.wav"
@@ -221,7 +221,12 @@ def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
 
     words_json = tmp_path / "seg.words.json"
     words_json.write_text(
-        json.dumps([{"word": "नमस्ते", "start": 0.0, "end": 0.5}]),
+        json.dumps(
+            [
+                {"word": "नमस्ते", "start": 0.0, "end": 0.5},
+                {"word": "दुनिया", "start": 0.5, "end": 1.0},
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -234,7 +239,7 @@ def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
     srt_path = tmp_path / "seg.srt"
 
     assembler._write_srt(
-        script="नमस्ते दुनिया।",
+        script="Hello world.",
         path=srt_path,
         duration=1.0,
         audio=dummy_audio,
@@ -244,9 +249,11 @@ def test_assembler_skips_word_json_for_english_subtitles_over_devanagari(
         subtitle_language="en",
     )
 
-    assert any("Skipping provided word timestamps" in rec.message for rec in caplog.records)
-    # ponytail: REGRESSION warning not emitted — code explicitly skips Whisper
-    # fallback when subtitle_language="en" (assembler.py:871).
+    content = srt_path.read_text(encoding="utf-8-sig")
+    assert "Hello world" in content
+    assert "नमस्ते" not in content
+    assert "00:00:00,000 --> 00:00:01,000" in content
+    assert not any("Skipping provided word timestamps" in rec.message for rec in caplog.records)
 
 
 def test_proxy_to_renderer_chain_no_regression_warning_when_word_json_exists(

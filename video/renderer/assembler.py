@@ -338,7 +338,7 @@ def _build_image_slideshow_cmd(
     )
 
     filter_parts.append(
-        f"[v_faded]subtitles='{srt_path_str}':force_style='{ass_style}'[v_final]"
+        f"[v_faded]subtitles=filename='{srt_path_str}':force_style='{ass_style}'[v_final]"
     )
 
     filter_complex = ";".join(filter_parts)
@@ -408,7 +408,7 @@ def _build_black_frame_cmd(
         "-b:a",
         "128k",
         "-vf",
-        f"subtitles='{srt_path_str}':force_style='{ass_style}'",
+        f"subtitles=filename='{srt_path_str}':force_style='{ass_style}'",
     ]
 
 
@@ -422,27 +422,19 @@ def create_segment_mp4(
     word_timestamps_json: Path | None = None,
     is_final: bool = True,
 ) -> Path:
-    import shutil
-
     out_dir.mkdir(parents=True, exist_ok=True)
     mp4 = out_dir / f"segment_{seg_num:02d}.mp4"
     srt = out_dir / f"segment_{seg_num:02d}.srt"
 
     duration = get_audio_duration(audio)
 
-    # Write to a flat safe temporary path to bypass FFmpeg's single-quote escaping issues on Windows
-    # Use UUID to prevent cross-contamination between concurrent pipeline runs
-    temp_srt_dir = Path(f"temp_srt_files/{uuid.uuid4()}")
-    temp_srt_dir.mkdir(parents=True, exist_ok=True)
-    temp_srt = temp_srt_dir / f"segment_{seg_num:02d}.srt"
-
-    try:
+    if True:
         _font, ass_style, format_style = _resolve_subtitle_style(config)
         sub_cfg = config.get("subtitles", {})
         _sub_lang = sub_cfg.get("language", "en")
         _write_srt(
             script,
-            temp_srt,
+            srt,
             duration,
             audio=audio,
             format_style=format_style,
@@ -454,7 +446,7 @@ def create_segment_mp4(
         fps = config["video"].get("fps", 24)
         # Bug 6: Escape paths for FFmpeg filtergraph on Windows correctly
         # Escape backslashes, colons (FFmpeg filter separator), and single quotes for filtergraph
-        srt_path_str = str(temp_srt).replace("\\", "/").replace(":", "\\\\:").replace("'", "\\\\'")
+        srt_path_str = str(srt.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\\\'")
         log.info(f"Seg {seg_num}: {duration:.1f}s | images={len(images) if images else 0}")
 
         if images:
@@ -477,10 +469,6 @@ def create_segment_mp4(
             )
             cmd.append(str(mp4))
             _run(cmd, timeout=300)
-
-        # Copy temporary SRT back to its destination directory and clean up
-        if temp_srt.exists():
-            shutil.copy2(temp_srt, srt)
 
         # ENDURANCE MODE: Track intermediate assets for cleanup only after final concat succeeds.
         # Deletion is deferred to the pipeline orchestrator to preserve debugging artifacts.
@@ -520,19 +508,6 @@ def create_segment_mp4(
                 )
             except Exception as cleanup_err:
                 log.debug(f"Cleanup manifest write failed: {cleanup_err}")
-
-    finally:
-        try:
-            if temp_srt.exists():
-                temp_srt.unlink(missing_ok=True)
-        except Exception:
-            pass
-        try:
-            import shutil as _shutil
-
-            _shutil.rmtree(temp_srt_dir, ignore_errors=True)
-        except Exception:
-            pass
 
     log.info(f"Segment saved: {mp4}")
     return mp4
@@ -822,17 +797,16 @@ def _write_srt(
     # ------------------------------------------------------------------ #
     # Step 1: Try word_timestamps_json (real audio timing, all formats)   #
     # ------------------------------------------------------------------ #
-    # TTS timestamps contain the spoken Hindi words. They can provide timing but
-    # must never replace an explicitly supplied English caption script.
-    force_english_script = subtitle_language == "en"
-    skip_word_timestamps = force_english_script
-    if skip_word_timestamps:
-        log.info(
-            "Skipping provided word timestamps because English subtitles were requested "
-            "instead of spoken-language timestamp words"
-        )
+    # Source-mode scripts can retain their Markdown title. It is metadata, not
+    # caption text, and rendering the leading '#' is especially ugly.
+    script = re.sub(r"(?m)^\s*#{1,6}\s+.*\r?\n", "", script).strip()
+    script = re.sub(r"^\s*#{1,6}\s+", "", script).strip()
 
-    if word_timestamps_json and word_timestamps_json.exists() and not skip_word_timestamps:
+    # TTS timestamps contain the spoken Hindi words. For English captions, use
+    # them only as timing boundaries; keep display text from the English script.
+    force_english_script = subtitle_language == "en"
+
+    if word_timestamps_json and word_timestamps_json.exists():
         try:
             log.info(
                 f"Using provided word timestamps JSON for subtitles ({format_style}): {word_timestamps_json.name}"
@@ -841,7 +815,12 @@ def _write_srt(
 
             word_data = _json.loads(word_timestamps_json.read_text(encoding="utf-8"))
             if word_data:
-                lines = _words_to_srt_lines(word_data, format_style, CLASSIC_WORDS_PER_BLOCK)
+                if force_english_script:
+                    lines = _script_to_timed_srt_lines(
+                        script, word_data, format_style, CLASSIC_WORDS_PER_BLOCK
+                    )
+                else:
+                    lines = _words_to_srt_lines(word_data, format_style, CLASSIC_WORDS_PER_BLOCK)
                 if lines:
                     path.write_text("\n".join(lines), encoding="utf-8-sig")
                     return
@@ -905,15 +884,13 @@ def _write_srt(
     log.info(
         f"Using proportional split for subtitles ({format_style}) — no real timestamps available"
     )
-    # Source-mode scripts can retain their Markdown title. It is metadata, not
-    # caption text, and rendering the leading '#' is especially ugly.
-    script = re.sub(r"(?m)^\s*#{1,6}\s+.*(?:\r?\n|$)", "", script).strip()
-
-    # English captions have no matching word timestamps when narration is Hindi.
-    # Keep them readable with short, evenly timed phrases instead of placing one
-    # or more entire sentences on screen (which produced 50+ word blocks).
+    # Last-resort English captions: keep them readable with short, evenly timed
+    # phrases instead of placing one or more entire sentences on screen.
     if subtitle_language == "en":
         words = script.split()
+        if not words:
+            path.write_text("1\n00:00:00,000 --> 00:00:01,000\n \n\n", encoding="utf-8-sig")
+            return
         words_per_caption = 1 if format_style == "tiktok" else 7
         chunks = [
             " ".join(words[i : i + words_per_caption])
@@ -969,6 +946,35 @@ def _write_srt(
         t = t_end
 
     path.write_text("\n".join(lines), encoding="utf-8-sig")
+
+
+def _script_to_timed_srt_lines(
+    script: str, word_data: list, format_style: str, words_per_block: int
+) -> list[str]:
+    """Use spoken-word timestamps as timing boundaries for caption-script text."""
+    spoken = [w for w in word_data if w.get("word", "").strip()]
+    caption_words = script.split()
+    if not spoken or not caption_words:
+        return []
+
+    block_size = 1 if format_style == "tiktok" else max(1, words_per_block)
+    lines: list[str] = []
+    total = len(caption_words)
+    spoken_total = len(spoken)
+    for idx, start in enumerate(range(0, total, block_size), start=1):
+        end = min(start + block_size, total)
+        spoken_start = min(round(start / total * spoken_total), spoken_total - 1)
+        spoken_end = min(max(round(end / total * spoken_total) - 1, spoken_start), spoken_total - 1)
+        text = " ".join(caption_words[start:end])
+        if format_style == "tiktok":
+            text = text.upper()
+        lines += [
+            str(idx),
+            f"{_ts(spoken[spoken_start].get('start', 0.0))} --> {_ts(spoken[spoken_end].get('end', 0.0))}",
+            text,
+            "",
+        ]
+    return lines
 
 
 def _words_to_srt_lines(word_data: list, format_style: str, words_per_block: int) -> list[str]:

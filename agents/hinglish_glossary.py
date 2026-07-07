@@ -196,7 +196,14 @@ def _lookup(word: str) -> str | None:
     return None
 
 
-def protect_hinglish(text: str) -> tuple[str, dict[str, str]]:
+_PROTECT_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "but", "by", "for", "from", "he", "her",
+    "his", "in", "into", "is", "it", "of", "on", "or", "she", "the", "then",
+    "through", "to", "was", "with",
+}
+
+
+def protect_hinglish(text: str, target_ratio: float | None = None) -> tuple[str, dict[str, str]]:
     """Swap glossary words for @@N@@ tokens.
 
     Returns (protected_text, token_map) where token_map maps each token string
@@ -208,6 +215,12 @@ def protect_hinglish(text: str) -> tuple[str, dict[str, str]]:
     def _sub(m: re.Match) -> str:
         word = m.group(0)
         deva = _lookup(word)
+        if deva is None and target_ratio is not None:
+            total = len(_WORD_RE.findall(text)) or 1
+            if (counter["n"] / total) < target_ratio:
+                base = word.lower().strip("'-")
+                if len(base) >= 4 and base not in _PROTECT_STOPWORDS:
+                    deva = _roman_word_to_devanagari(word)
         if deva is None:
             return word
         tok = f"@@{counter['n']}@@"

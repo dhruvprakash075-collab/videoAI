@@ -42,6 +42,7 @@ tts:
   voice_profile:
     sentence_gap_ms: 200
   devanagari:
+    hinglish_ratio: 0.4
     max_latin_ratio: 0.1
     max_retranslate_retries: 2
 checkpoint:
@@ -159,12 +160,12 @@ image_gen:
     cfg: 7.0
     sampler_name: dpmpp_2m
     scheduler: karras
-    negative_prompt: "3d, render, photo, realism, plastic skin, blurry, muddy colors, sketchy lines"
+    negative_prompt: "3d, render, photo, realism, plastic skin, blurry, muddy colors, sketchy lines, bad face, distorted face, deformed face, malformed eyes, asymmetrical eyes, bad anatomy, duplicate face, tiny face, cropped face, melted features, extra limbs, broken hands, unreadable text"
     vae_name: vae-ft-mse-840000-ema-pruned.safetensors
     loras:
       - { lora_name: manhwa_webtoon_v1.safetensors, strength_model: 0.5, strength_clip: 0.5 }
       - { lora_name: anime_lineart_manga_v1.safetensors, strength_model: 0.3, strength_clip: 0.3 }
-    reference_image: output/master_portrait.png
+    reference_image: reference_assets/uploaded_20260708/ref_zip_1/page/page_1.png
     refine_upscale: true
     refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
@@ -193,7 +194,7 @@ image_gen:
 subtitles:
   format: classic
   font: Nirmala UI
-  size: 22
+  size: 18
   color: "&H00FFFFFF&"
   language: en
 narrator:

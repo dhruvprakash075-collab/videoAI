@@ -62,6 +62,7 @@ def _sanitize_narration(script: str) -> str:
     if not script:
         return ""
     s = script
+    s = _re.sub(r"([A-Za-z\u0900-\u097F])-\s+([A-Za-z\u0900-\u097F])", r"\1\2", s)
     s = _re.sub(r"<think>.*?</think>", "", s, flags=_re.DOTALL | _re.IGNORECASE)
     s = _re.sub(r"</?[a-zA-Z][a-zA-Z0-9_]*(?:\s[^>]*)?\s*/?>", "", s)
     s = _re.sub(r"<!--.*?-->", "", s, flags=_re.DOTALL)
@@ -83,6 +84,11 @@ def _sanitize_narration(script: str) -> str:
         r"\bAs (?:requested|instructed|per your)\b[^.!?।]{0,100}[.!?।]",
         r"\b(?:Below|Here) (?:is|are) the (?:revised|updated|rewritten)\b[^.!?।]{0,150}[.!?।]",
         r"\bOutput plain text only[^.!?।]{0,150}[.!?।]",
+        r"\b(?:They'?re|They are) not actually in the text\b[^.!?।]{0,220}[.!?।]",
+        r"\byou'?ve introduced\b[^.!?।]{0,220}[.!?।]",
+        r"\bI (?:can'?t|cannot|won'?t|will not)\b[^.!?।]{0,220}[.!?।]",
+        r"\b(?:the|your) (?:provided )?(?:input|source text|text I have to work with)\b[^.!?।]{0,180}[.!?।]",
+        r"^\s*(?:IMPORTANT|CRITICAL|SYSTEM|USER|ASSISTANT|Current Task|Instructions?|Task)\s*:\s*.*$",
     ]
     for pat in _meta_patterns:
         s = _re.sub(pat, "", s, flags=_re.IGNORECASE | _re.MULTILINE)
@@ -99,5 +105,6 @@ def _sanitize_narration(script: str) -> str:
         s,
         flags=_re.IGNORECASE | _re.MULTILINE,
     )
+    s = _re.sub(r"^\s*[a-zA-Z_ -]{1,30}\s*#{2,}\d*\s*:\s*", "", s, flags=_re.MULTILINE)
     s = _re.sub(r"\s+", " ", s).strip()
     return s

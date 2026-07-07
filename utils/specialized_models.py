@@ -194,6 +194,8 @@ RULES:
 4. Use visual language, not narrative
 5. Be specific and detailed
 6. Match the emotional tone
+7. Force a colored manga page layout: asymmetric comic panels, thick white gutters, one large action panel with one large clean readable character face, smaller reaction/detail inset panels should avoid tiny faces, dynamic diagonal panel borders, manga speed lines, impact strokes, clean ink outlines, cel shading, speech-box-safe empty areas, dramatic camera angles
+8. Use the uploaded manga pages only as layout inspiration; do not copy their characters, text, faces, costumes, or exact panel art
 
 EXAMPLE OUTPUT:
 "Medium shot, cloaked figure standing at the edge of a cliff, stormy sky behind, mysterious atmosphere, dramatic rim lighting, volumetric fog, dark fantasy anime style, detailed face, cinematic composition, depth of field, 8k masterpiece"
@@ -205,7 +207,12 @@ Generate prompt now:"""
     if not response:
         # Fallback to generic prompt
         log.warning("[image-engineer] No response, using fallback prompt")
-        return f"{visual_style or 'dark fantasy anime'}, {mood} atmosphere, cinematic, detailed, 8k"
+        return (
+            f"{visual_style or 'dark fantasy anime'}, {mood} atmosphere, colored manga page, "
+            "asymmetric comic panels, thick white gutters, one large action panel with one large clean readable character face, smaller inset reaction panels without tiny faces, "
+            "dynamic diagonal panel borders, manga speed lines, impact strokes, clean ink outlines, cel shading, "
+            "speech-box-safe empty areas, dramatic camera angles, detailed"
+        )
 
     # Clean up response
     response = response.strip()
@@ -221,7 +228,13 @@ Generate prompt now:"""
     if _known_label:
         response = response[_known_label.end() :].strip()
 
-    return response
+    panel_anchor = (
+        "colored manga page, asymmetric comic panel layout, thick white gutters, one large action panel, "
+        "one large clean readable character face, smaller inset reaction panels without tiny faces, "
+        "dynamic diagonal panel borders, manga speed lines, impact strokes, clean ink outlines, cel shading, "
+        "speech-box-safe empty areas, symmetrical eyes, sharp facial features"
+    )
+    return f"{response}, {panel_anchor}"
 
 
 

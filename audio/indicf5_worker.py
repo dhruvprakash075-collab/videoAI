@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -52,6 +53,12 @@ def generate(
     if result.returncode != 0:
         msg = (result.stderr or result.stdout or "IndicF5 failed").strip()[:500]
         return {"status": "error", "message": msg}
+    if not output.exists():
+        # ponytail: some IndicF5 builds ignore absolute batch targets and emit a
+        # WAV beside the batch; take the newest one rather than degrading TTS.
+        newest = max(output.parent.glob("*.wav"), key=lambda p: p.stat().st_mtime, default=None)
+        if newest is not None:
+            shutil.move(str(newest), str(output))
     if not output.exists():
         return {"status": "error", "message": "IndicF5 completed but did not create output WAV"}
     return {"status": "success", "wav_path": str(output)}

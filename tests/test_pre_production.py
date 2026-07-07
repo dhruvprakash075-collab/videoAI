@@ -108,6 +108,20 @@ def test_sanitize_narration_collapses_whitespace():
     assert "\n" not in out
 
 
+def test_sanitize_narration_removes_instruction_leak_and_word_break():
+    s = (
+        "The hero contin-\nued forward. "
+        "mentor ####5815: They're not actually in the text I have to work with, "
+        "you've introduced new characters and concepts. "
+        "The lamp flickered."
+    )
+    out = _sanitize_narration(s)
+    assert "continued forward" in out
+    assert "not actually in the text" not in out
+    assert "you've introduced" not in out
+    assert "The lamp flickered." in out
+
+
 # ── format_time_hms ──────────────────────────────────────────────────────────
 
 

@@ -52,6 +52,17 @@ def test_tts_awkward_words_not_glossary_protected():
     assert token_map == {}
 
 
+def test_protect_hinglish_target_ratio_expands_content_words():
+    protected, token_map = protect_hinglish(
+        "The hero stepped onto the moonlit rooftop and listened quietly.",
+        target_ratio=0.40,
+    )
+
+    assert len(token_map) >= 4
+    assert len(token_map) / 9 >= 0.40
+    assert "@@0@@" in protected
+
+
 # ── translate_to_devanagari bounded re-translation tests ──────────────────
 
 

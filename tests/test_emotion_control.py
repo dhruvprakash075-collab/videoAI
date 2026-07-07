@@ -45,19 +45,21 @@ def test_safe_ellipsis_latin_preserves_abbreviations():
 
 
 def test_safe_ellipsis_deva_converts_purna_viram():
-    out = _safe_ellipsis_deva("यह पहला वाक्य है। यह दूसरा है।")
-    assert "... " in out
+    out = _safe_ellipsis_deva("यह पहला वाक्य है... यह दूसरा है।")
+    assert "..." not in out
+    assert "।" in out
 
 
 def test_deva_inject_mysterious():
     out = _deva_inject("यह पहला वाक्य है। यह दूसरा है।", "mysterious")
-    assert "... " in out
+    assert "..." not in out
     assert "?... " not in out  # no question mark in input
 
 
 def test_deva_inject_mysterious_with_questions():
     out = _deva_inject("क्या यह सच है? हाँ।", "mysterious")
-    assert "?... " in out
+    assert "? " in out
+    assert "?... " not in out
 
 
 def test_deva_inject_action():
@@ -67,8 +69,8 @@ def test_deva_inject_action():
 
 
 def test_deva_inject_dramatic():
-    out = _deva_inject("यह पहला वाक्य है। दूसरा।", "dramatic")
-    assert "... " in out
+    out = _deva_inject("यह पहला वाक्य है... दूसरा।", "dramatic")
+    assert "..." not in out
 
 
 def test_deva_inject_intimate():
@@ -149,7 +151,7 @@ def test_inject_emotion_intimate_prefix_already_present():
 def test_inject_emotion_devanagari_auto():
     out = inject_emotion("यह एक वाक्य है।", "mysterious")
     # Devanagari detection should kick in
-    assert "..." in out
+    assert "..." not in out
 
 
 def test_inject_emotion_lang_hi_forces_devanagari():
@@ -193,19 +195,19 @@ def test_inject_emotion_already_ends_with_suffix():
 
 def test_get_mood_rate_known_moods():
     assert get_mood_rate("calm") == 1.0
-    assert get_mood_rate("mysterious") == 0.9
-    assert get_mood_rate("horror") == 0.85
+    assert get_mood_rate("mysterious") == 0.86
+    assert get_mood_rate("horror") == 0.8
     assert get_mood_rate("action") == 1.1
-    assert get_mood_rate("dramatic") == 0.95
-    assert get_mood_rate("epic") == 0.92
-    assert get_mood_rate("intimate") == 0.93
+    assert get_mood_rate("dramatic") == 0.9
+    assert get_mood_rate("epic") == 0.9
+    assert get_mood_rate("intimate") == 0.88
 
 
 def test_get_mood_rate_unknown_defaults_to_mysterious():
-    assert get_mood_rate("xyz") == 0.9
+    assert get_mood_rate("xyz") == 0.86
 
 
 def test_get_mood_rate_returns_float_in_expected_range():
     for mood in ["calm", "mysterious", "horror", "action", "dramatic", "epic", "intimate"]:
         rate = get_mood_rate(mood)
-        assert 0.85 <= rate <= 1.1
+        assert 0.8 <= rate <= 1.1

@@ -148,7 +148,11 @@ def _split_by_word_count(text: str, n: int, target_words: int) -> list[SegmentCh
     ``n`` exactly). The ``n`` parameter is accepted for symmetry with the
     chapter/llm strategies and is currently unused.
     """
-    sentences = _split_sentences(text)
+    sentences = [
+        s
+        for s in _split_sentences(text)
+        if not re.match(r"^\s*#{1,6}\s+\S", s)
+    ]
     if not sentences:
         return []
 

@@ -227,7 +227,13 @@ def test_write_srt_word_timestamps_json(tmp_path):
 def test_write_srt_english_uses_caption_script_not_hindi_timestamp_words(tmp_path):
     timestamps = tmp_path / "words.json"
     timestamps.write_text(
-        json.dumps([{"word": "हिंदी", "start": 0.0, "end": 1.0}]), encoding="utf-8"
+        json.dumps(
+            [
+                {"word": "हिंदी", "start": 0.0, "end": 1.0},
+                {"word": "आवाज", "start": 1.0, "end": 2.0},
+            ]
+        ),
+        encoding="utf-8",
     )
     output = tmp_path / "english.srt"
 
@@ -243,8 +249,9 @@ def test_write_srt_english_uses_caption_script_not_hindi_timestamp_words(tmp_pat
     assert "The lantern keeper" in content
     assert "हिंदी" not in content
     assert "# Story Title" not in content
+    assert "00:00:00,000 --> 00:00:01,000" in content
     blocks = [block.splitlines() for block in content.strip().split("\n\n")]
-    assert max(len(" ".join(block[2:]).split()) for block in blocks) <= 7
+    assert max(len(" ".join(block[2:]).split()) for block in blocks) <= 4
 
 
 def test_write_srt_whisper_fallback(tmp_path):
