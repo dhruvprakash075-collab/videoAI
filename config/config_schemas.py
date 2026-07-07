@@ -326,6 +326,12 @@ class ComfyUIConfig(BaseModel):
     cfg: float = 7.0
     sampler_name: str = "euler"
     scheduler: str = "normal"
+    negative_prompt: str = ""
+    vae_name: str | None = None
+    loras: list[dict] = Field(default_factory=list)
+    reference_image: str | None = None
+    refine_upscale: bool = False
+    refine_workflow_path: str = "config/comfyui/workflows/manga_refine_upscale_api.json"
     timeout_seconds: int = 300
     poll_seconds: float = 1.0
     auto_start_timeout: int = 60

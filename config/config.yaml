@@ -8,9 +8,9 @@ models:
   translator: sarvam-translate
 visual:
   num_scenes: 4
-  style:
-    Arcane-inspired semi-realistic 2D painterly animation, cinematic lighting,
-    volumetric shadows, detailed faces, atmospheric fog
+  style: >
+    manhwa-artstyle, bold clean ink outlines, manga lineart, cel shading,
+    vibrant colors, flat color shading
   environment_frame_ratio: 0.4
 tts:
   lang: hi
@@ -129,12 +129,13 @@ ollama:
 image_gen:
   backend: comfyui
 
-  height: 768
-  width: 1344
+  height: 512
+  width: 768
   steps: 30
   guidance_scale: 3.5
   ip_adapter_scale: 0.8
   lock_seed: true
+  composition_mode: one_pass
   upscaler:
     model: none
     model_path: ""
@@ -150,21 +151,28 @@ image_gen:
     python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true
     open_browser: false
-    workflow_path: config/comfyui/workflows/text_to_image_api.json
-    checkpoint: DreamShaper_8.safetensors
-    width: 1344
-    height: 768
+    workflow_path: config/comfyui/workflows/manga_identity_pose_api.json
+    checkpoint: meinamix_meinaV11.safetensors
+    width: 768
+    height: 512
     steps: 30
     cfg: 7.0
-    sampler_name: euler
-    scheduler: normal
+    sampler_name: dpmpp_2m
+    scheduler: karras
+    negative_prompt: "3d, render, photo, realism, plastic skin, blurry, muddy colors, sketchy lines"
+    vae_name: vae-ft-mse-840000-ema-pruned.safetensors
+    loras:
+      - { lora_name: manhwa_webtoon_v1.safetensors, strength_model: 0.5, strength_clip: 0.5 }
+      - { lora_name: anime_lineart_manga_v1.safetensors, strength_model: 0.3, strength_clip: 0.3 }
+    reference_image: output/master_portrait.png
+    refine_upscale: true
+    refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
     poll_seconds: 1.0
     auto_start_timeout: 60
     unload_after_batch: true
-  composition_mode: qwen_edit
   qwen_edit:
-    enabled: true
+    enabled: false
     backend: nunchaku
     workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
     model_path: "external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors"

@@ -423,7 +423,7 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
             filename_prefix = f"scene_{i + 1:02d}"
             seed = _comfyui_seed(cfg, prompt, i)
             if patcher:
-                workflow = patcher.patch_all(
+                patcher.patch_all(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
                     seed=seed,
@@ -435,7 +435,18 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
                     scheduler=scheduler,
                     checkpoint=checkpoint,
                     filename_prefix=filename_prefix,
-                ).get_workflow()
+                )
+                loras = comfy_cfg.get("loras")
+                if loras:
+                    patcher.patch_lora(loras)
+                vae_name = comfy_cfg.get("vae_name")
+                if vae_name:
+                    patcher.patch_vae(vae_name)
+                reference_image = comfy_cfg.get("reference_image")
+                if reference_image:
+                    uploaded = client.upload_image(Path(reference_image))
+                    patcher.patch_reference_image(uploaded["name"])
+                workflow = patcher.get_workflow()
             else:
                 workflow = create_default_workflow(
                     prompt=prompt,
@@ -463,6 +474,7 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
             pbar.update(1)
 
     log.info(f"ComfyUI: {len(images)} images generated")
+    images = _refine_upscale(images, cfg)
 
     if comfy_cfg.get("unload_after_batch", False):
         log.info("[ComfyUI] Unloading after batch (VRAM release)")
@@ -474,6 +486,62 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
             log.warning(f"[ComfyUI] Could not unload after batch: {e}")
 
     return images
+
+
+def _refine_upscale(frames: list[Path], cfg: dict) -> list[Path]:
+    """Standalone FaceDetailer + tiled-upscale pass, one frame at a time."""
+    comfy_cfg = cfg.get("comfyui", {}) or {}
+    if not comfy_cfg.get("refine_upscale", False):
+        return frames
+
+    refine_path = comfy_cfg.get(
+        "refine_workflow_path",
+        "config/comfyui/workflows/manga_refine_upscale_api.json",
+    )
+    if not Path(refine_path).is_file():
+        log.warning("[refine] workflow missing: %s; skipping refine pass", refine_path)
+        return frames
+
+    from video.image_gen.comfyui_client import ComfyUIClient
+    from video.image_gen.comfyui_runtime import get_comfyui_runtime
+    from video.image_gen.comfyui_workflow import WorkflowPatcher
+
+    runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
+    if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
+        log.warning("[refine] ComfyUI not running; skipping refine pass")
+        return frames
+    client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+
+    try:
+        client.free_memory()
+    except Exception as e:
+        log.debug("[refine] free_memory failed (non-fatal): %s", e)
+
+    final_frames: list[Path] = []
+    with tqdm(total=len(frames), desc=" Refine+Upscale", leave=False) as pbar:
+        for i, frame in enumerate(frames):
+            frame = Path(frame)
+            try:
+                uploaded = client.upload_image(frame, overwrite=True)
+                patcher = WorkflowPatcher(Path(refine_path))
+                wf = patcher.get_workflow()
+                wf["1"]["inputs"]["image"] = uploaded["name"]
+                wf["11"]["inputs"]["filename_prefix"] = f"{frame.stem}_final"
+                out = client.generate_image(
+                    wf,
+                    frame.parent,
+                    filename_prefix=f"{frame.stem}_final",
+                    poll_interval=comfy_cfg.get("poll_seconds", 1.0),
+                    timeout=comfy_cfg.get("timeout_seconds", 300),
+                )
+                final_frames.append(out[0] if out else frame)
+            except Exception as e:
+                log.warning("[refine] frame %d (%s) failed: %s; keeping original", i, frame, e)
+                final_frames.append(frame)
+            pbar.update(1)
+
+    log.info("[refine] Completed FaceDetailer + upscale on %d frames", len(final_frames))
+    return final_frames
 
 
 def _qwen_seed(char_key: str, frame_index: int, prompt: str) -> int:

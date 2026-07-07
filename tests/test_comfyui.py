@@ -469,6 +469,26 @@ class TestWorkflowPatcher:
         patcher.patch_checkpoint("model.safetensors")
         assert patcher.workflow["1"]["inputs"]["ckpt_name"] == "model.safetensors"
 
+    def test_patch_lora_and_reference_image(self):
+        patcher = WorkflowPatcher()
+        patcher.workflow = {
+            "12": {"class_type": "LoraLoader", "inputs": {"lora_name": "old2", "strength_model": 0.1, "strength_clip": 0.1}},
+            "11": {"class_type": "LoraLoader", "inputs": {"lora_name": "old1", "strength_model": 0.1, "strength_clip": 0.1}},
+            "20": {"class_type": "LoadImage", "inputs": {"image": "old.png"}, "_meta": {"title": "Reference Image"}},
+            "30": {"class_type": "LoadImage", "inputs": {"image": "pose.png"}, "_meta": {"title": "Pose Reference"}},
+        }
+
+        patcher.patch_lora([
+            {"lora_name": "style.safetensors", "strength_model": 0.5, "strength_clip": 0.5},
+            {"lora_name": "ink.safetensors", "strength_model": 0.3, "strength_clip": 0.3},
+        ])
+        patcher.patch_reference_image("master.png")
+
+        assert patcher.workflow["11"]["inputs"]["lora_name"] == "style.safetensors"
+        assert patcher.workflow["12"]["inputs"]["lora_name"] == "ink.safetensors"
+        assert patcher.workflow["20"]["inputs"]["image"] == "master.png"
+        assert patcher.workflow["30"]["inputs"]["image"] == "pose.png"
+
     def test_patch_filename_prefix(self):
         patcher = WorkflowPatcher()
         patcher.workflow = {
@@ -592,6 +612,17 @@ class TestWorkflowPatcher:
         pos2, neg2 = patcher2._resolve_prompt_nodes()
         assert pos2 == {"3"}
         assert neg2 == {"4"}
+
+    def test_manga_workflows_valid_graph(self):
+        workflow_dir = Path("config/comfyui/workflows")
+        for name in ("manga_colored_api.json", "manga_identity_pose_api.json", "manga_refine_upscale_api.json"):
+            workflow = json.loads((workflow_dir / name).read_text())
+            assert workflow
+            for node_id, node in workflow.items():
+                assert "class_type" in node, node_id
+                for value in node.get("inputs", {}).values():
+                    if isinstance(value, list) and value and isinstance(value[0], str):
+                        assert value[0] in workflow, (name, node_id, value)
 
 
 class TestCreateDefaultWorkflow:

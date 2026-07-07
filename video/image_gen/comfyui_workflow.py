@@ -322,6 +322,46 @@ class WorkflowPatcher:
 
         return self
 
+    def patch_lora(self, loras: list[dict]) -> "WorkflowPatcher":
+        """Patch LoraLoader nodes in numeric-id order."""
+        if not self.workflow:
+            raise ValueError("No workflow loaded")
+
+        lora_ids = sorted(
+            (
+                node_id
+                for node_id, node in self.workflow.items()
+                if isinstance(node, dict) and node.get("class_type") == "LoraLoader"
+            ),
+            key=lambda node_id: int(node_id) if str(node_id).isdigit() else node_id,
+        )
+        for node_id, spec in zip(lora_ids, loras):
+            inputs = self.workflow[node_id].setdefault("inputs", {})
+            for key in ("lora_name", "strength_model", "strength_clip"):
+                if key in spec:
+                    inputs[key] = spec[key]
+            log.info(f"[ComfyUI] LoRA node {node_id} -> {inputs.get('lora_name')}")
+        return self
+
+    def patch_reference_image(
+        self,
+        image_name: str,
+        node_title: str = "Reference Image",
+    ) -> "WorkflowPatcher":
+        """Point the titled LoadImage node at an uploaded input filename."""
+        if not self.workflow:
+            raise ValueError("No workflow loaded")
+
+        for node_id, node in self.workflow.items():
+            if not isinstance(node, dict) or node.get("class_type") != "LoadImage":
+                continue
+            title = str((node.get("_meta") or {}).get("title", ""))
+            if not node_title or node_title in title:
+                node.setdefault("inputs", {})["image"] = image_name
+                log.info(f"[ComfyUI] reference image -> node {node_id}: {image_name}")
+                return self
+        return self
+
     def patch_filename_prefix(self, prefix: str) -> "WorkflowPatcher":
         """Patch filename_prefix into SaveImage nodes."""
         if not self.workflow:
