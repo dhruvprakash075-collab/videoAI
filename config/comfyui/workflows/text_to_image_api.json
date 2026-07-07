@@ -30,8 +30,8 @@
     },
     "4": {
         "inputs": {
-            "width": 1024,
-            "height": 1024,
+            "width": 1344,
+            "height": 768,
             "batch_size": 1
         },
         "class_type": "EmptyLatentImage",
@@ -42,7 +42,7 @@
     "5": {
         "inputs": {
             "seed": 42,
-            "steps": 20,
+            "steps": 30,
             "cfg": 7.0,
             "sampler_name": "euler",
             "scheduler": "normal",
