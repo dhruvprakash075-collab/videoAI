@@ -314,6 +314,7 @@ def run_pre_production(
 
         elif duration_choice["action"] == "custom":
             config_overlay["video"]["total_duration_min"] = duration_choice["target_minutes"]
+            config_overlay["video"]["_user_adjusted"] = True
             est_minutes = duration_choice["target_minutes"]
 
         elif duration_choice["action"] == "adjusted":
@@ -355,11 +356,6 @@ def run_pre_production(
         _video_ov.get("_cliffhanger_point") is not None
         or _video_ov.get("_content_compacted")
         or _video_ov.get("_user_adjusted")
-        or (
-            user_chosen_duration
-            and not _video_ov.get("_director_recommended")
-            and user_chosen_duration != config.get("video", {}).get("total_duration_min")
-        )
     )
     _normal_extra = {}
     if user_chosen_duration and _user_picked_duration:

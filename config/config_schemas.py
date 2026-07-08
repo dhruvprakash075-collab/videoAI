@@ -331,6 +331,9 @@ class ComfyUIConfig(BaseModel):
     vae_name: str | None = None
     loras: list[dict] = Field(default_factory=list)
     reference_image: str | None = None
+    reference_image_dir: str | None = None
+    reference_usage: Literal["style_inspiration", "direct"] = "style_inspiration"
+    reference_seed_mode: Literal["prompt_hash", "round_robin"] = "prompt_hash"
     refine_upscale: bool = False
     refine_workflow_path: str = "config/comfyui/workflows/manga_refine_upscale_api.json"
     timeout_seconds: int = 300
@@ -347,6 +350,25 @@ class UpscalerConfig(BaseModel):
     scale: int = 4
     target_width: int = 1920
     target_height: int = 1080
+
+
+class PanelCompositeConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+    layout_file: str = "config/panel_layouts.json"
+    fallback_layout_file: str = "config/panel_layouts.json"
+    width: int = 1920
+    height: int = 1080
+    margin: int = 48
+    gutter: int = 24
+    border: int = 6
+
+
+class FaceInspirationConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = False
+    prompt_bank: str = "config/anime_face_inspiration.json"
+    phrases_per_prompt: int = 3
 
 
 class ImageGenConfig(BaseModel):
@@ -366,6 +388,8 @@ class ImageGenConfig(BaseModel):
     upscaler: UpscalerConfig = Field(default_factory=UpscalerConfig)
     comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
     composition_mode: str = "one_pass"
+    panel_composite: PanelCompositeConfig = Field(default_factory=PanelCompositeConfig)
+    face_inspiration: FaceInspirationConfig = Field(default_factory=FaceInspirationConfig)
 
 
 class MusicConfig(BaseModel):

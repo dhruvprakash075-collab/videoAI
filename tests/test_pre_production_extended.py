@@ -264,6 +264,26 @@ def test_run_pre_production_duration_custom(tmp_path):
         assert res["video"]["total_duration_min"] == 6
 
 
+def test_run_pre_production_director_duration_is_not_user_lock(tmp_path):
+    mock_dir = MagicMock()
+    mock_dir.ask_search_online.return_value = False
+    mock_dir.ask_create_from_scratch.return_value = (False, "")
+    mock_dir.analyze_with_research.return_value = {"recommended_duration_min": 12}
+    mock_dir.consult_on_config.return_value = ({}, {})
+    mock_dir.consult_with_writer.return_value = {}
+    mock_dir.produce_runtime_config.return_value = {"video": {"total_duration_min": 12}}
+
+    config = {"checkpoint": {"dir": str(tmp_path)}, "video": {"total_duration_min": 10}}
+
+    with (
+        patch("agents.director_agent.DirectorAgent", return_value=mock_dir),
+        patch("core.decision_record.build_and_persist_decision_record") as build_record,
+    ):
+        run_pre_production(topic="test_director_duration", config=config, run_mode="one_time")
+
+    assert build_record.call_args.kwargs["extra_user_locks"] is None
+
+
 def test_run_pre_production_duration_adjusted(tmp_path):
     mock_dir = MagicMock()
     mock_dir.ask_search_online.return_value = False
