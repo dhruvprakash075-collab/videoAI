@@ -25,9 +25,10 @@ vision_document: |
     "characters": List of objects with {{name, description (50+ words,
     precise visual details: hair, eyes, clothing, build, key items), voice (deep/mellow/sharp/etc)}}
   
-    "visual_style": One of: gothic anime, dark fantasy anime, bright shonen anime,
-    watercolor anime, cyberpunk anime, traditional ink anime,
-    hybrid 2d anime visual novel style, webtoon style.
+    "visual_style": One of: colored manga panel, gothic anime, dark fantasy anime,
+    bright shonen anime, watercolor anime, cyberpunk anime, traditional ink anime,
+    hybrid 2d anime visual novel style, webtoon style. Prefer colored manga panel
+    unless the story clearly needs another style.
   
     "theme": Core theme in 3-5 words.
   

@@ -10,6 +10,7 @@ Public surface:
 """
 
 import hashlib
+import json
 import logging
 import threading
 from pathlib import Path
@@ -22,6 +23,7 @@ log = logging.getLogger(__name__)
 # Module-level OOM event list — shared between portrait gen + frame gen.
 _oom_events: list = []
 _oom_events_lock = threading.Lock()
+_REFERENCE_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 def _record_oom_event(event: dict) -> None:
@@ -39,6 +41,94 @@ def clear_oom_events() -> None:
     """Reset OOM event list between pipeline runs."""
     with _oom_events_lock:
         _oom_events.clear()
+
+
+def _reference_image_for(comfy_cfg: dict, prompt: str, index: int) -> Path | None:
+    if comfy_cfg.get("reference_usage", "style_inspiration") != "direct":
+        return None
+    images = [Path(p) for p in comfy_cfg.get("reference_images", []) if str(p).strip()]
+    ref_dir = comfy_cfg.get("reference_image_dir")
+    if ref_dir:
+        root = Path(ref_dir)
+        if root.is_dir():
+            images.extend(
+                p for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() in _REFERENCE_IMAGE_EXTS
+            )
+    if not images and comfy_cfg.get("reference_image"):
+        images = [Path(comfy_cfg["reference_image"])]
+    images = [p for p in images if p.is_file()]
+    if not images:
+        return None
+    if comfy_cfg.get("reference_seed_mode", "prompt_hash") == "round_robin":
+        return images[index % len(images)]
+    key = f"{prompt}|{index}".encode("utf-8", errors="ignore")
+    return images[int(hashlib.sha256(key).hexdigest(), 16) % len(images)]
+
+
+def _reference_pool(comfy_cfg: dict) -> list[Path]:
+    images = [Path(p) for p in comfy_cfg.get("reference_images", []) if str(p).strip()]
+    ref_dir = comfy_cfg.get("reference_image_dir")
+    if ref_dir:
+        root = Path(ref_dir)
+        if root.is_dir():
+            images.extend(
+                p for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() in _REFERENCE_IMAGE_EXTS
+            )
+    return [p for p in images if p.is_file()]
+
+
+def _face_inspiration_prompt(cfg: dict, prompt: str, index: int) -> str:
+    face_cfg = cfg.get("face_inspiration", {}) or {}
+    if not face_cfg.get("enabled", False):
+        return ""
+    path = Path(face_cfg.get("prompt_bank", "config/anime_face_inspiration.json"))
+    if not path.is_file():
+        return ""
+    try:
+        bank = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    phrases = [str(item).strip() for item in bank if str(item).strip()]
+    if not phrases:
+        return ""
+    count = max(1, min(int(face_cfg.get("phrases_per_prompt", 3)), len(phrases)))
+    seed = int(hashlib.sha256(f"{prompt}|{index}".encode("utf-8")).hexdigest(), 16)
+    selected = [phrases[(seed + offset) % len(phrases)] for offset in range(count)]
+    return ", ".join(selected)
+
+
+def _stable_character_reference(comfy_cfg: dict, char_key: str, project_id: str | None) -> Path | None:
+    if comfy_cfg.get("reference_usage", "style_inspiration") != "direct":
+        return None
+    if not char_key or not project_id:
+        return None
+    try:
+        from memory.project_store import ProjectStore
+
+        store = ProjectStore(project_id)
+        existing = store.get_master_portrait_path(char_key)
+        if existing and Path(existing).is_file():
+            return Path(existing)
+        pool = _reference_pool(comfy_cfg)
+        if not pool:
+            return None
+        idx = int(hashlib.sha256(char_key.encode("utf-8")).hexdigest(), 16) % len(pool)
+        ref = pool[idx]
+        digest = hashlib.sha256(ref.read_bytes()).hexdigest()
+        store.log_character(char_key, f"Anime face reference seeded from {ref.name}")
+        store.set_master_portrait(char_key, str(ref), digest)
+        return ref
+    except Exception as exc:
+        log.debug("[image_gen] character reference memory skipped: %s", exc)
+        return None
+
+
+def _dominant_char_for_frame(char_presence: list[dict[str, float]] | None, index: int) -> str | None:
+    if not char_presence or index >= len(char_presence):
+        return None
+    char_key, _weight = _resolve_dominant_char_at_threshold(char_presence[index], 0.3)
+    return char_key
+
 
 def generate_images(
     prompts,
@@ -74,6 +164,8 @@ def generate_images(
                 prompt_list,
                 output_dir,
                 cfg,
+                char_presence=char_presence,
+                project_id=project_id,
             )
         except Exception as e:
             log.warning(f"[image_gen] ComfyUI failed: {e}")
@@ -257,7 +349,14 @@ def _comfyui_seed(cfg: dict, prompt: str, frame_index: int) -> int | None:
     return None
 
 
-def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
+def _comfyui(
+    prompts: list[str],
+    out: Path,
+    cfg: dict,
+    *,
+    char_presence: list[dict[str, float]] | None = None,
+    project_id: str | None = None,
+) -> list[Path]:
     """Run ComfyUI inference."""
     from video.image_gen.comfyui_client import ComfyUIClient
     from video.image_gen.comfyui_runtime import get_comfyui_runtime
@@ -293,6 +392,9 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
     with tqdm(total=len(prompts), desc="  ComfyUI", leave=False) as pbar:
         for i, prompt in enumerate(prompts):
             filename_prefix = f"scene_{i + 1:02d}"
+            inspiration = _face_inspiration_prompt(cfg, prompt, i)
+            if inspiration:
+                prompt = f"{prompt}, {inspiration}"
             seed = _comfyui_seed(cfg, prompt, i)
             if patcher:
                 patcher.patch_all(
@@ -314,9 +416,12 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
                 vae_name = comfy_cfg.get("vae_name")
                 if vae_name:
                     patcher.patch_vae(vae_name)
-                reference_image = comfy_cfg.get("reference_image")
+                char_key = _dominant_char_for_frame(char_presence, i)
+                reference_image = _stable_character_reference(comfy_cfg, char_key or "", project_id)
+                if reference_image is None:
+                    reference_image = _reference_image_for(comfy_cfg, prompt, i)
                 if reference_image:
-                    uploaded = client.upload_image(Path(reference_image))
+                    uploaded = client.upload_image(reference_image)
                     patcher.patch_reference_image(uploaded["name"])
                 workflow = patcher.get_workflow()
             else:
@@ -347,6 +452,21 @@ def _comfyui(prompts: list[str], out: Path, cfg: dict) -> list[Path]:
 
     log.info(f"ComfyUI: {len(images)} images generated")
     images = _refine_upscale(images, cfg)
+    panel_cfg = cfg.get("panel_composite", {}) or {}
+    if panel_cfg.get("enabled"):
+        from video.image_gen.panel_compositor import compose_panel_pages
+
+        images = compose_panel_pages(
+            images,
+            out,
+            width=int(panel_cfg.get("width", 1920)),
+            height=int(panel_cfg.get("height", 1080)),
+            margin=int(panel_cfg.get("margin", 48)),
+            gutter=int(panel_cfg.get("gutter", 24)),
+            border=int(panel_cfg.get("border", 6)),
+            layout_file=Path(panel_cfg.get("layout_file", "config/panel_layouts.json")),
+            fallback_layout_file=Path(panel_cfg.get("fallback_layout_file", "config/panel_layouts.json")),
+        )
 
     if comfy_cfg.get("unload_after_batch", False):
         log.info("[ComfyUI] Unloading after batch (VRAM release)")

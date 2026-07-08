@@ -13,8 +13,10 @@ from video.image_gen.image_gen import (
     _comfyui,
     _comfyui_seed,
     _maybe_upscale,
+    _face_inspiration_prompt,
     _prompt_cache_key,
     _record_oom_event,
+    _stable_character_reference,
     _resolve_dominant_char_at_threshold,
     clear_oom_events,
     generate_images,
@@ -122,6 +124,46 @@ def test_prompt_cache_key_handles_list_prompt():
     k1 = _prompt_cache_key(["a", "b"], cfg)
     k2 = _prompt_cache_key("a;b", cfg)
     assert k1 == k2
+
+
+def test_stable_character_reference_persists_to_project_store(tmp_path: Path, monkeypatch):
+    from memory import project_store
+    from memory.project_store import ProjectStore
+
+    monkeypatch.setattr(project_store, "PROJECTS_ROOT", tmp_path / "projects")
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    (refs / "b.jpg").write_bytes(b"b")
+    (refs / "a.jpg").write_bytes(b"a")
+    cfg = {"reference_image_dir": str(refs), "reference_usage": "direct"}
+
+    first = _stable_character_reference(cfg, "hero", "proj")
+    second = _stable_character_reference(cfg, "hero", "proj")
+    store = ProjectStore("proj", root=tmp_path / "projects")
+
+    assert first == second
+    assert Path(store.get_master_portrait_path("hero")) == first
+    assert store.get_master_portrait_hash("hero")
+
+
+def test_stable_character_reference_disabled_for_style_inspiration(tmp_path: Path):
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    (refs / "a.jpg").write_bytes(b"a")
+    cfg = {"reference_image_dir": str(refs), "reference_usage": "style_inspiration"}
+
+    assert _stable_character_reference(cfg, "hero", "proj") is None
+
+
+def test_face_inspiration_prompt_uses_prompt_bank(tmp_path: Path):
+    bank = tmp_path / "bank.json"
+    bank.write_text('["big eyes", "clean linework", "cel shading"]', encoding="utf-8")
+    cfg = {"face_inspiration": {"enabled": True, "prompt_bank": str(bank), "phrases_per_prompt": 2}}
+
+    prompt = _face_inspiration_prompt(cfg, "hero", 0)
+
+    assert prompt
+    assert len(prompt.split(", ")) == 2
 
 
 # ── _comfyui_seed ──────────────────────────────────────

@@ -105,6 +105,14 @@ external/ponytail/
 external/shadcn-improve/
 external/comfyui-custom-node-skills/
 
+# ── Local image-generation datasets / reference pools ────────────
+reference_assets/datasets/**
+!reference_assets/datasets/
+!reference_assets/datasets/README.md
+reference_assets/face_reference_pools/**
+!reference_assets/face_reference_pools/
+!reference_assets/face_reference_pools/README.md
+
 # ── Model files (multi-GB, never commit) ──────────────────────────
 *.gguf
 *.safetensors

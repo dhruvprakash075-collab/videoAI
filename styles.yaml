@@ -5,10 +5,20 @@
 # Layer 3: LLM expansion (translate unknown styles into SD prompt)
 
 fallback_prompt: >
-  hybrid 2d anime visual novel style, clean digital art,
-  expressive character designs, detailed backgrounds
+  colored manga panel style, clean black ink outlines, cel-shaded anime colors,
+  screentone texture, dynamic manga composition, no text, no letters, no symbols
 
 styles:
+
+  colored_manga_panel:
+    keywords: ["colored manga", "colour manga", "color manga", "manga panel", "manga"]
+    aliases: ["colored manga panel", "colour manga panel", "color manga panel", "comic manga", "japanese manga panel"]
+    prompt: >
+      colored manga panel style, clean black ink outlines, cel-shaded anime colors,
+      vibrant but controlled color palette, screentone texture, dynamic manga action composition,
+      dynamic close-up framing, no text, no letters, no symbols,
+      expressive sharp eyes, detailed clothing folds, clean background shapes,
+      high contrast Japanese manga illustration
 
   semi_realistic:
     keywords: ["semi-realistic", "semi realistic", "realistic anime"]

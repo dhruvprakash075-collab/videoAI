@@ -9,8 +9,10 @@ models:
 visual:
   num_scenes: 4
   style: >
-    Arcane-inspired semi-realistic manhwa-artstyle, bold clean ink outlines, manga lineart, cel shading,
-    vibrant colors, flat color shading
+    colored manga panel style, clean black ink outlines, cel-shaded anime colors,
+    vibrant but controlled color palette, screentone texture, dynamic manga action composition,
+    dynamic close-up framing, expressive sharp eyes, no text, no letters, no symbols,
+    detailed clothing folds, clean background shapes, high contrast Japanese manga illustration
   environment_frame_ratio: 0.4
 tts:
   lang: hi
@@ -137,6 +139,19 @@ image_gen:
   ip_adapter_scale: 0.8
   lock_seed: true
   composition_mode: one_pass
+  panel_composite:
+    enabled: true
+    layout_file: config/panel_layouts.roboflow.json
+    fallback_layout_file: config/panel_layouts.json
+    width: 1920
+    height: 1080
+    margin: 48
+    gutter: 24
+    border: 6
+  face_inspiration:
+    enabled: true
+    prompt_bank: config/anime_face_inspiration.json
+    phrases_per_prompt: 3
   upscaler:
     model: none
     model_path: ""
@@ -152,7 +167,7 @@ image_gen:
     python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true
     open_browser: false
-    workflow_path: config/comfyui/workflows/manga_identity_pose_api.json
+    workflow_path: config/comfyui/workflows/manga_ipadapter_style_api.json
     checkpoint: meinamix_meinaV11.safetensors
     width: 768
     height: 512
@@ -160,12 +175,15 @@ image_gen:
     cfg: 7.0
     sampler_name: dpmpp_2m
     scheduler: karras
-    negative_prompt: "3d, render, photo, realism, plastic skin, blurry, muddy colors, sketchy lines, bad face, distorted face, deformed face, malformed eyes, asymmetrical eyes, bad anatomy, duplicate face, tiny face, cropped face, melted features, extra limbs, broken hands, unreadable text"
+    negative_prompt: "panel border, comic border, frame border, gutter, 3d, render, photo, realism, plastic skin, painterly realism, cinematic realism, volumetric fog, monochrome, grayscale, black and white, blurry, muddy colors, sketchy lines, bad face, distorted face, deformed face, malformed eyes, asymmetrical eyes, bad anatomy, duplicate face, tiny face, cropped face, melted features, extra limbs, broken hands, text, letters, symbols, kanji, logo, watermark, unreadable text"
     vae_name: vae-ft-mse-840000-ema-pruned.safetensors
     loras:
       - { lora_name: manhwa_webtoon_v1.safetensors, strength_model: 0.5, strength_clip: 0.5 }
       - { lora_name: anime_lineart_manga_v1.safetensors, strength_model: 0.3, strength_clip: 0.3 }
     reference_image: reference_assets/uploaded_20260708/ref_zip_1/page/page_1.png
+    reference_image_dir: reference_assets/face_reference_pools/anime_face
+    reference_usage: direct
+    reference_seed_mode: prompt_hash
     refine_upscale: true
     refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300

@@ -615,7 +615,7 @@ class TestWorkflowPatcher:
 
     def test_manga_workflows_valid_graph(self):
         workflow_dir = Path("config/comfyui/workflows")
-        for name in ("manga_colored_api.json", "manga_identity_pose_api.json", "manga_refine_upscale_api.json"):
+        for name in ("manga_colored_api.json", "manga_identity_pose_api.json", "manga_ipadapter_style_api.json", "manga_refine_upscale_api.json"):
             workflow = json.loads((workflow_dir / name).read_text())
             assert workflow
             for node_id, node in workflow.items():
@@ -698,3 +698,15 @@ class TestBackendRouting:
 
             with pytest.raises(RuntimeError):
                 image_gen_module.generate_images("test prompt", Path("/tmp"), config)
+
+    def test_reference_image_pool_prefers_directory(self, tmp_path):
+        import video.image_gen.image_gen as image_gen_module
+
+        refs = tmp_path / "refs"
+        refs.mkdir()
+        (refs / "b.png").write_bytes(b"b")
+        (refs / "a.jpg").write_bytes(b"a")
+        cfg = {"reference_image_dir": str(refs), "reference_seed_mode": "round_robin"}
+
+        assert image_gen_module._reference_image_for(cfg, "p", 0) == refs / "a.jpg"
+        assert image_gen_module._reference_image_for(cfg, "p", 1) == refs / "b.png"
