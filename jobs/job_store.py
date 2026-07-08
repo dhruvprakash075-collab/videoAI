@@ -126,6 +126,8 @@ class JobStore:
         job_id = cur.lastrowid
         conn.commit()
         conn.close()
+        if job_id is None:
+            raise RuntimeError("SQLite did not return a job id")
         return job_id
 
     def claim_next_job(self) -> dict[str, Any] | None:
@@ -182,14 +184,16 @@ class JobStore:
 
     def append_event(self, job_id: int, message: str, event_type: str | None = "log") -> None:
         conn = self._connect()
-        cur = conn.cursor()
-        now = _now_iso()
-        cur.execute(
-            "INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)",
-            (job_id, now, event_type, message),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            cur = conn.cursor()
+            now = _now_iso()
+            cur.execute(
+                "INSERT INTO job_events (job_id, ts, event_type, message) VALUES (?,?,?,?)",
+                (job_id, now, event_type, message),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def list_jobs(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         conn = self._connect()

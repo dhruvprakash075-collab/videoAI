@@ -161,11 +161,13 @@ class ComfyUIRuntime:
                         stderr=stderr_handle,
                         creationflags=creationflags,
                     )
+                    self._close_log_handles()
                 except PermissionError:
                     log.warning(
                         "[ComfyUI] Hidden process launch was denied; retrying without "
                         "Windows creation flags"
                     )
+                    self._close_log_handles()
                     stdout_handle, stderr_handle = self._open_log_handles(root_path)
                     self._process = subprocess.Popen(
                         cmd,
@@ -174,6 +176,7 @@ class ComfyUIRuntime:
                         stdout=stdout_handle,
                         stderr=stderr_handle,
                     )
+                    self._close_log_handles()
 
                 log.info(f"[ComfyUI] Started process PID {self._process.pid}")
 
@@ -193,6 +196,7 @@ class ComfyUIRuntime:
             time.sleep(1)
 
         log.error(f"[ComfyUI] Failed to start within {timeout}s")
+        self.stop()
         return False
 
     def stop(self) -> None:

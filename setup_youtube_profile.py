@@ -24,8 +24,11 @@ def main():
     # Use module-level sync_playwright (tests will patch this symbol)
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(user_data_dir=str(profile_dir), headless=False, args=["--disable-blink-features=AutomationControlled"])  # type: ignore
-        page = browser.new_page()
-        page.goto("https://studio.youtube.com/")
+        try:
+            page = browser.new_page()
+            page.goto("https://studio.youtube.com/")
+        finally:
+            browser.close()
 
     print("Please log into YouTube in the opened browser to save session.")
     print("Session saved")

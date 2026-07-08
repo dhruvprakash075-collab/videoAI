@@ -100,6 +100,17 @@ class TestBrowserLaunch:
         _p, browser, _page = _capture_pw(mock_sp)
         browser.new_page.assert_called()
 
+    def test_closes_browser_context(self):
+        from setup_youtube_profile import main
+
+        with (
+            patch("sys.argv", ["setup_youtube_profile.py"]),
+            patch("setup_youtube_profile.sync_playwright") as mock_sp,
+        ):
+            main()
+        _p, browser, _page = _capture_pw(mock_sp)
+        browser.close.assert_called_once()
+
     def test_automation_disabled_arg(self):
         from setup_youtube_profile import main
 

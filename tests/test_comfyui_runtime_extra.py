@@ -1,5 +1,6 @@
 import itertools
 import subprocess
+from email.message import Message
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -62,8 +63,12 @@ def test_is_running_false_for_http_error(tmp_path: Path):
     import urllib.error
 
     runtime = _runtime(tmp_path)
-    with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError("", 500, "", {}, None)):
-        assert runtime.is_running() is False
+    err = urllib.error.HTTPError("", 500, "", Message(), None)
+    try:
+        with patch("urllib.request.urlopen", side_effect=err):
+            assert runtime.is_running() is False
+    finally:
+        err.close()
 
 
 def test_is_running_false_for_non_200(tmp_path: Path):
@@ -107,6 +112,8 @@ def test_start_success_permission_retry_failure_and_timeout(tmp_path: Path):
     ):
         assert runtime.start(timeout=2) is True
     assert popen.called
+    assert runtime._stdout_handle is None
+    assert runtime._stderr_handle is None
 
     runtime = _runtime(tmp_path)
     proc = MagicMock(pid=456)
@@ -117,6 +124,8 @@ def test_start_success_permission_retry_failure_and_timeout(tmp_path: Path):
     ):
         assert runtime.start(timeout=2) is True
     assert popen.call_count == 2
+    assert runtime._stdout_handle is None
+    assert runtime._stderr_handle is None
 
     runtime = _runtime(tmp_path)
     with patch("subprocess.Popen", side_effect=RuntimeError("boom")):
@@ -127,11 +136,14 @@ def test_start_success_permission_retry_failure_and_timeout(tmp_path: Path):
     fake_clock = itertools.count().__next__
     with (
         patch.object(runtime, "is_running", return_value=False),
-        patch("subprocess.Popen", return_value=MagicMock(pid=789)),
+        patch("subprocess.Popen", return_value=MagicMock(pid=789)) as popen,
         patch("time.time", side_effect=fake_clock),
         patch("time.sleep"),
     ):
         assert runtime.start(timeout=1) is False
+    popen.return_value.terminate.assert_called_once()
+    assert runtime._stdout_handle is None
+    assert runtime._stderr_handle is None
 
 
 def test_start_already_process_and_stop_paths(tmp_path: Path):
