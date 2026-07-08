@@ -525,7 +525,6 @@ class TestSmartFaceIDLoraRouter:
         ("ponyDiffusion.safetensors", "sdxl"),
         ("illustrious.safetensors", "sdxl"),
         ("flux-dev.safetensors", "flux"),
-        ("qwen_image_edit.safetensors", "qwen"),
         ("random_model.safetensors", "unknown"),
         ("", "unknown"),
     ])

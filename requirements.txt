@@ -25,9 +25,7 @@ transformers>=5.10.2
 # torch>=2.6.0
 # torchaudio>=2.6.0
 
-# ── Image generation (ComfyUI / Qwen-Image-Edit) ────────────────────
-
-# ── Optional image backends ───────────────────────────────────────
+# ── Image generation (ComfyUI) ────────────────────────────────────
 
 # ── Audio processing ──────────────────────────────────────────────
 pydub>=0.25.0

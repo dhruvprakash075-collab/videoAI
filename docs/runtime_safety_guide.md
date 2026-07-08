@@ -6,7 +6,7 @@ To guarantee stable local execution on consumer hardware with **6GB VRAM** limit
 
 ## 1. VRAM & GPU Model Eviction
 
-ComfyUI / DreamShaper_8 (image generation), IndicF5 / Supertonic / OmniVoice (voice rendering), and local LLMs (Ollama) compete for local CPU/GPU memory. Supertonic is CPU-only, but GPU-backed engines and ComfyUI must be serialized to avoid Out-of-Memory failures.
+ComfyUI / the configured image checkpoint (currently `meinamix_meinaV11.safetensors`), IndicF5 / Supertonic / OmniVoice (voice rendering), and local LLMs (Ollama) compete for local CPU/GPU memory. Supertonic is CPU-only, but GPU-backed engines and ComfyUI must be serialized to avoid Out-of-Memory failures.
 
 ### Two-Stage Eviction Process (`core/runtime/ollama.py`)
 
@@ -81,7 +81,8 @@ except BreakerOpen as e:
 
 ## 4. ComfyUI Image OOM Protection
 
-Image generation uses **ComfyUI** (Stable Diffusion via DreamShaper_8).
+Image generation uses **ComfyUI** (currently the manga identity/pose workflow
+with `meinamix_meinaV11.safetensors`).
 VRAM protection is handled by the heavy-task scheduler
 (`global_scheduler.task("heavy", ...)` ensures only one GPU task runs
 at a time) and the VRAM polling loop (Section 1). Preflight checks

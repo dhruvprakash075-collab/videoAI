@@ -299,7 +299,6 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
         patch("audio.audio_proxy.tts_generate", return_value={"wav_path": str(wav)}),
         patch("utils.get_audio_duration", return_value=20),
         patch("video.renderer.renderer.render_with_assets", return_value=mp4),
-        patch("video.image_gen.image_gen._free_comfyui_memory") as free_comfy,
         patch("memory.permanent_memory.PermanentMemoryLog") as perm,
         patch("torch.cuda.is_available", return_value=True),
         patch("torch.cuda.empty_cache"),
@@ -310,7 +309,6 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
     assert kwargs["mp4s"][0] == mp4
     project.record_asset_review.assert_called()
     director.review_segment_memory.assert_called_once()
-    free_comfy.assert_called_once()
     perm.return_value.save_memory_item.assert_called_once_with({"kind": "fact"})
 
 

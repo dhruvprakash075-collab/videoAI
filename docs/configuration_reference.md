@@ -85,9 +85,9 @@ Current backend:
 ```yaml
 image_gen:
   backend: comfyui
-  composition_mode: qwen_edit
-  width: 1344
-  height: 768
+  composition_mode: one_pass
+  width: 768
+  height: 512
   steps: 30
   guidance_scale: 3.5
   ip_adapter_scale: 0.8
@@ -119,46 +119,24 @@ image_gen:
     python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true
     open_browser: false
-    workflow_path: config/comfyui/workflows/text_to_image_api.json
-    checkpoint: DreamShaper_8.safetensors
-    width: 1344
-    height: 768
+    workflow_path: config/comfyui/workflows/manga_identity_pose_api.json
+    checkpoint: meinamix_meinaV11.safetensors
+    width: 768
+    height: 512
     steps: 30
     cfg: 7.0
-    sampler_name: euler
-    scheduler: normal
+    sampler_name: dpmpp_2m
+    scheduler: karras
+    negative_prompt: "3d, render, photo, realism, plastic skin, blurry, muddy colors, sketchy lines, bad face, distorted face, deformed face, malformed eyes, asymmetrical eyes, bad anatomy, duplicate face, tiny face, cropped face, melted features, extra limbs, broken hands, unreadable text"
+    vae_name: vae-ft-mse-840000-ema-pruned.safetensors
+    reference_image: reference_assets/uploaded_20260708/ref_zip_1/page/page_1.png
+    refine_upscale: true
+    refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
     poll_seconds: 1.0
     auto_start_timeout: 60
     unload_after_batch: true
 ```
-
-Qwen image edit is enabled but guarded by RAM/VRAM and local file checks:
-
-```yaml
-image_gen:
-  qwen_edit:
-    enabled: true
-    backend: nunchaku
-    workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
-    model_path: external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors
-    lightning_lora: ""
-    steps: 8
-    cfg: 1.0
-    denoise: 0.6
-    vram_offload: true
-    min_available_ram_gib: 8.0
-    min_free_vram_mib: 5000
-    trigger: any_character
-    character_threshold: 0.05
-    cache_dir: .qwen_edit_cache
-    timeout_seconds: 600
-    poll_seconds: 1.0
-    required_custom_nodes:
-      - ComfyUI-nunchaku
-```
-
-If Qwen admission fails, the render keeps the normal ComfyUI result instead of crashing.
 
 ## Video and Script Defaults
 
@@ -195,7 +173,7 @@ If Qwen admission fails, the render keeps the normal ComfyUI result instead of c
 subtitles:
   format: classic
   font: Nirmala UI
-  size: 22
+  size: 18
   color: "&H00FFFFFF&"
   language: en
 ```
@@ -221,10 +199,17 @@ Monster and fog scene templates for backdrop generation. Managed in `config/conf
 | --- | --- | --- |
 | `checkpoint.enabled` | `true` | Enable checkpoint saves |
 | `checkpoint.dir` | `studio_checkpoints` | Checkpoint directory |
-| `checkpoint.max_age_hours` | `24` | Max checkpoint age |
+| `checkpoint.max_age_hours` | `24` | Warning threshold; old checkpoints still resume |
 | `memory.memory_file` | `studio_checkpoints/story_memory.json` | Story memory file path |
 | `memory.llm_world_state` | `true` | Use LLM for world state |
 | `cache.cache_invented_story` | `true` | Cache invented story output |
+
+`utils.checkpoint.CheckpointManager` does not silently expire checkpoints.
+`max_age_hours` only triggers a warning; checkpoints older than 48 hours warn
+more loudly but still load. Saves use an atomic `.tmp` replace, preserve a
+`.bak` copy of the previous good checkpoint, and back up corrupt JSON as
+`.corrupt.<timestamp>`. `clear()` / `delete()` removes the checkpoint and those
+known sibling files.
 
 ## Performance and Safety
 
@@ -334,9 +319,9 @@ that often differ from `config.yaml`:
 | `memory` | `MemoryConfig` | — | matches |
 | `ollama` | `OllamaConfig` | keep_alive="5m", breaker_fails=3, breaker_cooldown_s=30 | diverges (YAML: 3m) |
 | `performance` | `PerformanceConfig` | staged_loop=False, lookahead_segments=0 | diverges (YAML: true, 3) |
-| `image_gen` | `ImageGenConfig` | width=1024, height=1024, steps=12, composition_mode="one_pass" | diverges (YAML: 1344x768, 30, qwen_edit) |
+| `image_gen` | `ImageGenConfig` | width=1024, height=1024, steps=12, composition_mode="one_pass" | diverges (YAML: 768x512, 30, one_pass, manga workflow) |
 | `music` | `MusicConfig` | enabled=False | matches |
-| `subtitles` | `SubtitlesConfig` | format="classic", size=24, font="Arial" | diverges (YAML: 22, Nirmala UI) |
+| `subtitles` | `SubtitlesConfig` | format="classic", size=24, font="Arial" | diverges (YAML: 18, Nirmala UI) |
 | `upload` | `UploadConfig` | enabled=False | matches |
 | `narrator` | `NarratorConfig` | — | matches |
 | `cache` | `CacheConfig` | — | matches |

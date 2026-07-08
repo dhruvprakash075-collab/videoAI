@@ -19,10 +19,10 @@ class TestConfigAPI:
                     "port": 8188,
                     "root": "C:\\Video.AI\\external\\ComfyUI",
                     "auto_start": False,
-                    "workflow_path": "",
-                    "checkpoint": "DreamShaper_8.safetensors",
-                    "width": 1024,
-                    "height": 1024,
+                    "workflow_path": "config/comfyui/workflows/manga_identity_pose_api.json",
+                    "checkpoint": "meinamix_meinaV11.safetensors",
+                    "width": 768,
+                    "height": 512,
                     "steps": 20,
                     "cfg": 7.0,
                     "sampler_name": "euler",
@@ -49,7 +49,7 @@ class TestConfigAPI:
             assert data["comfyUiAdvanced"]["autoStart"] is False
             assert data["comfyUiAdvanced"]["host"] == "127.0.0.1"
             assert data["comfyUiAdvanced"]["port"] == 8188
-            assert data["comfyUiAdvanced"]["checkpoint"] == "DreamShaper_8.safetensors"
+            assert data["comfyUiAdvanced"]["checkpoint"] == "meinamix_meinaV11.safetensors"
 
     @patch("utils.local_ui.load_config")
     @patch("builtins.open", MagicMock())
@@ -124,35 +124,6 @@ class TestConfigAPI:
         assert comfy["cfg"] == 5.0
         assert comfy["sampler_name"] == "dpm_2m"
         assert comfy["scheduler"] == "karras"
-
-    @patch("utils.local_ui.load_config")
-    @patch("builtins.open", MagicMock())
-    @patch("os.replace", MagicMock())
-    @patch("yaml.safe_dump")
-    def test_save_config_enables_resource_gated_qwen(
-        self, mock_yaml_dump, mock_load_config, mock_config
-    ):
-        mock_load_config.return_value = mock_config.copy()
-
-        from fastapi.testclient import TestClient
-
-        from utils.local_ui import app
-
-        response = TestClient(app).post(
-            "/api/config",
-            data={
-                "voice_engine": "omnivoice",
-                "dynamic_subtitles": "false",
-                "uncapped_scaling": "false",
-                "max_images_per_segment": 6,
-                "composition_mode": "qwen_edit",
-            },
-        )
-
-        assert response.status_code == 200
-        image_cfg = mock_yaml_dump.call_args[0][0]["image_gen"]
-        assert image_cfg["composition_mode"] == "qwen_edit"
-        assert image_cfg["qwen_edit"]["enabled"] is True
 
     def test_save_config_validates_image_backend(self, mock_config):
         with patch("utils.local_ui.load_config", return_value=mock_config):

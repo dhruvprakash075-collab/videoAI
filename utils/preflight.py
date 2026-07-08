@@ -198,31 +198,6 @@ def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
         return "ok", f"supertonic voice JSON found: {p} ({p.stat().st_size / 1024:.0f} KB)"
     return "fail", f"supertonic voice JSON not found: {p}"
 
-
-
-def _check_qwen_edit(config: dict) -> tuple[Status, str]:
-    """Check Qwen-Image-Edit only when the optional mode is enabled."""
-    img = config.get("image_gen", {}) or {}
-    composition_mode = img.get("composition_mode", "one_pass")
-    qwen = img.get("qwen_edit", {}) or {}
-    if composition_mode != "qwen_edit" or not qwen.get("enabled", False):
-        return "skip", "Qwen edit disabled"
-
-    try:
-        from video.image_gen.qwen_repose import preflight_qwen_edit
-    except Exception as e:
-        return "fail", f"could not import Qwen edit preflight: {e}"
-
-    missing = preflight_qwen_edit(config)
-    if missing:
-        return (
-            "warn",
-            f"qwen_edit preflight found {len(missing)} issue(s); frames will fall back to base images. Issues:\n"
-            + "\n".join(f"  - {item}" for item in missing),
-        )
-    return "ok", "qwen_edit preflight passed (workflow, model path, LoRA, and custom nodes present)"
-
-
 def _check_playwright(config: dict) -> tuple[Status, str]:
     """When upload is enabled, verify Playwright browser is installed."""
     upload = config.get("upload", {})
@@ -314,7 +289,6 @@ def run_preflight(
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
-        _timed(lambda: _check_qwen_edit(config), name="qwen_edit"),
         _timed(_check_ffmpeg, name="ffmpeg"),
         _timed(lambda: _check_playwright(config), name="playwright"),
     ]

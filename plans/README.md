@@ -14,7 +14,7 @@ Status values: TODO, IN PROGRESS, DONE, BLOCKED, REJECTED.
 ## Phase dependency order
 
 1. Implement ComfyUI input upload.
-2. Stage Qwen inputs and expose real outcomes.
+2. Keep image generation on the ComfyUI manga workflow.
 3. Make character-presence routing deterministic.
 4. Make seed locking truthful.
 5. Consolidate research.
@@ -22,7 +22,7 @@ Status values: TODO, IN PROGRESS, DONE, BLOCKED, REJECTED.
 7. Remove or explicitly defer feature shells.
 8. Perform focused automated acceptance, followed by an explicitly authorized one-frame hardware test.
 
-Qwen web-UI wiring is intentionally excluded.
+Additional image-edit experiments are intentionally excluded.
 
 Plan 002 is independent of Plan 001. It reuses the current ComfyUI and FFmpeg path and must preserve all pre-existing work while changing only its declared scope.
 
@@ -33,7 +33,7 @@ Never run verification commands concurrently. Never run the complete Python test
 ## Considered and rejected
 
 - Letting the Director LLM freely choose backend names: rejected because structured `char_presence` plus deterministic routing is more reliable and testable.
-- Wiring Qwen into the dashboard now: rejected by explicit operator direction.
+- Wiring extra image-edit modes into the dashboard now: rejected by explicit operator direction.
 - Keeping dead feature shells merely for possible future use: rejected; Git history already preserves them.
-- Building LoRA training before proving Qwen and IP-Adapter: rejected as premature scope.
+- Building LoRA training before proving the base workflow: rejected as premature scope.
 - Wiring FramePack immediately: rejected because it lacks production integration and needs a separate GPU-calibrated spike.

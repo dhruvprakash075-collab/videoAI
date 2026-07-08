@@ -23,14 +23,14 @@ const DEFAULT_CONFIG = {
     port: 8188,
     root: 'external/ComfyUI',
     python: 'external/ComfyUI/.venv/Scripts/python.exe',
-    workflowPath: 'config/comfyui/workflows/text_to_image_api.json',
-    checkpoint: 'DreamShaper_8_pruned.safetensors',
-    width: 1024,
-    height: 1024,
-    steps: 20,
+    workflowPath: 'config/comfyui/workflows/manga_identity_pose_api.json',
+    checkpoint: 'meinamix_meinaV11.safetensors',
+    width: 768,
+    height: 512,
+    steps: 30,
     cfg: 7.0,
-    samplerName: 'euler',
-    scheduler: 'normal',
+    samplerName: 'dpmpp_2m',
+    scheduler: 'karras',
     timeoutSeconds: 300,
     pollSeconds: 1,
     unloadAfterBatch: true,
@@ -44,7 +44,6 @@ const BACKEND_OPTIONS = [
 
 const COMPOSITION_OPTIONS = [
   { value: 'one_pass', label: 'One Pass' },
-  { value: 'qwen_edit', label: 'Qwen Edit (resource gated)' },
 ];
 
 const SAMPLER_OPTIONS = ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_sde', 'ddim'];

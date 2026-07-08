@@ -752,12 +752,6 @@ def make_process_segment(
             ws_block = self.world_state.to_prompt_block()
 
             try:
-                # ComfyUI may have just rendered this segment. Release its model
-                # before loading the Director again on constrained GPUs.
-                if self.config.get("image_gen", {}).get("backend") == "comfyui":
-                    from video.image_gen.image_gen import _free_comfyui_memory
-
-                    _free_comfyui_memory(self.config.get("image_gen", {}))
                 evict_ollama_models(self.config, reason="Memory review model handoff")
                 review_result = self.director_agent_instance.review_segment_memory(
                     segment_script=script,

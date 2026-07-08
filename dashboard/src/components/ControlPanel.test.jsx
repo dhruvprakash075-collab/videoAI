@@ -53,7 +53,7 @@ describe('ControlPanel', () => {
     expect(screen.getByText('Voice Engine')).toBeInTheDocument();
     expect(screen.getByText('Visual Generation')).toBeInTheDocument();
     expect(screen.getByText('Post-Production')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Qwen Edit \(resource gated\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /One Pass/i })).toBeInTheDocument();
   });
 
   it('opens the separate Comfy UI settings menu', async () => {
@@ -62,7 +62,7 @@ describe('ControlPanel', () => {
     await user.click(screen.getByRole('button', { name: /Comfy UI/i }));
     expect(screen.getByText('Runtime Paths')).toBeInTheDocument();
     expect(screen.getByLabelText(/Server URL/i)).toHaveValue('http://127.0.0.1:8188');
-    expect(screen.getByLabelText(/Workflow JSON/i)).toHaveValue('config/comfyui/workflows/text_to_image_api.json');
+    expect(screen.getByLabelText(/Workflow JSON/i)).toHaveValue('config/comfyui/workflows/manga_identity_pose_api.json');
     expect(screen.getByRole('button', { name: /Auto Start/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -211,7 +211,7 @@ describe('ControlPanel', () => {
     expect(body.get('image_backend')).toBe('comfyui');
     expect(body.get('comfyui_server')).toBe('http://127.0.0.1:9001');
     expect(body.get('comfyui_checkpoint')).toBe('future_model.safetensors');
-    expect(body.get('comfyui_workflow_path')).toBe('config/comfyui/workflows/text_to_image_api.json');
+    expect(body.get('comfyui_workflow_path')).toBe('config/comfyui/workflows/manga_identity_pose_api.json');
   });
 
   it('alerts when the save response reports a non-success status', async () => {

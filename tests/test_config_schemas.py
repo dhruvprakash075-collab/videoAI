@@ -8,7 +8,6 @@ from config.config_schemas import (
     DecisionConflict,
     DecisionRecord,
     ImageGenConfig,
-    QwenEditConfig,
     ShotDistribution,
     UserResponses,
     VideoAIConfig,
@@ -72,54 +71,11 @@ def test_video_ai_config():
     assert cfg_invalid.critic.threshold == 60
 
 
-def test_qwen_edit_schema_defaults_and_validation():
+def test_image_gen_schema_defaults_and_removed_compositor_rejected():
     img = ImageGenConfig()
     assert img.composition_mode == "one_pass"
-    assert isinstance(img.qwen_edit, QwenEditConfig)
-    assert img.qwen_edit.enabled is False
-    assert img.qwen_edit.backend == "nunchaku"
-    assert img.qwen_edit.min_available_ram_gib == 8.0
-    assert img.qwen_edit.min_free_vram_mib == 5000
-
-    valid = validate_config(
-        {
-            "image_gen": {
-                "composition_mode": "qwen_edit",
-                "qwen_edit": {
-                    "enabled": True,
-                    "backend": "nunchaku",
-                    "model_path": "models/qwen-image-edit.safetensors",
-                    "min_available_ram_gib": 8.0,
-                    "min_free_vram_mib": 5000,
-                    "required_custom_nodes": ["ComfyUI-nunchaku"],
-                },
-            }
-        }
-    )
-    assert valid["image_gen"]["composition_mode"] == "qwen_edit"
-    assert valid["image_gen"]["qwen_edit"]["enabled"] is True
-    assert valid["image_gen"]["qwen_edit"]["min_available_ram_gib"] == 8.0
-    assert valid["image_gen"]["qwen_edit"]["required_custom_nodes"] == ["ComfyUI-nunchaku"]
-
     with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
-        validate_config({"image_gen": {"qwen_edit": {"unknown_key": True}}})
-
-
-def test_qwen_edit_trigger_is_closed_enum():
-    # any_character and disabled are the only accepted values
-    for trigger in ("any_character", "disabled"):
-        valid = validate_config({"image_gen": {"qwen_edit": {"trigger": trigger}}})
-        assert valid["image_gen"]["qwen_edit"]["trigger"] == trigger
-
-    with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
-        validate_config({"image_gen": {"qwen_edit": {"trigger": "sometimes"}}})
-
-
-def test_qwen_edit_dropped_resolution_keys_are_rejected():
-    # max_resolution and youtube_aspect were never read; extra=forbid rejects them
-    for removed in ("max_resolution", "youtube_aspect"):
-        with pytest.raises(FatalError, match="Config section 'image_gen' validation failed"):
-            validate_config({"image_gen": {"qwen_edit": {removed: 1024}}})
+        validate_config({"image_gen": {"removed_compositor": {"unknown_key": True}}})
 
 
 def test_helpers():

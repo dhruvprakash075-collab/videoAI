@@ -126,14 +126,14 @@ _COMFYUI_UI_DEFAULTS = {
     "port": 8188,
     "root": "external/ComfyUI",
     "python": "external/ComfyUI/.venv/Scripts/python.exe",
-    "workflowPath": "config/comfyui/workflows/text_to_image_api.json",
-    "checkpoint": "DreamShaper_8_pruned.safetensors",
-    "width": 1024,
-    "height": 1024,
-    "steps": 20,
+    "workflowPath": "config/comfyui/workflows/manga_identity_pose_api.json",
+    "checkpoint": "meinamix_meinaV11.safetensors",
+    "width": 768,
+    "height": 512,
+    "steps": 30,
     "cfg": 7.0,
-    "samplerName": "euler",
-    "scheduler": "normal",
+    "samplerName": "dpmpp_2m",
+    "scheduler": "karras",
     "timeoutSeconds": 300,
     "pollSeconds": 1,
     "unloadAfterBatch": True,
@@ -759,10 +759,9 @@ async def save_ui_config(
 
         if composition_mode:
             cm = composition_mode.strip().lower()
-            if cm not in {"one_pass", "qwen_edit"}:
-                raise ValueError("composition_mode must be 'one_pass' or 'qwen_edit'")
+            if cm != "one_pass":
+                raise ValueError("composition_mode must be 'one_pass'")
             image_cfg["composition_mode"] = cm
-            image_cfg.setdefault("qwen_edit", {})["enabled"] = cm == "qwen_edit"
 
         if any(
             value is not None

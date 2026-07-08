@@ -87,5 +87,4 @@ Latest local result: `2060 passed, 5 skipped`; Ruff clean; BasedPyright `0 error
 - `docs/configuration_reference.md`
 - `docs/runtime_safety_guide.md`
 - `docs/testing_and_linting.md`
-- `docs/qwen_image_edit_setup.md`
 - `docs/service_instructions.txt`

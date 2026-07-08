@@ -39,15 +39,17 @@ Operator CLI/UI
 | `jobs/` | SQLite job queue and worker |
 | `memory/` | Story memory, blackboard, project store |
 | `utils/` | Source loading, research, critic, SEO, preflight, shutdown, URL security |
-| `video/image_gen/` | ComfyUI client/runtime/workflow, Qwen edit, image generation |
+| `video/image_gen/` | ComfyUI client/runtime/workflow and image generation |
 | `video/renderer/` | Segment assembly, subtitles, final video helpers |
 
 ## Current Runtime Defaults
 
 - TTS default: `indicf5`
 - Image backend: `comfyui`
-- Composition mode: `qwen_edit`
-- Image size: `1344x768`
+- Composition mode: `one_pass`
+- Image size: `768x512`
+- ComfyUI workflow: `config/comfyui/workflows/manga_identity_pose_api.json`
+- Checkpoint: `meinamix_meinaV11.safetensors`
 - Final video target: `1920x1080`
 - Segment mode: staged loop enabled
 - Heavy task concurrency: one heavy GPU task at a time
@@ -68,7 +70,18 @@ ComfyUI is managed by:
 - `video/image_gen/comfyui_client.py`
 - `video/image_gen/comfyui_workflow.py`
 
-Qwen image edit is configured under `image_gen.qwen_edit`. Admission checks protect RAM/VRAM and missing local nodes/models. Failure falls back to the normal ComfyUI frame instead of crashing the render.
+The default path is one-pass ComfyUI with the manga identity/pose workflow.
+
+## Checkpoints
+
+`utils.checkpoint.CheckpointManager` stores per-topic JSON checkpoints under
+`checkpoint.dir` (`studio_checkpoints` by default). Saves are atomic
+`*.tmp -> *.json` replaces, keep a `.bak` copy of the previous good file, and
+back up corrupt JSON as `.corrupt.<timestamp>` before starting fresh. Old
+checkpoints are no longer silently expired: `max_age_hours` only emits a
+warning, and checkpoints older than 48 hours warn loudly but still resume.
+Use `clear()` / `delete()` to remove a checkpoint and its `.bak`, `.tmp`, and
+`.corrupt.*` siblings.
 
 ## Safety
 

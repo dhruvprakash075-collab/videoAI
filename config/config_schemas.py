@@ -319,14 +319,14 @@ class ComfyUIConfig(BaseModel):
     python: str = "python"
     auto_start: bool = True
     open_browser: bool = False
-    workflow_path: str = ""
-    checkpoint: str = "DreamShaper_8.safetensors"
-    width: int = 1024
-    height: int = 1024
-    steps: int = 20
+    workflow_path: str = "config/comfyui/workflows/manga_identity_pose_api.json"
+    checkpoint: str = "meinamix_meinaV11.safetensors"
+    width: int = 768
+    height: int = 512
+    steps: int = 30
     cfg: float = 7.0
-    sampler_name: str = "euler"
-    scheduler: str = "normal"
+    sampler_name: str = "dpmpp_2m"
+    scheduler: str = "karras"
     negative_prompt: str = ""
     vae_name: str | None = None
     loras: list[dict] = Field(default_factory=list)
@@ -349,27 +349,6 @@ class UpscalerConfig(BaseModel):
     target_height: int = 1080
 
 
-class QwenEditConfig(BaseModel):
-    model_config = {"extra": "forbid"}
-    enabled: bool = False
-    backend: str = "nunchaku"
-    workflow_path: str = "config/comfyui/workflows/qwen_image_edit_api.json"
-    model_path: str = ""
-    lightning_lora: str = ""
-    steps: int = 8
-    cfg: float = 1.0
-    denoise: float = 0.6
-    vram_offload: bool = True
-    min_available_ram_gib: float = Field(default=8.0, ge=0)
-    min_free_vram_mib: int = Field(default=5000, ge=0)
-    trigger: Literal["any_character", "disabled"] = "any_character"
-    character_threshold: float = 0.05
-    cache_dir: str = ".qwen_edit_cache"
-    timeout_seconds: int = 600
-    poll_seconds: float = 1.0
-    required_custom_nodes: list[str] = Field(default_factory=list)
-
-
 class ImageGenConfig(BaseModel):
     model_config = {"extra": "forbid"}
     backend: str = "comfyui"
@@ -387,7 +366,6 @@ class ImageGenConfig(BaseModel):
     upscaler: UpscalerConfig = Field(default_factory=UpscalerConfig)
     comfyui: ComfyUIConfig = Field(default_factory=ComfyUIConfig)
     composition_mode: str = "one_pass"
-    qwen_edit: QwenEditConfig = Field(default_factory=QwenEditConfig)
 
 
 class MusicConfig(BaseModel):

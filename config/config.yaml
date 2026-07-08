@@ -172,25 +172,6 @@ image_gen:
     poll_seconds: 1.0
     auto_start_timeout: 60
     unload_after_batch: true
-  qwen_edit:
-    enabled: false
-    backend: nunchaku
-    workflow_path: config/comfyui/workflows/qwen_image_edit_api.json
-    model_path: "external/ComfyUI/models/diffusion_models/qwen_image_edit_2509_int4.safetensors"
-    lightning_lora: ""
-    steps: 8
-    cfg: 1.0
-    denoise: 0.6
-    vram_offload: true
-    min_available_ram_gib: 8.0
-    min_free_vram_mib: 5000
-    trigger: any_character
-    character_threshold: 0.05
-    cache_dir: .qwen_edit_cache
-    timeout_seconds: 600
-    poll_seconds: 1.0
-    required_custom_nodes:
-      - ComfyUI-nunchaku
 subtitles:
   format: classic
   font: Nirmala UI

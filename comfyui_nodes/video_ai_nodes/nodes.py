@@ -320,8 +320,6 @@ class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):  # noqa: N801
         name = checkpoint_name.lower()
         if "flux" in name:
             return "flux"
-        if "qwen" in name:
-            return "qwen"
         if any(token in name for token in ("sdxl", "_xl", "xl_base", "pony", "illustrious")):
             return "sdxl"
         if any(token in name for token in ("sd15", "sd_15", "v1-5", "v1_5", "dreamshaper", "realisticvision")):
@@ -342,7 +340,7 @@ class VideoAI_SmartFaceIDLoraRouter(io.ComfyNode):  # noqa: N801
                 io.Combo.Input("lora_name", options=cls._lora_options()),
                 io.Float.Input("strength_model", default=0.8, min=-20.0, max=20.0, step=0.01),
                 io.Float.Input("strength_clip", default=0.8, min=-20.0, max=20.0, step=0.01),
-                io.Combo.Input("model_family", options=["auto", "sd15", "sdxl", "flux", "qwen"], default="auto"),
+                io.Combo.Input("model_family", options=["auto", "sd15", "sdxl", "flux"], default="auto"),
             ],
             outputs=[
                 io.Model.Output(display_name="MODEL"),
@@ -517,7 +515,7 @@ VideoAI_SmartFaceIDLoraRouter.INPUT_TYPES = classmethod(lambda cls: {
         "lora_name": (cls._lora_options(),),
         "strength_model": ("FLOAT", {"default": 0.8, "min": -20.0, "max": 20.0, "step": 0.01}),
         "strength_clip": ("FLOAT", {"default": 0.8, "min": -20.0, "max": 20.0, "step": 0.01}),
-        "model_family": (["auto", "sd15", "sdxl", "flux", "qwen"], {"default": "auto"}),
+        "model_family": (["auto", "sd15", "sdxl", "flux"], {"default": "auto"}),
     },
 })
 
