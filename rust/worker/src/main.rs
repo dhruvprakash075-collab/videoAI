@@ -1392,7 +1392,7 @@ mod tests {
                 "@echo off\r\nexit /b 0\r\n"
             };
             fs::write(&path, body)?;
-            return Ok(path);
+            Ok(path)
         }
 
         #[cfg(not(windows))]
