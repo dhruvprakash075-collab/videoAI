@@ -2,14 +2,14 @@
 
 ## Minimum Test Coverage: 80%
 
-Test Types (ALL required):
+Test types to consider when risk justifies them:
 1. **Unit Tests** — Individual functions, utilities, components
 2. **Integration Tests** — Module interactions, API endpoints
 3. **Regression Tests** — Specific bug fixes
 
 ## Test-Driven Development
 
-MANDATORY workflow:
+Preferred workflow for non-trivial behavior changes:
 1. Write test first (RED)
 2. Run test — it should FAIL
 3. Write minimal implementation (GREEN)

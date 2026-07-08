@@ -11,7 +11,7 @@ paths:
 
 - Follow **PEP 8** conventions
 - Use **type annotations** on all function signatures
-- Use **ruff** for linting (`ruff check .`)
+- Use **ruff** for linting (`venv\Scripts\python.exe -m ruff check .`)
 
 ## Immutability
 

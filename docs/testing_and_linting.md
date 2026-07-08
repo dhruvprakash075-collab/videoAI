@@ -8,8 +8,8 @@ This repo is verified with backend tests, Ruff, and mypy (CI) / BasedPyright (lo
 .\venv\Scripts\python.exe -m pytest -q
 ```
 
-Current local result: `2053 collected, 0 errors`. Test
-files with `pytest.mark.skip` are skipped as expected.
+Current local result after the static hardening work:
+`2060 passed, 5 skipped`.
 
 To run individual test files:
 
@@ -35,6 +35,17 @@ Important test fixtures:
 ```
 
 Current local result: clean.
+
+CI runs the same lint command with GitHub output:
+
+```powershell
+python -m ruff check . --output-format=github
+```
+
+Project convention: broad `except Exception` handlers must not silently
+`pass`. Use a narrower exception when possible, or log/debug the fallback
+reason when the handler is intentionally best-effort cleanup, optional
+dependency handling, parser fallback, or "keep the pipeline alive" behavior.
 
 ## Type Checking
 

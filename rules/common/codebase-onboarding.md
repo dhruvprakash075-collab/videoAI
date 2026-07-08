@@ -29,7 +29,7 @@ Gather raw signals without reading every file:
    - Top 2 levels, ignoring `__pycache__`, `venv/`, `node_modules/`
 
 5. **Config and tooling detection**
-   - `ruff check .`, `pyproject.toml`, `.claude/`
+   - `venv\Scripts\python.exe -m ruff check .`, `pyproject.toml`, `.claude/`
 
 6. **Test structure detection**
    - `tests/`, `pytest.ini`, `conftest.py`
@@ -85,6 +85,6 @@ See `AGENTS.md`, `README.md`, and the live files under `docs/` for the onboardin
 |------|---------|
 | Run pipeline | `venv\Scripts\python.exe bootstrap_pipeline.py --topic "Topic"` |
 | Run tests | `venv\Scripts\python.exe -m pytest tests/ -q` |
-| Lint | `ruff check .` |
+| Lint | `venv\Scripts\python.exe -m ruff check .` |
 | Dashboard | `cd dashboard && npm run dev` |
 | Local API | `venv\Scripts\python.exe utils\local_ui.py` |

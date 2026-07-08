@@ -48,14 +48,14 @@ venv\Scripts\python.exe -m pytest tests/test_qwen_repose.py tests/test_image_gen
 Run the targeted Ruff check:
 
 ```powershell
-venv\Scripts\ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_image_gen.py tests/test_config_schemas.py tests/test_preflight.py scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py
+venv\Scripts\python.exe -m ruff check video/image_gen/image_gen.py video/image_gen/qwen_repose.py utils/preflight.py config/config_schemas.py tests/test_qwen_repose.py tests/test_image_gen.py tests/test_config_schemas.py tests/test_preflight.py scripts/qwen_edit_spike_check.py tests/test_qwen_spike_check.py
 ```
 
 Optional full local gate:
 
 ```powershell
 venv\Scripts\python.exe -m pytest tests/ -q
-venv\Scripts\ruff check .
+venv\Scripts\python.exe -m ruff check .
 ```
 
 ## Repo-side local spike harness

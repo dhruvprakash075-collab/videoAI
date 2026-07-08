@@ -79,7 +79,7 @@ Current backend verification:
 $env:PYTHONPATH="C:\Video.AI\codex_tmp\scanner_pkgs;C:\Video.AI\codex_tmp\checker_deps"; python -m basedpyright
 ```
 
-Latest local result: `1969 passed, 5 skipped`; Ruff clean; BasedPyright `0 errors, 0 warnings`.
+Latest local result: `2060 passed, 5 skipped`; Ruff clean; BasedPyright `0 errors, 0 warnings`.
 
 ## Live Documentation
 
