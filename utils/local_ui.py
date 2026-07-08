@@ -424,8 +424,8 @@ async def upload_script(
         job_request["image_backend"] = img.get("backend")
         cosy = img.get("comfyui", {}) or {}
         job_request["comfyui_checkpoint"] = cosy.get("checkpoint")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Could not enrich job request from config: {exc}")
 
     job_id = job_store.create_job(
         job_request,
@@ -545,13 +545,13 @@ async def upload_voice(file: UploadFile = File(...), character_name: str = Form(
             try:
                 if temp_path.exists():
                     temp_path.unlink()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"Could not remove temp upload {temp_path}: {exc}")
             try:
                 if temp_out.exists():
                     temp_out.unlink()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"Could not remove temp optimized voice {temp_out}: {exc}")
     except Exception:
         log.error("Voice upload failed", exc_info=True)
         return JSONResponse(
@@ -965,8 +965,8 @@ async def ab_generate(
 
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug(f"CUDA cache cleanup skipped after AB job failure: {exc}")
 
                 out_a = Path("studio_outputs") / "ab_test" / job_id / "variant_a"
                 out_b = Path("studio_outputs") / "ab_test" / job_id / "variant_b"
@@ -1347,8 +1347,8 @@ async def list_memory():
                             "project": proj_dir.name,
                             "scope": "project",
                         })
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"Skipping unreadable memory file {project_json}: {exc}")
 
     checkpoints_dir = Path("studio_checkpoints")
     if checkpoints_dir.exists():
@@ -1362,8 +1362,8 @@ async def list_memory():
                             item["key"] = key
                             item["source"] = str(f.relative_to(checkpoints_dir.parent))
                             memory_items.append(item)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"Skipping unreadable permanent memory file {f}: {exc}")
 
     # Also scan nested story.json files under studio_projects/*/stories/
     sp_dir = Path("studio_projects")
@@ -1376,8 +1376,8 @@ async def list_memory():
                     item = {"key": "story.json", "type": "story", "source": str(f.relative_to(sp_dir.parent))}
                     item.update(data)
                     memory_items.append(item)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"Skipping unreadable story file {f}: {exc}")
 
     return {"memory": memory_items}
 

@@ -19,8 +19,9 @@ try:
     from utils.sentry import init_sentry
 
     init_sentry()
-except Exception:
-    pass
+except Exception as exc:
+    import logging
+    logging.getLogger(__name__).debug(f"Sentry initialization skipped: {exc}")
 
 # Disable all CrewAI telemetry/OpenTelemetry to prevent network timeouts/deadlocks
 os.environ["OTEL_SDK_DISABLED"] = "true"

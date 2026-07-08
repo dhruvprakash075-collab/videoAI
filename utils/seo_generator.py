@@ -243,8 +243,8 @@ def _parse_seo_response(raw: str) -> dict | None:
         data = extract_json(raw)
         if isinstance(data, dict):
             return data
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"SEO JSON parse failed: {exc}")
     return None
 
 

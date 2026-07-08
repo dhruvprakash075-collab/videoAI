@@ -203,8 +203,8 @@ class DirectorLlmClient:
             try:
                 self._call_ollama("Hello", model_type=model_type)
                 log.info(f"[DIRECTOR] Ollama pre-warmed: {model_type}")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"[DIRECTOR] Ollama prewarm skipped for {model_type}: {exc}")
 
         threading.Thread(target=_warm, args=("director",), daemon=True).start()
         threading.Thread(target=_warm, args=("writer",), daemon=True).start()

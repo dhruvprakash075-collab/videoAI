@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -44,7 +45,9 @@ class Worker:
             import yaml
             cfg_path = REPO_ROOT / "config" / "config.yaml"
             with open(cfg_path, encoding="utf-8", errors="replace") as f:
-                cfg = yaml.safe_load(f)
+                cfg = yaml.safe_load(f) or {}
+            if not isinstance(cfg, dict):
+                return "http://127.0.0.1:8188/"
             img = cfg.get("image_gen", {}) or {}
             cosy = img.get("comfyui", {}) or {}
             host = cosy.get("host", "127.0.0.1")
@@ -94,6 +97,9 @@ class Worker:
                 raise ValueError(f"Invalid request_json JSON: {exc}") from exc
         elif req is None:
             req = {}
+        if not isinstance(req, Mapping):
+            raise ValueError("request_json must be an object")
+        req = dict(req)
         cmd = [str(VENV_PY), str(BOOTSTRAP)]
         topic = req.get("topic") or job.get("topic")
         if topic:
@@ -182,7 +188,12 @@ class Worker:
 
         self.store.append_event(job_id, f"starting: {' '.join(cmd)}", event_type="system")
 
-        proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NEW_PROCESS_GROUP)
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NEW_PROCESS_GROUP)
+        except Exception as exc:
+            self.store.append_event(job_id, f"start_failed: {exc}", event_type="system")
+            self.store.update_job(job_id, status=STATUS_FAILED, error=str(exc))
+            return job_id
 
         # Start heartbeat thread with a per-job stop event (H1 fix)
         job_stop = threading.Event()

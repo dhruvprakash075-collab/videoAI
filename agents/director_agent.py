@@ -180,8 +180,8 @@ class DirectorAgent:
             try:
                 if not sys.stdin.isatty():
                     return None
-            except Exception:
-                pass
+            except (AttributeError, OSError):
+                return None
 
             try:
                 return input(prompt)
@@ -354,8 +354,8 @@ class DirectorAgent:
             try:
                 if not sys.stdin.isatty():
                     return None
-            except Exception:
-                pass
+            except (AttributeError, OSError):
+                return None
 
             try:
                 return input(prompt)
@@ -511,7 +511,8 @@ class DirectorAgent:
 
             if prompts_path.exists():
                 with open(prompts_path, encoding="utf-8") as f:
-                    cls._prompts = yaml.safe_load(f) or {}
+                    prompts = yaml.safe_load(f) or {}
+                cls._prompts = prompts if isinstance(prompts, dict) else {}
 
                 log.info(
                     f"[DIRECTOR] Loaded {len(cls._prompts)} prompt templates from {prompts_path}"
@@ -800,8 +801,8 @@ class DirectorAgent:
             if cp.exists():
                 return json.loads(cp.read_text(encoding="utf-8"))
 
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"[DIRECTOR] Ignoring unreadable vision cache {cp}: {exc}")
 
         return {}
 
@@ -1360,8 +1361,8 @@ class DirectorAgent:
             try:
                 from audio.audio_proxy import normalize_tts_engine
                 vision["tts_recommendation"] = normalize_tts_engine(tts_rec)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"[DIRECTOR] TTS recommendation normalization skipped: {exc}")
 
         # theme / emotions / pacing: must be strings
         for _str_field in ("theme", "emotions", "pacing"):
@@ -1640,14 +1641,14 @@ class DirectorAgent:
                 try:
                     from audio.audio_proxy import normalize_tts_engine
                     engine = normalize_tts_engine(tts_response)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"[DIRECTOR] TTS response normalization skipped: {exc}")
             else:
                 try:
                     from audio.audio_proxy import normalize_tts_engine
                     engine = normalize_tts_engine(engine)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"[DIRECTOR] TTS default normalization skipped: {exc}")
             tts_lang = (
                 self.llm_config.get("tts", {}).get("lang", "hi")
                 if isinstance(self.llm_config, dict)
@@ -2082,8 +2083,8 @@ class DirectorAgent:
         try:
             _cfg = self.llm_config if isinstance(self.llm_config, dict) else {}
             _cache_enabled = _cfg.get("cache", {}).get("cache_invented_story", True)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"[DIRECTOR] Invented-story cache config unavailable: {exc}")
 
         if _cache_enabled and not force_refresh:
             _topic_hash = _hs.sha256(topic.strip().lower().encode()).hexdigest()[:12]

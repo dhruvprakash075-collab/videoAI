@@ -71,6 +71,8 @@ class VisionCache:
             return self._cfg_hash_cache
         with open(self._cfg_path, encoding="utf-8") as f:
             c = yaml.safe_load(f) or {}
+        if not isinstance(c, dict):
+            c = {}
         r = {
             "models": c.get("models", {}),
             "ollama_host": c.get("ollama", {}).get("host"),
@@ -90,6 +92,8 @@ class VisionCache:
             return self._prp_hash_cache
         with open(self._prp_path, encoding="utf-8") as f:
             p = yaml.safe_load(f) or {}
+        if not isinstance(p, dict):
+            p = {}
         content = json.dumps(p.get(self._pk, ""), sort_keys=True)
         self._prp_hash_cache = hashlib.sha256(content.encode()).hexdigest()[:16]
         self._prp_mtime = mtime

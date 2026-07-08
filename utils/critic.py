@@ -171,8 +171,8 @@ def parse_critic_json(raw: str) -> CriticScore | None:
             data = data[0]
         if isinstance(data, dict):
             return _score_from_dict(data)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Critic score parse failed: {exc}")
 
     return None
 

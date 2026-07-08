@@ -243,8 +243,8 @@ def _parse_llm_chunks(raw: str, expected: int) -> list[dict] | None:
         data = extract_json(raw)
         if isinstance(data, list):
             return data[:expected] if len(data) >= expected else None
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Source split JSON parse failed: {exc}")
     return None
 
 

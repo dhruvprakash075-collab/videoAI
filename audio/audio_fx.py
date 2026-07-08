@@ -76,8 +76,8 @@ def mix_sfx(
             from agents.director_agent import UIState
 
             UIState.add_degradation(segment_idx, "sfx_skip", reason)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Could not record SFX degradation: {exc}")
 
     if not audio_path.exists():
         log.warning(f"Audio file not found: {audio_path} — skipping SFX")
@@ -244,8 +244,8 @@ def apply_premium_voice_processing(input_path: Path, output_path: Path) -> bool:
             sibilant = sound.high_pass_filter(6000)
             non_sibilant = sound.low_pass_filter(6000)
             sound = non_sibilant.overlay(sibilant.apply_gain(-3.0))
-        except Exception:
-            pass  # non-fatal
+        except Exception as exc:
+            log.debug(f"De-esser skipped: {exc}")
 
         # 5. P3-6 fix: apply peak limiting BEFORE loudness normalization.
         # Previously: gain to -14 dBFS first, then check peak → peaks could clip
@@ -284,8 +284,8 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
             from agents.director_agent import UIState
 
             UIState.add_degradation(segment_idx, "mastering_fallback", reason)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Could not record mastering degradation: {exc}")
 
     if not audio_path.exists():
         log.warning(f"Audio file not found for mastering: {audio_path}")

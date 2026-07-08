@@ -127,8 +127,8 @@ class IPAdapterManager:
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"IP-Adapter torch cache cleanup skipped: {exc}")
 
     def set_scale(self, scale: float) -> None:
         """Set the IP-Adapter scale (0.0–1.0, default 0.8) on the attached pipe.

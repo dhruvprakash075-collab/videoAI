@@ -153,8 +153,8 @@ def remove_empty_dirs(dry_run: bool = True) -> int:
                     try:
                         d.rmdir()
                         removed += 1
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"  [WARN] Could not remove empty dir {d}: {exc}")
     return removed
 
 

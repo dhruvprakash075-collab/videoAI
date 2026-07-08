@@ -137,8 +137,8 @@ OUTPUT ONLY VALID JSON:
             result.setdefault("rewrite_needed", False)
             result.setdefault("rewrite_instructions", "")
             return result
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"[reviewer] JSON parse failed: {exc}")
 
     log.warning(f"[reviewer] Failed to parse JSON: {response[:100]}")
     return {
@@ -296,8 +296,8 @@ Rules:
                         str(t) for t in result.get("resolved_threads", []) if t
                     ],
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"[B3] extract_world_state JSON parse failed: {exc}")
         log.warning(
             f"[B3] extract_world_state: could not parse JSON from response: {response[:100]}"
         )

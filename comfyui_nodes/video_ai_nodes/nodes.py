@@ -124,8 +124,8 @@ class VideoAI_ConfigCheckpointLoader(io.ComfyNode):  # noqa: N801
             if resolved:
                 st = Path(resolved).stat()
                 return f"{ckpt}:{st.st_mtime_ns}:{st.st_size}"
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Checkpoint fingerprint fallback for {ckpt}: {exc}")
         return ckpt
 
 
@@ -258,8 +258,8 @@ class VideoAI_CharacterPortraitLoader(io.ComfyNode):  # noqa: N801
             if path is not None and path.exists():
                 st = path.stat()
                 return f"{path}:{st.st_mtime_ns}:{st.st_size}"
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Character fingerprint fallback for {project_name}/{character_name}: {exc}")
         return f"missing:{project_name}:{character_name}"
 
 

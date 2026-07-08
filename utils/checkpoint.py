@@ -74,8 +74,8 @@ class CheckpointManager:
                 try:
                     shutil.copy2(p, bak)
                     log.warning(f"Corrupt checkpoint backed up to {bak}")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"Could not back up corrupt checkpoint {p}: {exc}")
                 return {}
 
     class _CustomEncoder(json.JSONEncoder):
@@ -119,8 +119,8 @@ class CheckpointManager:
                         try:
                             if tmp.exists():
                                 tmp.unlink()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            log.debug(f"Could not remove temp checkpoint {tmp}: {exc}")
                         raise
                     time.sleep(0.5)
 

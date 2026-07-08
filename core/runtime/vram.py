@@ -26,8 +26,8 @@ def log_vram_usage(label: str = "") -> None:
                 from agents.director_agent import UIState
                 UIState.vram_text = vram_str
                 UIState.vram_peaks.append(round(used_gb, 2))
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug(f"UIState VRAM update skipped: {exc}")
     except ImportError:
         pass
     except Exception as e:
@@ -49,5 +49,5 @@ def aggressive_vram_cleanup(global_scheduler) -> None:
             _t.sleep(0.3)
     except ImportError:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"VRAM cleanup failed: {exc}")

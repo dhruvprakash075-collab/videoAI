@@ -34,8 +34,8 @@ def _vram_gb() -> float:
 
         if torch.cuda.is_available():
             return round(torch.cuda.memory_allocated() / 1e9, 2)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[debug] VRAM read skipped: {exc}", file=sys.stderr)
     return 0.0
 
 
@@ -49,8 +49,8 @@ def _free_vram() -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[debug] VRAM cleanup skipped: {exc}", file=sys.stderr)
 
 
 def _composite(images: list, labels: list, path: Path) -> None:

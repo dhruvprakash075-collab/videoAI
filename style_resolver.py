@@ -26,6 +26,9 @@ class StyleResolver:
             return
         with open(self._path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            log.warning(f"StyleResolver: {self._path} root is not a mapping -- using fallback")
+            return
         self._styles = data.get("styles", {})
         self._fallback = data.get("fallback_prompt", self._fallback)
         log.info(f"StyleResolver: loaded {len(self._styles)} styles from {self._path}")

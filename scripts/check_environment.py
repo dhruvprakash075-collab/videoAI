@@ -30,7 +30,8 @@ def _load_config() -> dict[str, Any]:
     import yaml
 
     with open(cfg_path, encoding="utf-8", errors="replace") as f:
-        return yaml.safe_load(f) or {}
+        data = yaml.safe_load(f) or {}
+    return data if isinstance(data, dict) else {}
 
 
 def check_python_venv() -> tuple[bool, str]:

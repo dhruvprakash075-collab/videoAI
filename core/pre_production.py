@@ -192,8 +192,8 @@ def run_pre_production(
         try:
             prev_overlay = _json.loads(prev_overlay_path.read_text(encoding="utf-8"))
             log.info(f"[PRE-PROD] Loaded previous config overlay: {prev_overlay_path.name}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(f"[PRE-PROD] Ignoring unreadable previous overlay {prev_overlay_path.name}: {exc}")
 
     if skip_consultation and prev_overlay:
         log.info("[PRE-PROD] Series resume detected — skipping phases 1-3, reusing previous config")
@@ -438,12 +438,14 @@ def plan_outline(
     from utils.story_planner import _default_outline_used, plan_story
 
     ck_meta = cp_mgr.get(f"{topic}_meta") if resume else None
-    if ck_meta and "outline" in ck_meta:
+    if ck_meta and "outline" in ck_meta and ck_meta["outline"].get("data"):
         outline = ck_meta["outline"]["data"]
         log.info("[OK] Story outline loaded from checkpoint")
     else:
         log.info("Planning story outline...")
         outline = plan_story(topic, n_segs, config, director_agent)
+        if not outline:
+            raise ValueError("Story planner returned no segments")
         cp_mgr.save(f"{topic}_meta", "outline", {"data": outline})
         log.info(f"[OK] Story outline: {len(outline)} segments")
 

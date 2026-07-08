@@ -67,8 +67,8 @@ def _ensure_init():
         import torch as _torch_mod
         _torch = _torch_mod
         _torch._dynamo.config.suppress_errors = True
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Torch optional initialization skipped: {exc}")
 
     _compat_applied = True
     log.info("Compatibility layer initialized")
@@ -391,8 +391,8 @@ def run_long_pipeline(
         from agents.director_agent import UIState as _UIState
 
         _UIState.set_progress(total=n_segs)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"UIState progress init skipped: {exc}")
 
     outline = shape_outline(
         outline, config,

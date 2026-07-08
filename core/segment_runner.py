@@ -480,8 +480,8 @@ def make_process_segment(
                 _items = _mem_data.get("memory_items", {}).get(_sk, [])
                 if isinstance(_items, list):
                     _memory_items_for_image.extend(_items)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"  Seg {i}: memory items unavailable for image prompts: {exc}")
 
         enrich_result = enrich_prompts(
             build_prompts(script, plan, config),
@@ -607,7 +607,7 @@ def make_process_segment(
             except Exception as e:
                 from agents.director_agent import UIState as _UIState
                 _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
-                pass
+                log.debug(f"[DIRECTOR] Memory context unavailable for seg {state['i']}: {e}")
 
             enriched_prompts = state.get("enriched_prompts")
             if not enriched_prompts:
@@ -650,8 +650,8 @@ def make_process_segment(
                             stored_hash = (stored or {}).get("identity_hash", "")
                             if stored_hash and current_hash and current_hash != stored_hash:
                                 is_important = True
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug(f"[DIRECTOR] Identity hash check skipped for {img_path}: {exc}")
 
                 if is_important:
                     try:
@@ -736,7 +736,7 @@ def make_process_segment(
             except Exception as e:
                 from agents.director_agent import UIState as _UIState
                 _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
-                pass
+                log.debug(f"[DIRECTOR] Memory context unavailable for seg {state['i']}: {e}")
 
             enriched_prompts = state.get("enriched_prompts")
             if not enriched_prompts:
@@ -886,8 +886,8 @@ def make_process_segment(
                     try:
                         from agents.director_agent import UIState as _UIS
                         _UIS.add_degradation(seg_idx, "segment_skip", str(_e)[:100])
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug(f"UIState degradation record skipped: {exc}")
                     return
                 log.warning(f"Segment {seg_idx}: attempt {_attempt + 1}/{_MAX_PHASE_RETRIES} failed ({_e}), retrying...")
 
@@ -1018,8 +1018,8 @@ def make_process_segment(
                     try:
                         from agents.director_agent import UIState as _UIState
                         _UIState.set_progress(current=completed_segs_counter_holder[0])
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug(f"UIState progress update skipped: {exc}")
                 aggressive_vram_cleanup(global_scheduler)
 
             _retry_segment_phase(_si, _do)
@@ -1048,8 +1048,8 @@ def make_process_segment(
                     mp4 = mp4s[i - 1]
                     if mp4 is not None:
                         duration_s = round(get_video_duration(mp4), 1)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"Could not read segment {i} duration: {exc}")
 
             _UIState.set_segment_manifest(i, {
                 "segment": i,
@@ -1084,8 +1084,8 @@ def make_process_segment(
                     from agents.director_agent import UIState as _UIState
 
                     _UIState.set_progress(current=completed_segs_counter_holder[0])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"UIState progress update skipped: {exc}")
             aggressive_vram_cleanup(global_scheduler)
             log_vram_usage(f"Seg {i} After Cleanup")
             schedule_ollama_stop(config)

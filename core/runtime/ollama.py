@@ -84,8 +84,8 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Torch cache cleanup skipped: {exc}")
     try:
         import torch
         if not torch.cuda.is_available():

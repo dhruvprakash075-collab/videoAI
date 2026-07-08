@@ -79,8 +79,8 @@ def bootstrap():
                         try:
                             self._file.write(text)
                             self._file.flush()
-                        except Exception:
-                            pass
+                        except OSError:
+                            return
 
                 return _safe
 
@@ -527,8 +527,8 @@ def run_pipeline_with_args():
                 print(
                     "[--yes] Auto-accept mode enabled — all Director consultations will use defaults"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Could not enable --yes auto-accept: {e}")
 
         print("\n" + "=" * 60)
 

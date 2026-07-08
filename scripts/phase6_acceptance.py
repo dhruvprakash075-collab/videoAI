@@ -576,7 +576,9 @@ class Watchdog:
 def build_config(run_dir: Path) -> dict[str, Any]:
     import yaml
 
-    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    if not isinstance(config, dict):
+        raise TypeError(f"Config root must be a mapping: {CONFIG_PATH}")
     image_gen = config.setdefault("image_gen", {})
     image_gen["comfyui"] = {
         **(image_gen.get("comfyui", {}) or {}),

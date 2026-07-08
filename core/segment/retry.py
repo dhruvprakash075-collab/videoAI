@@ -29,8 +29,8 @@ def build_retry_wrapper(
                         _UIS.add_degradation(
                             i, "segment_skip", f"retry budget exhausted: {str(_e)[:100]}"
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug(f"UIState degradation record skipped: {exc}")
                     return
                 log.warning(
                     f"Segment {i}: attempt {retry_counts[i]}/{max_retries} failed ({_e}), retrying..."

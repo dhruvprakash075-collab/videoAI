@@ -176,8 +176,8 @@ def _enqueue_stdout(proc, q):
     try:
         for line in iter(proc.stdout.readline, ""):
             q.put(line)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(f"Worker stdout reader stopped: {exc}")
     finally:
         q.put("")  # EOF sentinel
 
@@ -339,8 +339,8 @@ class _SupertonicWorker:
                         self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
                         self._proc.stdin.flush()
                     self._proc.wait(timeout=10)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"Supertonic worker graceful shutdown skipped: {exc}")
             self._cleanup_proc()
 
 
@@ -618,8 +618,8 @@ class _OmniVoiceWorker:
                         self._proc.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
                         self._proc.stdin.flush()
                     self._proc.wait(timeout=10)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"OmniVoice worker graceful shutdown skipped: {exc}")
             self._cleanup_proc()
 
 
@@ -763,8 +763,8 @@ def _call_omnivoice_oneshot(
         try:
             if temp_file.exists():
                 temp_file.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Could not remove temp text file {temp_file}: {exc}")
 
 
 def translate_hinglish(text: str, seg: int = 0) -> str:

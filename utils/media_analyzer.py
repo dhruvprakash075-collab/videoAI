@@ -295,8 +295,8 @@ def analyze_video(path: Path):
                     )
                 else:
                     log_success("Audio-Video stream tracks are perfectly aligned and synced.")
-            except Exception:
-                pass
+            except Exception as exc:
+                log_warn(f"Could not compare audio/video duration: {exc}")
         else:
             log_error("CRITICAL: Video is missing an audio track!")
 
