@@ -98,7 +98,7 @@ class Worker:
         elif req is None:
             req = {}
         if not isinstance(req, Mapping):
-            raise ValueError("request_json must be an object")
+            raise TypeError("request_json must be an object")
         req = dict(req)
         cmd = [str(VENV_PY), str(BOOTSTRAP)]
         topic = req.get("topic") or job.get("topic")

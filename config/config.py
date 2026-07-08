@@ -52,7 +52,7 @@ def load_config(
         with open(config_file, encoding="utf-8") as f:
             config_data = yaml.safe_load(f) or {}
             if not isinstance(config_data, dict):
-                raise ValueError(f"Config root must be a mapping: {config_file}")
+                raise TypeError(f"Config root must be a mapping: {config_file}")
             base_config = dict_merge(base_config, config_data)
     else:
         log.warning("config.yaml missing — using defaults")
@@ -64,7 +64,7 @@ def load_config(
             with open(project_file, encoding="utf-8") as f:
                 project_config = yaml.safe_load(f) or {}
                 if not isinstance(project_config, dict):
-                    raise ValueError(f"Project config root must be a mapping: {project_display}")
+                    raise TypeError(f"Project config root must be a mapping: {project_display}")
                 base_config = dict_merge(base_config, project_config)
                 log.info(f"Loaded project configuration: {project_name}")
         else:

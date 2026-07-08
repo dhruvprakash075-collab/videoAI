@@ -335,7 +335,7 @@ class WorkflowPatcher:
             ),
             key=lambda node_id: int(node_id) if str(node_id).isdigit() else node_id,
         )
-        for node_id, spec in zip(lora_ids, loras):
+        for node_id, spec in zip(lora_ids, loras, strict=False):
             inputs = self.workflow[node_id].setdefault("inputs", {})
             for key in ("lora_name", "strength_model", "strength_clip"):
                 if key in spec:
