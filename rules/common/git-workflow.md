@@ -142,10 +142,10 @@ git commit --amend -m "New message"
 # .git/hooks/pre-commit
 
 # Run linting
-ruff check . || exit 1
+venv/Scripts/python.exe -m ruff check . || exit 1
 
 # Run tests
-pytest tests/ -q || exit 1
+venv/Scripts/python.exe -m pytest tests/ -q || exit 1
 
 # Check for secrets
 if git diff --cached | grep -E '(password|api_key|secret)'; then

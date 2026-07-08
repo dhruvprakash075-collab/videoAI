@@ -143,6 +143,20 @@ importing it inside that test only.
 `python-multipart`, `pydub`, `soundfile`, `psutil`, `playwright`.
 Torch (200MB+) is never downloaded — the stub covers all test needs.
 
+### Config and fallback error handling
+
+Runtime config loaders treat YAML roots as mappings. If `config.yaml` or a
+project YAML file parses to a list/string instead of a dict, `load_config()`
+now fails clearly with `TypeError` instead of crashing later with a hidden
+`.get()` / `.items()` error. Smaller config readers such as the worker
+ComfyUI URL lookup, vision cache hashing, prompt loading, and style resolver
+fall back to `{}` when a non-mapping YAML root is safe to ignore.
+
+Broad runtime fallbacks should be observable. Do not add silent
+`except Exception: pass` blocks in pipeline code. If the fallback is
+intentional, record the reason with `log.debug(...)`, `log.warning(...)`, or
+an existing degradation ledger entry.
+
 ## 6. TTS Worker Subprocess Safety (2026-06-04)
 
 Local TTS engines use subprocess workers. Supertonic and OmniVoice support
