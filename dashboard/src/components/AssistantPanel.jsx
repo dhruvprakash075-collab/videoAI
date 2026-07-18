@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Trash2, Bot, User, Loader } from 'lucide-react';
+import { Send, Trash2, Bot, User, Loader, Copy } from 'lucide-react';
 import { apiGet } from '../lib/api.js';
 
 const LS_SESSION_KEY = 'video_ai_chat_session';
@@ -10,6 +10,7 @@ export default function AssistantPanel({ status }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -69,6 +70,15 @@ export default function AssistantPanel({ status }) {
     localStorage.removeItem(LS_SESSION_KEY);
   };
 
+  const copyConversation = async () => {
+    const markdown = messages
+      .map((msg) => `### ${msg.role === 'user' ? 'User' : 'Assistant'}\n\n${msg.content}`)
+      .join('\n\n');
+    await navigator.clipboard.writeText(markdown);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
   return (
     <div className="max-w-4xl mx-auto h-full flex flex-col animate-in fade-in duration-500">
       <header className="mb-4 flex items-center justify-between">
@@ -77,12 +87,21 @@ export default function AssistantPanel({ status }) {
           <p className="text-zinc-500 text-sm">Ask about system status, jobs, or next steps.</p>
         </div>
         {messages.length > 0 && (
-          <button
-            onClick={clearSession}
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-red-400 transition-colors"
-          >
-            <Trash2 size={14} /> Clear
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={copyConversation}
+              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition-colors"
+              title="Copy full conversation as Markdown"
+            >
+              <Copy size={14} /> {copied ? 'Copied' : 'Share'}
+            </button>
+            <button
+              onClick={clearSession}
+              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={14} /> Clear
+            </button>
+          </div>
         )}
       </header>
 

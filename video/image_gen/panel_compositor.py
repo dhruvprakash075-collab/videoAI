@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 
 def _fixed_rects(count: int, width: int, height: int, margin: int, gutter: int) -> list[tuple[int, int, int, int]]:
@@ -49,6 +50,7 @@ def _layout_rects(layout_file: Path | None, count: int, width: int, height: int,
     matches = [item for item in layouts if len(item.get("panels", [])) == count]
     if not matches:
         return []
+    candidates = []
     for offset in range(len(matches)):
         panels = matches[(page_index + offset) % len(matches)]["panels"]
         rects = [
@@ -61,8 +63,15 @@ def _layout_rects(layout_file: Path | None, count: int, width: int, height: int,
             for x1, y1, x2, y2 in panels
         ]
         if _valid_rects(rects, width, height):
-            return rects
-    return []
+            candidates.append(rects)
+    if not candidates:
+        return []
+    return min(candidates, key=_layout_aspect_score)
+
+
+def _layout_aspect_score(rects: list[tuple[int, int, int, int]]) -> float:
+    # ComfyUI's manga workflow creates 768x512 landscape shots (3:2).
+    return sum(abs(math.log(((x2 - x1) / (y2 - y1)) / 1.5)) for x1, y1, x2, y2 in rects)
 
 
 def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int) -> bool:
@@ -81,6 +90,20 @@ def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int
             if ix * iy > area_a * 0.02:
                 return False
     return True
+
+
+def _panel_image(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    source = img.convert("RGB")
+    background = ImageOps.fit(
+        source,
+        size,
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
+    )
+    background = ImageEnhance.Brightness(background.filter(ImageFilter.GaussianBlur(12))).enhance(0.82)
+    foreground = ImageOps.contain(source, size, method=Image.Resampling.LANCZOS)
+    background.paste(foreground, ((size[0] - foreground.width) // 2, (size[1] - foreground.height) // 2))
+    return background
 
 
 def compose_panel_pages(
@@ -112,10 +135,10 @@ def compose_panel_pages(
             rects = _layout_rects(fallback_layout_file, len(chunk), width, height, len(pages))
         if not rects:
             rects = _fixed_rects(len(chunk), width, height, margin, gutter)
-        for path, rect in zip(chunk, rects):
+        for path, rect in zip(chunk, rects, strict=True):
             x1, y1, x2, y2 = rect
             with Image.open(path) as img:
-                fitted = ImageOps.fit(img.convert("RGB"), (x2 - x1, y2 - y1), method=Image.Resampling.LANCZOS)
+                fitted = _panel_image(img, (x2 - x1, y2 - y1))
             canvas.paste(fitted, (x1, y1))
         for rect in rects:
             draw.rectangle(rect, outline="black", width=border)

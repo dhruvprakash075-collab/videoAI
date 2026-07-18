@@ -92,7 +92,7 @@ def _face_inspiration_prompt(cfg: dict, prompt: str, index: int) -> str:
     if not phrases:
         return ""
     count = max(1, min(int(face_cfg.get("phrases_per_prompt", 3)), len(phrases)))
-    seed = int(hashlib.sha256(f"{prompt}|{index}".encode("utf-8")).hexdigest(), 16)
+    seed = int(hashlib.sha256(f"{prompt}|{index}".encode()).hexdigest(), 16)
     selected = [phrases[(seed + offset) % len(phrases)] for offset in range(count)]
     return ", ".join(selected)
 
