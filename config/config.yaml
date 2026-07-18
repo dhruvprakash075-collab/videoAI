@@ -9,10 +9,11 @@ models:
 visual:
   num_scenes: 4
   style: >
-    colored manga panel style, clean black ink outlines, cel-shaded anime colors,
-    vibrant but controlled color palette, screentone texture, dynamic manga action composition,
-    dynamic close-up framing, expressive sharp eyes, no text, no letters, no symbols,
-    detailed clothing folds, clean background shapes, high contrast Japanese manga illustration
+    arcane-inspired semi-realistic colored manga panel style, clean black ink outlines,
+    cel-shaded anime colors, vibrant but controlled color palette, screentone texture,
+    dynamic manga action composition, dynamic close-up framing, expressive sharp eyes,
+    no text, no letters, no symbols, detailed clothing folds, clean background shapes,
+    high contrast Japanese manga illustration
   environment_frame_ratio: 0.4
 tts:
   lang: hi

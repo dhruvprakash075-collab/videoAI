@@ -706,7 +706,7 @@ class TestBackendRouting:
         refs.mkdir()
         (refs / "b.png").write_bytes(b"b")
         (refs / "a.jpg").write_bytes(b"a")
-        cfg = {"reference_image_dir": str(refs), "reference_seed_mode": "round_robin"}
+        cfg = {"reference_image_dir": str(refs), "reference_seed_mode": "round_robin", "reference_usage": "direct"}
 
         assert image_gen_module._reference_image_for(cfg, "p", 0) == refs / "a.jpg"
         assert image_gen_module._reference_image_for(cfg, "p", 1) == refs / "b.png"
