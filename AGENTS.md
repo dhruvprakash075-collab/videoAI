@@ -66,4 +66,72 @@ ruff check .
 mypy --follow-imports=skip --ignore-missing-imports agents/ui_state.py
 ```
 
-(Yes, this file also applies to agents working on the ponytail repo itself. Especially to them.)
+## Agent Orchestration
+
+### Available Agents
+
+Located in `agents/`:
+
+| Agent | Purpose | When to Use |
+|-------|---------|-------------|
+| **planner** | Implementation planning | Complex features, refactoring |
+| **architect** | System design | Architectural decisions |
+| **tdd-guide** | Test-driven development | New features, bug fixes |
+| **code-reviewer** | Code review | After writing code |
+| **security-reviewer** | Security analysis | Before commits |
+| **python-reviewer** | Python-specific review | After Python changes |
+| **performance-optimizer** | Performance analysis | When code is slow |
+
+### Immediate Agent Usage
+
+No user prompt needed — invoke proactively:
+
+- **Code changes** → code-reviewer
+- **New features / bugs** → tdd-guide
+- **Complex features** → planner
+- **Architectural decisions** → architect
+- **Before commits** → security-reviewer
+
+### Parallel Task Execution
+
+Use parallel execution for independent operations:
+
+```markdown
+# GOOD: Parallel execution
+- Security review (agent: security-reviewer)
+- Performance analysis (agent: performance-optimizer)
+- Code review (agent: code-reviewer)
+
+# BAD: Sequential execution (wastes time)
+- Security review
+- Then performance analysis
+- Then code review
+```
+
+### Multi-Perspective Analysis
+
+For complex problems, use split-role sub-agents:
+- Factual reviewer
+- Senior engineer
+- Security expert
+- Consistency reviewer
+- Redundancy checker
+
+## Rust Worker Crate
+
+This crate is primarily a process supervisor for `bootstrap_pipeline.py`, plus approved opt-in sidecar utilities for media, text, audio, checkpointing, final assembly, and Python interop.
+
+Do not add Torch or ComfyUI deps. Do not modify `bootstrap_pipeline.py`, `core/`, `video/`, or the SQLite schema.
+
+Approved exceptions:
+- The optional, feature-gated PyO3 bridge (`python-extension`) is allowed for `videoai_worker_native` packaging, CI, and smoke tests.
+- Rust audio analysis/mastering work is allowed when it stays opt-in or fallback-safe from Python, preserves existing Python/FFmpeg fallbacks, and avoids default behavior changes until explicitly approved.
+- Touching `audio/` Python files is allowed only for Rust interop gates, fallback behavior, parity tests, and safe rollout flags such as `VIDEOAI_RUST_AUDIO`.
+
+Mirror constants exactly: heartbeat 10s, stale 120s, cancel grace 30s, poll 5s.
+
+Always run `cargo clippy -- -D warnings` and `cargo fmt` before declaring done.
+
+If a schema change seems necessary, STOP and ask.
+
+Intentional PR 2 deviation from `jobs/worker.py`: the Python interpreter resolves from `VIDEOAI_PYTHON` when set, otherwise `venv/Scripts/python.exe` on Windows and `venv/bin/python` on Unix so the standalone worker can run cross-platform and in CI.
