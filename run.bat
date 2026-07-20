@@ -1,15 +1,10 @@
 @echo off
-REM run.bat — Launch the Video.AI pipeline
-REM Usage: run.bat --topic "A story about..." [options]
-REM    or:  run.bat --source "path\to\source.txt" [options]
-REM    or:  run.bat --dry-run --topic "test"
-if "%~1"=="" (
-    echo Usage: run.bat --topic "A story about..." [options]
-    echo    or:  run.bat --source "path\to\source.txt" [options]
-    echo    or:  run.bat --dry-run --topic "test"
-    echo.
-    echo Run "run.bat --help" for all options.
-    pause
-    exit /b 1
-)
-.\venv\Scripts\python.exe bootstrap_pipeline.py %*
+REM run.bat — Launch the Video.AI app (backend + dashboard)
+cd /d "%~dp0"
+start "Video.AI Backend" cmd /c ".\venv\Scripts\python.exe -m utils.local_ui"
+timeout /t 2 /nobreak >nul
+cd /d "%~dp0dashboard"
+start "Video.AI Dashboard" cmd /c "npm run dev"
+echo Video.AI starting... Browser will open automatically.
+echo Close this window to keep running in background.
+timeout /t 5 /nobreak >nul
