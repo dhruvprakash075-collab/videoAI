@@ -89,6 +89,25 @@ def bootstrap():
         except (ImportError, AttributeError):
             pass
 
+    # Patch tqdm to disable progress bars when stdout is not a TTY (piped).
+    # tqdm uses \r carriage returns; on Windows pipes WriteFile rejects \r
+    # with OSError [Errno 22]. Disable silently — the progress bar has no
+    # terminal to render on anyway.
+    if sys.platform == "win32":
+        try:
+            import tqdm as _tqdm
+
+            _orig_init = _tqdm.tqdm.__init__
+
+            def _safe_tqdm_init(self, *args, **kwargs):
+                if not sys.stdout.isatty():
+                    kwargs.setdefault("disable", True)
+                _orig_init(self, *args, **kwargs)
+
+            _tqdm.tqdm.__init__ = _safe_tqdm_init
+        except ImportError:
+            pass
+
     # Fix Windows console encoding
     if sys.platform == "win32":
         try:

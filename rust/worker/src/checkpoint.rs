@@ -1,3 +1,32 @@
+//! `checkpoint.rs` — Crash-safe JSON checkpoint state machine.
+//!
+//! Mirrors `utils/checkpoint.py` exactly so the Rust worker and Python
+//! pipeline share the same on-disk format and recovery semantics.
+//!
+//! File layout (per topic):
+//!   studio_checkpoints/{safe_topic}.json            ← current state
+//!   studio_checkpoints/{safe_topic}.json.bak        ← last good state (atomic swap)
+//!   studio_checkpoints/{safe_topic}.json.tmp        ← in-flight write
+//!   studio_checkpoints/{safe_topic}.json.corrupt.*  ← backed-up corrupt files
+//!
+//! Atomic write protocol (same as Python):
+//!   1. Read existing JSON via `_read_raw` (bypasses TTL)
+//!   2. Merge new step with timestamp
+//!   3. Write to `.tmp` with custom JSON encoder (Path → str)
+//!   4. On Windows: copy existing `.json` → `.bak` (Defender retry loop)
+//!   5. `.tmp` → `.json` (os.replace = atomic on POSIX, best-effort on NTFS)
+//!
+//! TTL semantics: P3-23 fix — never silently expire a checkpoint based on
+//! wall-clock age. A paused/crashed run resumed the next day MUST resume
+//! from its checkpoint. Instead, emit a loud WARNING if age > 48h so the
+//! operator is aware, but still return the data.
+//!
+//! Commands:
+//!   get    — Read checkpoint, emit CheckpointReadReport (found/data/warnings)
+//!   save   — Atomic write one step (data_json must be a valid JSON object)
+//!   clear  — Delete checkpoint + all sibling files (.bak, .tmp, .corrupt.*)
+
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;

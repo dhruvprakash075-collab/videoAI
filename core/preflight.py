@@ -53,14 +53,24 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         checks["OmniVoice Python Environment"]["info"] = f"Using system Python: {sys.executable}"
 
     # 2.7 TTS engine
-    _KNOWN_TTS_ENGINES = {"supertonic", "omnivoice"}
-    tts_engine = config.get("tts", {}).get("engine", "supertonic")
+    _KNOWN_TTS_ENGINES = {"indicf5", "supertonic", "omnivoice"}
+    tts_engine = config.get("tts", {}).get("engine", "indicf5")
     checks[f"TTS Engine '{tts_engine}'"] = {"status": "PENDING", "info": ""}
     if tts_engine not in _KNOWN_TTS_ENGINES:
         checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
         checks[f"TTS Engine '{tts_engine}'"]["info"] = (
             f"Unknown engine '{tts_engine}'. Supported: {', '.join(sorted(_KNOWN_TTS_ENGINES))}"
         )
+    elif tts_engine == "indicf5":
+        indic_root = Path(config.get("tts", {}).get("indicf5", {}).get("root", r"D:\IndicF5"))
+        if indic_root.exists():
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "OK"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = f"IndicF5 checkout available: {indic_root}"
+        else:
+            checks[f"TTS Engine '{tts_engine}'"]["status"] = "FAILED"
+            checks[f"TTS Engine '{tts_engine}'"]["info"] = (
+                f"IndicF5 checkout NOT FOUND: {indic_root} (run will fall back to supertonic)"
+            )
     elif tts_engine == "supertonic":
         worker_script = Path("audio/supertonic_worker.py")
         if worker_script.exists():

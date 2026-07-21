@@ -1,4 +1,14 @@
-"""TTS word budgeting / script trimming."""
+"""TTS word budgeting / script trimming.
+
+Provides two helpers used by the segment graph's write_script and translate nodes:
+
+- _tts_word_budget: computes max words from target duration + language speaking rate
+- _trim_script_to_word_limit: trims at sentence boundaries, hard word-limit fallback
+
+Config knobs (under config["script"]):
+    tts_words_per_minute_hi: Hindi rate (default 100 wpm — conservative for IndicF5)
+    tts_words_per_minute_en: English rate (default 150 wpm — standard narration)
+"""
 from __future__ import annotations
 
 import re
@@ -17,6 +27,14 @@ def _tts_word_budget(config: dict, target_seconds: float, lang: str) -> int:
     final segment audio duration, via config keys:
         script.tts_words_per_minute_hi   (default 100)
         script.tts_words_per_minute_en   (default 150)
+
+    Args:
+        config: Pipeline config dict (looks under config["script"])
+        target_seconds: Target segment duration in seconds
+        lang: Language code ("hi" for Hindi/Devanagari, else English)
+
+    Returns:
+        Maximum word count, or 0 if target_seconds is invalid
     """
     if not target_seconds or target_seconds <= 0:
         return 0
@@ -31,7 +49,20 @@ def _tts_word_budget(config: dict, target_seconds: float, lang: str) -> int:
 
 
 def _trim_script_to_word_limit(script: str, limit: int) -> str:
-    """Trim narration at a sentence boundary, with a hard word-limit fallback."""
+    """Trim narration at a sentence boundary, with a hard word-limit fallback.
+
+    First attempts to keep whole sentences (split on . ! ? and Devanagari danda
+    U+0964). If even the first sentence exceeds the limit, falls back to a hard
+    word-slice — this is a ponytail simplification to avoid over-length audio
+    when the LLM emits one run-on sentence.
+
+    Args:
+        script: Full narration text
+        limit: Maximum word count
+
+    Returns:
+        Trimmed script (sentence-aligned if possible)
+    """
     if limit <= 0 or len(script.split()) <= limit:
         return script
 

@@ -1,3 +1,18 @@
+//! text — Source text splitting into per-segment chunks (mirrors Python source_splitter).
+//!
+//! Single subcommand: `split` — reads a source file (.txt/.md/.docx) and
+//! produces N SegmentChunk objects with text, b_roll_hint, key_event, index,
+//! and source_chapter. Strategies:
+//!   `by_word_count` (default) — sentence-aware grouping, then rebalance to
+//!     exactly `n_segments`.
+//!   `by_chapter` — splits on H1/H2 headings (markdown) or Heading 1/2 styles
+//!     (DOCX). Falls back to by_word_count if no headings found.
+//!   `by_llm` — not implemented in Rust; falls back to by_word_count with a
+//!     warning.
+//!
+//! Pure Rust, no GPU, no LLM calls. Used by the Rust worker's `Text` subcommand
+//! and for parity tests against Python `utils/source_splitter.py`.
+
 use std::fs;
 use std::path::PathBuf;
 

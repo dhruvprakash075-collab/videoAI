@@ -1476,7 +1476,7 @@ def test_produce_runtime_config_full_mode(agent):
     writer_input = {"segment_count": 5, "image_count_per_segment": 6, "words_per_segment": 200}
     result = agent.produce_runtime_config(vision, user_responses, writer_input, mode="full")
     assert result["visual"]["style"] == "cinematic"
-    assert result["tts"]["engine"] == "supertonic"
+    assert result["tts"]["engine"] == "indicf5"  # default engine (no user/base/vision override)
     assert result["script"]["words_per_segment"] == 200
     assert result["video"]["total_duration_min"] == 10  # 5 * 2
     assert "aria" in result["characters"]

@@ -1,3 +1,18 @@
+//! audio — Audio analysis & mastering (opt-in Rust sidecar).
+//!
+//! Provides two subcommands (opt-in via `VIDEOAI_RUST_AUDIO=1` or explicit CLI):
+//!   `analyze`  — Inspect WAV structure (sample rate, bit depth, channels,
+//!                duration, peak/RMS dBFS, silence runs, clipping).
+//!   `master`   — Apply the same FFmpeg mastering filter chain used by the
+//!                Python `audio/audio_fx.py` fallback (`highpass` +
+//!                `acompressor` + `loudnorm`). Keeps the pipeline working even
+//!                if Python torchaudio fails.
+//!
+//! Both commands mirror the Python audio_fx API 1:1 so integration tests can
+//! assert byte-identical output between Rust and Python paths. The constants
+//! at the top of this file (TARGET_RAW_SAMPLE_RATE, PEAK_LIMIT_DBFS, etc.)
+//! are duplicated from audio_fx.py — if you change one, change the other.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

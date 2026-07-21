@@ -125,6 +125,21 @@ def test_retranslate_triggers_on_latin_heavy():
     assert mock_llm.call_count == 1
 
 
+def test_translate_output_has_zero_latin_no_exemptions():
+    """NO EXEMPTIONS: any non-None translation must be 100% Latin-free —
+    every English word is transliterated into Devanagari before TTS."""
+    import re
+
+    agent = _make_director()
+    plan = {"mood": "calm", "title": "T", "key_event": "E"}
+
+    for candidate in (_CLEAN_DEVA, _LATIN_HEAVY):
+        with patch.object(agent, "_call_ollama_chat", return_value=candidate):
+            result = agent.translate_to_devanagari("Hello world.", plan)
+        assert result is not None
+        assert not re.search(r"[A-Za-z]", result), f"Latin leaked into TTS input: {result!r}"
+
+
 def test_roman_hinglish_transliterated_for_hindi_tts():
     """Romanized Hindi from the translator is converted instead of falling back to English."""
     agent = _make_director()

@@ -39,6 +39,51 @@ def test_align_audio_writes_words_json_next_to_wav(tmp_path):
     assert data == [{"word": "hello", "start": 0.0, "end": 0.5}]
 
 
+def test_align_audio_substitutes_reference_labels_keeping_timings(tmp_path):
+    """Whisper labels (e.g. Urdu-script for Hindi audio) are replaced by the
+    true spoken text; whisper contributes only timings."""
+    import json
+
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "b.wav"
+    wav.write_bytes(b"RIFF")
+
+    urdu_words = [
+        {"word": "منگھ", "start": 0.0, "end": 0.5},
+        {"word": "قریعیوٽیون", "start": 0.5, "end": 1.0},
+        {"word": "کی", "start": 1.0, "end": 1.5},
+    ]
+    seg = MagicMock()
+    seg.words = [MagicMock(word=w["word"], start=w["start"], end=w["end"]) for w in urdu_words]
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([seg], None)
+
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        out = align_audio(wav, model_name="base", language="hi",
+                          reference_text="मैंगा क्रिएशन की शुरुआत")
+
+    words = json.loads(out.read_text(encoding="utf-8"))
+    assert [w["word"] for w in words] == ["मैंगा", "क्रिएशन", "की"]
+    assert words[1]["start"] == 0.5 and words[1]["end"] == 1.0  # timings preserved
+
+
+def test_align_audio_passes_language_to_transcribe(tmp_path):
+    """Language pin must reach faster-whisper so Hindi TTS isn't mis-detected
+    as Urdu (which produced Perso-Arabic word labels)."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"RIFF")
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([], None)
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        align_audio(wav, model_name="base", language="hi")
+
+    assert fake_model.transcribe.call_args.kwargs["language"] == "hi"
+
+
 def test_align_audio_returns_none_if_wav_missing(tmp_path):
     """align_audio() must NOT raise when the WAV is missing - returns None."""
     from audio.tts_alignment import align_audio

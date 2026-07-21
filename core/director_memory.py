@@ -1,4 +1,13 @@
-"""Director memory seeding — feed pre-production findings into StoryMemory + WorldState."""
+"""Director memory seeding — feed pre-production findings into StoryMemory + WorldState.
+
+Called once after pre-production completes. Populates three persistence layers:
+
+1. PermanentMemoryLog (director_knowledge) — survives across runs/series
+2. WorldState (characters, world_facts, open_threads) — per-topic checkpoint
+3. StoryMemory (segment 0 summary) — narrative context for Writer
+
+All three are loaded on resume so the Director/Writer never lose context.
+"""
 from __future__ import annotations
 
 import logging
@@ -8,7 +17,13 @@ log = logging.getLogger(__name__)
 
 
 def _seed_director_memory(topic: str, overlay: dict, config: dict) -> None:
-    """Feed Director pre-production findings into StoryMemory + WorldState."""
+    """Feed Director pre-production findings into StoryMemory + WorldState.
+
+    Args:
+        topic: Video topic (used as key in all three stores)
+        overlay: Config overlay from Director (characters, vision, production_notes)
+        config: Full pipeline config (for checkpoint/memory paths)
+    """
     from memory import StoryMemory, WorldState
     from memory.permanent_memory import PermanentMemoryLog
 

@@ -50,7 +50,11 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
             "director": config.get("models", {}).get("director", "unknown"),
             "writer": config.get("models", {}).get("writer", "unknown"),
             "image_gen": config.get("image_gen", {}).get("sd_model_path", "unknown"),
-            "tts": config.get("tts", {}).get("model", "unknown"),
+            # Engine that actually served (post-fallback), else the configured one.
+            "tts": next(
+                (m["tts_engine"] for m in _UIS.list_segment_manifests() if m.get("tts_engine")),
+                config.get("tts", {}).get("engine", "unknown"),
+            ),
         },
         "settings": {
             "resolution": config.get("video", {}).get("resolution"),

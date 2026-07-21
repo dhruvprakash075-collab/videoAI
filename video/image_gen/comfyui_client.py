@@ -312,7 +312,7 @@ class ComfyUIClient:
 
             if completed:
                 return status
-            else:
+            elif error_details:
                 err_msg = "; ".join(error_details)
                 raise ComfyUIError(f"Prompt failed: {err_msg}")
 

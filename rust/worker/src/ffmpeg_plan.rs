@@ -1,3 +1,21 @@
+//! ffmpeg — Final assembly plan + execute + thumbnail extraction.
+//!
+//! Three subcommands:
+//!   `plan`    — Dry-run: reads a run directory (segment_*.mp4), optional
+//!               music track, and prints the exact FFmpeg argv that would be
+//!               executed (concat + optional loudnorm + optional sidechain
+//!               ducking). No files are written.
+//!   `concat`  — Execute the plan: concatenates segments, applies background
+//!               music with sidechain ducking, runs 2-pass EBU R128 loudnorm
+//!               (target -14 LUFS, TP -1.5 dB), writes final MP4.
+//!   `thumbnail` — Extract a single hero frame at `ss=0` scaled to 1280x720
+//!                 with letterbox padding, writes `thumbnail.png`.
+//!
+//! The plan/concat logic mirrors `video/renderer/assembler.py:concatenate_segments`
+//! 1:1 so the Rust worker can fully replace the Python assembler for the final
+//! step. Constants (DEFAULT_TARGET_LUFS, etc.) are duplicated from
+//! `audio/audio_fx.py` — keep them in sync.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

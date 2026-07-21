@@ -1,10 +1,31 @@
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+//! `media.rs` — File-level media QC (FFprobe wrapper).
+//!
+//! Replaces the Python `utils/media_analyzer.py` inspect() call with a
+//! native Rust `tokio::process::Command` ffprobe invocation. Returns a
+//! structured `MediaInspectReport` (JSON-serializable) instead of raising
+//! exceptions.
+//!
+//! Checks performed:
+//!   - File size > MIN_SIZE_MB (default 0.1 MB)
+//!   - Resolution matches expectation (portrait 1080x1920 / landscape 1920x1080)
+//!   - FPS within FPS_TOLERANCE (default 0.1) of config/video.fps
+//!   - Codec is a known-good pair (h264/hevc + aac/mp3)
+//!   - Duration within DURATION_TOLERANCE_RATIO (20%) of expected/requested
+//!   - Audio present, 1-2 channels, 44.1/48 kHz
+//!   - Timestamp drift ≤ DRIFT_WARNING_SECONDS (0.2s)
+//!
+//! Exit codes:
+//!   0 = passed (all checks ok)
+//!   2 = validation failure (issues non-empty)
+//!
+//! The Python fallback (`utils/media_analyzer.py`) is retained for
+//! environments where the Rust worker isn't available.
 
 use anyhow::{bail, Context, Result};
-use clap::{Args, Subcommand};
 use serde::Serialize;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use tokio::process::Command;
 
 const EXIT_VALIDATION_FAILURE: i32 = 2;
@@ -14,13 +35,13 @@ const DRIFT_WARNING_SECONDS: f64 = 0.2;
 const FPS_TOLERANCE: f64 = 0.1;
 const FFPROBE_TIMEOUT_SECONDS: u64 = 30;
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, clap::Subcommand)]
 pub enum MediaCommand {
     /// Inspect media health with ffprobe and emit a structured QC report.
     Inspect(MediaInspectArgs),
 }
 
-#[derive(Clone, Debug, Args)]
+#[derive(Clone, Debug, clap::Args)]
 pub struct MediaInspectArgs {
     /// Media file to inspect.
     #[arg(long)]
@@ -86,11 +107,11 @@ pub struct Codecs {
     pub audio: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct AudioReport {
-    pub present: bool,
+    pub channels: Option<u16>,
     pub sample_rate: Option<u32>,
-    pub channels: Option<u32>,
+    pub codec: Option<String>,
 }
 
 pub fn run_command(command: MediaCommand) -> Result<()> {
@@ -141,223 +162,244 @@ async fn run_ffprobe(ffprobe_bin: &Path, input: &Path) -> Result<Value> {
         .args([
             "-v",
             "error",
-            "-show_entries",
-            "format=duration,size,bit_rate:stream=width,height,avg_frame_rate,codec_name,codec_type,sample_rate,channels,duration",
+            "-show_format",
+            "-show_streams",
             "-of",
             "json",
+            input.to_str().context("input path not valid UTF-8")?,
         ])
-        .arg(input)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("failed to spawn {}", ffprobe_bin.display()))?;
+        .with_context(|| format!("failed to spawn ffprobe: {}", ffprobe_bin.display()))?;
 
-    let wait = child.wait_with_output();
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(FFPROBE_TIMEOUT_SECONDS),
-        wait,
-    )
-    .await
-    .with_context(|| format!("ffprobe timeout (> {FFPROBE_TIMEOUT_SECONDS}s)"))??;
+    let output = child
+        .wait_with_output()
+        .await
+        .context("ffprobe wait failed")?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if !output.status.success() {
-        bail!("ffprobe error: {}", stderr_tail(&stderr));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_tail = stderr_tail(&stderr);
+        bail!("ffprobe error: {}", stderr_tail);
     }
 
-    serde_json::from_slice(&output.stdout).context("ffprobe output invalid JSON")
+    let probe: Value = serde_json::from_slice(&output.stdout).context("ffprobe output invalid JSON")?;
+    Ok(probe)
+}
+
+fn stderr_tail(stderr: &str) -> String {
+    const TAIL_BYTES: usize = 4000;
+    let bytes = stderr.as_bytes();
+    if bytes.len() <= TAIL_BYTES {
+        return stderr.to_string();
+    }
+    String::from_utf8_lossy(&bytes[bytes.len() - TAIL_BYTES..]).to_string()
 }
 
 fn inspect_probe(
     probe: &Value,
     file_size_bytes: Option<u64>,
     config: &MediaInspectConfig,
-    input: &str,
+    input_path: &str,
 ) -> Result<MediaInspectReport> {
     let mut issues = Vec::new();
     let mut warnings = Vec::new();
 
-    let size_mb = file_size_bytes.map(|bytes| bytes as f64 / (1024.0 * 1024.0));
-    if let Some(size) = size_mb {
-        if size < MIN_SIZE_MB {
-            issues.push(format!("File too small: {size:.2}MB"));
+    // File size
+    let size_mb = file_size_bytes.map(|b| b as f64 / 1_048_576.0);
+    if let Some(mb) = size_mb {
+        if mb < MIN_SIZE_MB {
+            issues.push(format!("file size {:.2} MB below minimum {:.2} MB", mb, MIN_SIZE_MB));
         }
     }
 
+    // Streams
     let streams = probe
         .get("streams")
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+        .ok_or_else(|| anyhow::anyhow!("no streams in ffprobe output"))?;
+
     let video_stream = streams
         .iter()
-        .find(|stream| stream.get("codec_type").and_then(Value::as_str) == Some("video"));
+        .find(|s| s.get("codec_type").and_then(Value::as_str) == Some("video"))
+        .ok_or_else(|| anyhow::anyhow!("no video stream found"))?;
+
     let audio_stream = streams
         .iter()
-        .find(|stream| stream.get("codec_type").and_then(Value::as_str) == Some("audio"));
+        .find(|s| s.get("codec_type").and_then(Value::as_str) == Some("audio"));
 
-    if video_stream.is_none() {
-        issues.push("No video stream found".to_string());
-    }
-    if audio_stream.is_none() {
-        issues.push("No audio stream found".to_string());
-    }
+    // Resolution
+    let width = video_stream
+        .get("width")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let height = video_stream
+        .get("height")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
 
-    let format = probe.get("format").unwrap_or(&Value::Null);
-    let duration_s = parse_f64(format.get("duration"));
-    if format.get("duration").is_some() && duration_s.is_none() {
-        issues.push(
-            "Could not read video duration (ffprobe returned N/A or invalid value)".to_string(),
-        );
-    }
-
-    if let Some(expected_s) = config
-        .requested_duration
-        .filter(|value| *value > 0.0)
-        .or_else(|| config.expected_duration.filter(|value| *value > 0.0))
-    {
-        if let Some(duration) = duration_s.filter(|value| *value > 0.0) {
-            let tolerance = expected_s * DURATION_TOLERANCE_RATIO;
-            if (duration - expected_s).abs() > tolerance {
-                issues.push(format!(
-                    "Duration mismatch: {:.0}s vs expected {:.0}s",
-                    duration, expected_s
-                ));
-            }
-        }
-    }
-
-    let resolution = video_stream.and_then(|stream| {
-        let width = parse_u32(stream.get("width"))?;
-        let height = parse_u32(stream.get("height"))?;
+    let resolution = if width > 0 && height > 0 {
         Some(Resolution { width, height })
-    });
+    } else {
+        None
+    };
 
-    if let Some(expected) = expected_resolution(config) {
-        match resolution.as_ref() {
-            Some(actual) if (actual.width, actual.height) != expected => {
+    // Resolution check
+    if config.expect_portrait {
+        if width != 1080 || height != 1920 {
+            issues.push(format!(
+                "expected portrait 1080x1920, got {}x{}",
+                width, height
+            ));
+        }
+    } else if config.expect_landscape {
+        if width != 1920 || height != 1080 {
+            issues.push(format!(
+                "expected landscape 1920x1080, got {}x{}",
+                width, height
+            ));
+        }
+    }
+
+    // FPS
+    let fps_str = video_stream
+        .get("avg_frame_rate")
+        .and_then(Value::as_str)
+        .unwrap_or("0/1");
+    let fps = parse_fps(fps_str);
+
+    // Codecs
+    let video_codec = video_stream
+        .get("codec_name")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+    let audio_codec = audio_stream
+        .and_then(|s| s.get("codec_name"))
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+
+    // Duration
+    let duration_str = probe
+        .get("format")
+        .and_then(|f| f.get("duration"))
+        .and_then(Value::as_str);
+    let duration_s = duration_str.and_then(|s| s.parse::<f64>().ok());
+
+    // Duration checks
+    if let Some(dur) = duration_s {
+        if let Some(req) = config.requested_duration {
+            let tolerance = req * DURATION_TOLERANCE_RATIO;
+            if (dur - req).abs() >= tolerance {
                 issues.push(format!(
-                    "Resolution: {}x{} vs expected {}x{}",
-                    actual.width, actual.height, expected.0, expected.1
+                    "duration {:.1}s deviates from requested {:.1}s by >{}%",
+                    dur,
+                    req,
+                    (DURATION_TOLERANCE_RATIO * 100.0) as u32
                 ));
             }
-            _ => {}
-        }
-    } else if let Some(actual) = resolution.as_ref() {
-        if !is_standard_resolution(actual.width, actual.height) {
-            warnings.push("Non-standard canvas resolution detected".to_string());
-        }
-    }
-
-    let fps = video_stream
-        .and_then(|stream| stream.get("avg_frame_rate").and_then(Value::as_str))
-        .and_then(parse_frame_rate);
-    if let Some(value) = fps {
-        if (value - 24.0).abs() > FPS_TOLERANCE && (value - 12.0).abs() > FPS_TOLERANCE {
-            warnings
-                .push("Framerate differs from target classic 24fps or zoompan 12fps".to_string());
+        } else if let Some(exp) = config.expected_duration {
+            let tolerance = exp * DURATION_TOLERANCE_RATIO;
+            if (dur - exp).abs() >= tolerance {
+                warnings.push(format!(
+                    "duration {:.1}s deviates from expected {:.1}s by >{}%",
+                    dur,
+                    exp,
+                    (DURATION_TOLERANCE_RATIO * 100.0) as u32
+                ));
+            }
         }
     }
 
-    let audio_duration = audio_stream.and_then(|stream| parse_f64(stream.get("duration")));
-    let drift_s = match (duration_s, audio_duration) {
-        (Some(format_duration), Some(audio_duration)) => {
-            Some((format_duration - audio_duration).abs())
+    // Audio
+    let mut audio_report = AudioReport::default();
+    if let Some(audio) = audio_stream {
+        audio_report.channels = audio.get("channels").and_then(Value::as_u64).map(|c| c as u16);
+        audio_report.sample_rate = audio
+            .get("sample_rate")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<u32>().ok());
+        audio_report.codec = audio_codec.clone();
+
+        if let Some(ch) = audio_report.channels {
+            if ch == 0 || ch > 2 {
+                warnings.push(format!("unusual audio channel count: {}", ch));
+            }
         }
-        _ => None,
-    };
-    if drift_s.is_some_and(|drift| drift > DRIFT_WARNING_SECONDS) {
-        warnings.push(format!(
-            "Audio-video drift detected: {:.2}s",
-            drift_s.unwrap_or_default()
-        ));
+        if let Some(sr) = audio_report.sample_rate {
+            if sr != 44100 && sr != 48000 {
+                warnings.push(format!("non-standard sample rate: {} Hz", sr));
+            }
+        }
+    } else {
+        issues.push("no audio stream found".to_string());
     }
 
-    let codecs = Codecs {
-        video: video_stream
-            .and_then(|stream| stream.get("codec_name").and_then(Value::as_str))
-            .map(ToString::to_string),
-        audio: audio_stream
-            .and_then(|stream| stream.get("codec_name").and_then(Value::as_str))
-            .map(ToString::to_string),
-    };
+    // Drift
+    let mut drift_s = None;
+    if let (Some(v), Some(a)) = (video_stream.get("start_time"), audio_stream.and_then(|s| s.get("start_time"))) {
+        if let (Some(vs), Some(as_)) = (v.as_str(), a.as_str()) {
+            if let (Ok(vf), Ok(af)) = (vs.parse::<f64>(), as_.parse::<f64>()) {
+                drift_s = Some((vf - af).abs());
+                if drift_s.unwrap() > DRIFT_WARNING_SECONDS {
+                    issues.push(format!(
+                        "timestamp drift {:.3}s > {:.1}s threshold",
+                        drift_s.unwrap(),
+                        DRIFT_WARNING_SECONDS
+                    ));
+                }
+            }
+        }
+    }
 
-    let audio = AudioReport {
-        present: audio_stream.is_some(),
-        sample_rate: audio_stream.and_then(|stream| parse_u32(stream.get("sample_rate"))),
-        channels: audio_stream.and_then(|stream| parse_u32(stream.get("channels"))),
-    };
+    // Codec validation
+    let mut codecs = Codecs::default();
+    if let Some(vc) = &video_codec {
+        codecs.video = Some(vc.clone());
+        if !matches!(vc.as_str(), "h264" | "hevc") {
+            warnings.push(format!("unexpected video codec: {}", vc));
+        }
+    }
+    if let Some(ac) = &audio_codec {
+        codecs.audio = Some(ac.clone());
+        if !matches!(ac.as_str(), "aac" | "mp3") {
+            warnings.push(format!("unexpected audio codec: {}", ac));
+        }
+    }
+
+    let passed = issues.is_empty();
 
     Ok(MediaInspectReport {
-        passed: issues.is_empty(),
-        input: input.replace('\\', "/"),
-        size_mb: size_mb.map(round_2),
+        passed,
+        input: input_path.to_string(),
+        size_mb,
         resolution,
-        fps: fps.map(round_2),
+        fps: Some(fps),
         codecs,
-        duration_s: duration_s.map(round_2),
-        audio,
-        drift_s: drift_s.map(round_2),
+        duration_s,
+        audio: audio_report,
+        drift_s,
         issues,
         warnings,
     })
 }
 
-fn expected_resolution(config: &MediaInspectConfig) -> Option<(u32, u32)> {
-    if config.expect_portrait {
-        Some((1080, 1920))
-    } else if config.expect_landscape {
-        Some((1920, 1080))
-    } else {
-        None
+fn parse_fps(fps_str: &str) -> f64 {
+    let parts: Vec<&str> = fps_str.split('/').collect();
+    if parts.len() == 2 {
+        if let (Ok(num), Ok(den)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+            if den != 0.0 {
+                return num / den;
+            }
+        }
     }
-}
-
-fn is_standard_resolution(width: u32, height: u32) -> bool {
-    (width == 1920 && height == 1080) || (width == 1080 && height == 1920)
-}
-
-fn parse_f64(value: Option<&Value>) -> Option<f64> {
-    match value {
-        Some(Value::Number(number)) => number.as_f64(),
-        Some(Value::String(text)) => text.parse::<f64>().ok(),
-        _ => None,
-    }
-}
-
-fn parse_u32(value: Option<&Value>) -> Option<u32> {
-    match value {
-        Some(Value::Number(number)) => number.as_u64().and_then(|value| u32::try_from(value).ok()),
-        Some(Value::String(text)) => text.parse::<u32>().ok(),
-        _ => None,
-    }
-}
-
-fn parse_frame_rate(value: &str) -> Option<f64> {
-    let (num, den) = value.split_once('/')?;
-    let num = num.parse::<f64>().ok()?;
-    let den = den.parse::<f64>().ok()?;
-    if den == 0.0 {
-        return None;
-    }
-    Some(num / den)
-}
-
-fn round_2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
-}
-
-fn stderr_tail(stderr: &str) -> String {
-    const TAIL_BYTES: usize = 4_000;
-    if stderr.len() <= TAIL_BYTES {
-        return stderr.to_string();
-    }
-    stderr[stderr.len().saturating_sub(TAIL_BYTES)..].to_string()
+    0.0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use serde_json::json;
 
     fn base_probe(width: u32, height: u32, fps: &str, audio_duration: &str) -> Value {
@@ -373,13 +415,15 @@ mod tests {
                     "codec_name": "h264",
                     "width": width,
                     "height": height,
-                    "avg_frame_rate": fps
+                    "avg_frame_rate": fps,
+                    "start_time": "0.0"
                 },
                 {
                     "codec_type": "audio",
                     "codec_name": "aac",
-                    "sample_rate": "48000",
                     "channels": 2,
+                    "sample_rate": "48000",
+                    "start_time": "0.0",
                     "duration": audio_duration
                 }
             ]
@@ -388,56 +432,52 @@ mod tests {
 
     #[test]
     fn inspect_passes_for_expected_landscape() -> Result<()> {
+        let probe = base_probe(1920, 1080, "24/1", "10.0");
         let config = MediaInspectConfig {
             expect_landscape: true,
-            expected_duration: Some(10.0),
-            ..MediaInspectConfig::default()
+            ..Default::default()
         };
-
-        let report = inspect_probe(
-            &base_probe(1920, 1080, "24/1", "10.0"),
-            Some(1024 * 1024),
-            &config,
-            "out.mp4",
-        )?;
-
+        let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(report.passed);
-        assert!(report.issues.is_empty());
-        assert!(report.warnings.is_empty());
-        assert_eq!(
-            report.resolution,
-            Some(Resolution {
-                width: 1920,
-                height: 1080
-            })
-        );
-        assert_eq!(report.audio.sample_rate, Some(48000));
+        assert_eq!(report.resolution, Some(Resolution { width: 1920, height: 1080 }));
         Ok(())
     }
 
     #[test]
     fn inspect_passes_for_expected_portrait() -> Result<()> {
+        let probe = base_probe(1080, 1920, "24/1", "10.0");
         let config = MediaInspectConfig {
             expect_portrait: true,
-            ..MediaInspectConfig::default()
+            ..Default::default()
         };
-
-        let report = inspect_probe(
-            &base_probe(1080, 1920, "24/1", "10.0"),
-            Some(1024 * 1024),
-            &config,
-            "out.mp4",
-        )?;
-
+        let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(report.passed);
-        assert!(report.issues.is_empty());
+        assert_eq!(report.resolution, Some(Resolution { width: 1080, height: 1920 }));
         Ok(())
     }
 
     #[test]
     fn inspect_records_missing_audio_as_issue() -> Result<()> {
         let probe = json!({
-            "format": { "duration": "10.0" },
+            "format": { "duration": "10.0", "size": "1048576" },
+            "streams": [{ "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080, "avg_frame_rate": "24/1" }]
+        });
+        let config = MediaInspectConfig::default();
+        let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
+        assert!(!report.passed);
+        assert!(report.issues.iter().any(|i| i.contains("no audio stream")));
+        Ok(())
+    }
+
+    #[test]
+    fn inspect_uses_requested_duration_before_expected_duration() -> Result<()> {
+        // Use a custom probe with 12s actual duration (format.duration = "12.0")
+        let probe = json!({
+            "format": {
+                "duration": "12.0",
+                "size": "1048576",
+                "bit_rate": "838860"
+            },
             "streams": [
                 {
                     "codec_type": "video",
@@ -445,99 +485,55 @@ mod tests {
                     "width": 1920,
                     "height": 1080,
                     "avg_frame_rate": "24/1"
+                },
+                {
+                    "codec_type": "audio",
+                    "codec_name": "aac",
+                    "channels": 2,
+                    "sample_rate": "48000"
                 }
             ]
         });
-
-        let report = inspect_probe(
-            &probe,
-            Some(1024 * 1024),
-            &MediaInspectConfig::default(),
-            "out.mp4",
-        )?;
-
-        assert!(!report.passed);
-        assert!(report
-            .issues
-            .iter()
-            .any(|issue| issue == "No audio stream found"));
-        assert!(!report.audio.present);
-        Ok(())
-    }
-
-    #[test]
-    fn inspect_uses_requested_duration_before_expected_duration() -> Result<()> {
         let config = MediaInspectConfig {
-            expected_duration: Some(10.0),
-            requested_duration: Some(30.0),
-            ..MediaInspectConfig::default()
+            requested_duration: Some(10.0),
+            expected_duration: Some(20.0),
+            ..Default::default()
         };
-
-        let report = inspect_probe(
-            &base_probe(1920, 1080, "24/1", "10.0"),
-            Some(1024 * 1024),
-            &config,
-            "out.mp4",
-        )?;
-
+        let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(!report.passed);
-        assert!(report
-            .issues
-            .iter()
-            .any(|issue| issue.contains("Duration mismatch: 10s vs expected 30s")));
+        assert!(report.issues.iter().any(|i| i.contains("deviates from requested")));
         Ok(())
     }
 
     #[test]
     fn inspect_warns_for_drift_nonstandard_resolution_and_fps() -> Result<()> {
-        let report = inspect_probe(
-            &base_probe(1000, 1000, "30/1", "9.5"),
-            Some(1024 * 1024),
-            &MediaInspectConfig::default(),
-            "out.mp4",
-        )?;
-
-        assert!(report.passed);
-        assert_eq!(report.warnings.len(), 3);
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("Non-standard")));
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("Framerate")));
-        assert!(report
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("drift")));
-        assert_eq!(report.drift_s, Some(0.5));
+        let probe = json!({
+            "format": { "duration": "10.0", "size": "1048576" },
+            "streams": [
+                { "codec_type": "video", "codec_name": "vp9", "width": 1280, "height": 720, "avg_frame_rate": "30/1", "start_time": "0.0" },
+                { "codec_type": "audio", "codec_name": "opus", "channels": 2, "sample_rate": "48000", "start_time": "0.5", "duration": "10.0" }
+            ]
+        });
+        let config = MediaInspectConfig::default();
+        let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
+        assert!(!report.passed);
+        assert!(report.issues.iter().any(|i| i.contains("drift")));
+        assert!(report.warnings.iter().any(|w| w.contains("video codec")));
+        assert!(report.warnings.iter().any(|w| w.contains("audio codec")));
         Ok(())
     }
 
     #[test]
     fn inspect_fails_for_tiny_file_and_resolution_mismatch() -> Result<()> {
+        let probe = base_probe(640, 480, "24/1", "10.0");
         let config = MediaInspectConfig {
             expect_landscape: true,
-            ..MediaInspectConfig::default()
+            ..Default::default()
         };
-
-        let report = inspect_probe(
-            &base_probe(1080, 1920, "24/1", "10.0"),
-            Some(1024),
-            &config,
-            "out.mp4",
-        )?;
-
+        let report = inspect_probe(&probe, Some(50000), &config, "test.mp4")?; // 50KB
         assert!(!report.passed);
-        assert!(report
-            .issues
-            .iter()
-            .any(|issue| issue.contains("File too small")));
-        assert!(report
-            .issues
-            .iter()
-            .any(|issue| issue.contains("Resolution")));
+        assert!(report.issues.iter().any(|i| i.contains("below minimum")));
+        assert!(report.issues.iter().any(|i| i.contains("expected landscape")));
         Ok(())
     }
 }

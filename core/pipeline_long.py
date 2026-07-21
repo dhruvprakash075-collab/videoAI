@@ -232,7 +232,7 @@ def run_long_pipeline(
     # Normalize TTS engine
     from audio.audio_proxy import normalize_tts_engine as _normalize_tts_engine
 
-    _raw_tts_engine = config.get("tts", {}).get("engine", "supertonic")
+    _raw_tts_engine = config.get("tts", {}).get("engine", "indicf5")
     _normalized_engine = _normalize_tts_engine(_raw_tts_engine)
     if _normalized_engine != _raw_tts_engine:
         log.warning(

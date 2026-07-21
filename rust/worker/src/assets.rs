@@ -1,3 +1,20 @@
+//! assets — Inspect and validate run output artifacts.
+//!
+//! Two CLI commands:
+//!   `inspect` — walks a run directory (studio_outputs/<safe_topic>), hashes every
+//!     file (SHA-256), records size + mtime, detects duplicates, writes
+//!     assets_manifest.json. Fails the manifest write if free disk space <
+//!     `--min-free-gb` (default 5 GiB).
+//!   `validate` — loads a run_manifest.json and checks that every file
+//!     reference (output_video, thumbnail, segments, etc.) exists on disk and
+//!     its SHA-256 matches the manifest. In `--strict` mode, warnings become
+//!     errors.
+//!
+//! Used by:
+//! - Rust worker: after job success, calls `inspect` to populate manifest.
+//! - CI: `validate --strict` on golden directories to catch drift.
+//! - Operators: `inspect --json` to script downstream publishing.
+
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};

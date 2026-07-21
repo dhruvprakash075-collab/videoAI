@@ -1636,14 +1636,22 @@ class DirectorAgent:
         # -- TTS (skip for video-only) --
         if _mode != "video-only":
             tts_response = str(user_responses.get("tts_engine", "")).lower()
-            engine = vision_doc.get("tts_recommendation", "supertonic") or "supertonic"
+            _base_engine = (
+                self.llm_config.get("tts", {}).get("engine", "")
+                if isinstance(self.llm_config, dict)
+                else ""
+            )
             if tts_response:
                 try:
                     from audio.audio_proxy import normalize_tts_engine
                     engine = normalize_tts_engine(tts_response)
                 except Exception as exc:
                     log.debug(f"[DIRECTOR] TTS response normalization skipped: {exc}")
+                    engine = _base_engine or "indicf5"
+            elif _base_engine:
+                engine = _base_engine
             else:
+                engine = vision_doc.get("tts_recommendation", "indicf5") or "indicf5"
                 try:
                     from audio.audio_proxy import normalize_tts_engine
                     engine = normalize_tts_engine(engine)

@@ -35,13 +35,40 @@ def _get_alignment_model(model_name: str, device: str, compute_type: str):
     return _alignment_model
 
 
+def _substitute_reference_labels(words: list[dict], reference_text: str) -> None:
+    """Replace whisper's word labels with the known-spoken text, keeping timings.
+
+    ponytail: proportional positional mapping — whisper's word count can differ
+    from the script's (merged/split tokens), and VAD may drop edge words, so
+    minor drift is possible. Upgrade path: true forced alignment (whisperX)
+    if subtitle word-level accuracy ever matters more than timings.
+    """
+    ref_tokens = reference_text.split()
+    if not ref_tokens or not words:
+        return
+    n, m = len(words), len(ref_tokens)
+    for idx, w in enumerate(words):
+        w["word"] = ref_tokens[min(idx * m // n, m - 1)]
+
+
 def align_audio(
     wav_path: Path,
     model_name: str = "base",
     device: str = "cpu",
     compute_type: str = "int8",
+    language: str | None = None,
+    reference_text: str | None = None,
 ) -> Path | None:
     """Align audio and write "{wav_path}.words.json".
+
+    ``language`` pins the transcription language (e.g. "hi"). Without it,
+    faster-whisper auto-detects — and Hindi TTS is frequently mis-detected as
+    Urdu, producing Perso-Arabic word labels instead of Devanagari.
+
+    ``reference_text`` is the exact text the TTS spoke. Whisper base still
+    emits Perso-Arabic script for Hinglish audio even with language="hi", so
+    when the true text is known its words become the labels and whisper only
+    contributes timings — labels can never come out in the wrong script.
 
     Returns the JSON path on success, None on any failure (does not raise).
     """
@@ -66,6 +93,7 @@ def align_audio(
             beam_size=1,
             word_timestamps=True,
             vad_filter=True,
+            language=language,
         )
 
         words: list[dict] = []
@@ -79,6 +107,9 @@ def align_audio(
                 start = float(getattr(w, "start", 0.0) or 0.0)
                 end = float(getattr(w, "end", 0.0) or 0.0)
                 words.append({"word": word, "start": start, "end": end})
+
+        if reference_text:
+            _substitute_reference_labels(words, reference_text)
 
         json_path.write_text(
             json.dumps(words, indent=2, ensure_ascii=False),

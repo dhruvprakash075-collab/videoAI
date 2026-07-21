@@ -863,6 +863,7 @@ def tts_generate(
     output_dir: Path | None = None,
     voice_sample: Path | None = None,
     speed: float | None = None,
+    engine: str | None = None,
 ) -> dict:
     """Generate TTS audio using configured engine.
 
@@ -873,6 +874,8 @@ def tts_generate(
         voice_sample: Voice sample for voice cloning
         speed: Per-call speed override (mood-based, from get_mood_rate). B9 fix.
                When None, uses the config default.
+        engine: Optional engine override (e.g. passed from pipeline overlay).
+                When set, takes precedence over config's tts.engine.
     """
     if output_dir is None:
         output_dir = Path("tts_output")
@@ -918,11 +921,22 @@ def tts_generate(
                     voice_sample = wav_files[0]
                     log.info(f"Voice cloning: auto-detected narration sample '{voice_sample}'")
 
-    _raw_engine = _cfg.get("tts", {}).get("engine", "indicf5")
+    _raw_engine = engine or _cfg.get("tts", {}).get("engine", "indicf5")
     engine = normalize_tts_engine(_raw_engine)
 
     log.info(f"Generating TTS audio ({lang}) using {engine}...")
 
+    def _call_omnivoice() -> dict:
+        return _call_omnivoice_worker(
+            text,
+            lang=lang,
+            output_dir=output_dir,
+            voice_sample=str(voice_sample) if voice_sample else "",
+            speed_override=speed,
+            sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
+        )
+
+    used_engine = engine  # updated as the fallback chain degrades
     if engine == "indicf5":
         result = _call_indicf5_worker(
             text,
@@ -941,15 +955,26 @@ def tts_generate(
                 output_dir=output_dir,
                 speed_override=speed,
             )
+            used_engine = "supertonic"
+        if result.get("status") != "success":
+            log.warning(
+                "[TTS] Supertonic also failed — last resort: omnivoice"
+            )
+            result = _call_omnivoice()
+            used_engine = "omnivoice"
     elif engine == "omnivoice":
-        result = _call_omnivoice_worker(
-            text,
-            lang=lang,
-            output_dir=output_dir,
-            voice_sample=str(voice_sample) if voice_sample else "",
-            speed_override=speed,
-            sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
-        )
+        result = _call_omnivoice()
+        if result.get("status") != "success":
+            log.warning(
+                f"[TTS] OmniVoice failed ({result.get('message', 'unknown')}) — degrading to supertonic"
+            )
+            result = _call_supertonic_worker(
+                text,
+                lang=lang,
+                output_dir=output_dir,
+                speed_override=speed,
+            )
+            used_engine = "supertonic"
     else:
         # Default: Supertonic (CPU ONNX, zero VRAM). Degrade to OmniVoice on failure.
         result = _call_supertonic_worker(
@@ -962,14 +987,8 @@ def tts_generate(
             log.warning(
                 f"[TTS] Supertonic failed ({result.get('message', 'unknown')}) — degrading to omnivoice"
             )
-            result = _call_omnivoice_worker(
-                text,
-                lang=lang,
-                output_dir=output_dir,
-                voice_sample=str(voice_sample) if voice_sample else "",
-                speed_override=speed,
-                sentence_gap_ms=voice_profile.get("sentence_gap_ms"),
-            )
+            result = _call_omnivoice()
+            used_engine = "omnivoice"
     if result.get("status") == "success":
         wav_path = Path(result.get("wav_path", ""))
         word_timestamps = result.get("word_timestamps")
@@ -990,13 +1009,22 @@ def tts_generate(
                             model_name=align_cfg.get("model", "base"),
                             device=align_cfg.get("device", "cpu"),
                             compute_type=align_cfg.get("compute_type", "int8"),
+                            # Pin the TTS language so Hindi isn't mis-detected
+                            # as Urdu, and pass the spoken text so labels are
+                            # always the true (Devanagari) words, not whisper's.
+                            language=align_cfg.get("language") or lang,
+                            reference_text=text,
                         )
                         if aligned and Path(aligned).exists():
                             word_timestamps = Path(aligned)
                     except Exception as align_err:
                         log.warning(f"TTS alignment failed for {wav_path.name}: {align_err}")
             log.info(f"TTS generated: {wav_path}")
-            return {"wav_path": wav_path, "word_timestamps": word_timestamps}
+            return {
+                "wav_path": wav_path,
+                "word_timestamps": word_timestamps,
+                "engine": used_engine,
+            }
         log.error(f"TTS returned path that doesn't exist: {wav_path}")
         raise RuntimeError(f"TTS file not found at {wav_path}")
 

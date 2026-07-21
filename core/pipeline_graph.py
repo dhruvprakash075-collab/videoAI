@@ -35,6 +35,7 @@ class SegmentState(TypedDict, total=False):
     # Audio Node
     audio_path: str
     word_timestamps_json: str
+    tts_engine: str  # engine that actually served (post-fallback), for the manifest
 
     # Image Node
     images: list[str]

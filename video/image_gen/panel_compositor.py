@@ -79,7 +79,10 @@ def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int
     for x1, y1, x2, y2 in rects:
         if x2 <= x1 or y2 <= y1:
             return False
-        if (x2 - x1) * (y2 - y1) < page_area * 0.03:
+        # ponytail: lowered from 3% to 1.5% — Roboflow manga-panel annotations
+        # include small inset panels (e.g. close-up inserts) that are valid manga
+        # layout elements, not noise. Raise back to 3% if dataset quality drops.
+        if (x2 - x1) * (y2 - y1) < page_area * 0.015:
             return False
     for i, a in enumerate(rects):
         ax1, ay1, ax2, ay2 = a
@@ -87,7 +90,11 @@ def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int
         for bx1, by1, bx2, by2 in rects[i + 1:]:
             ix = max(0, min(ax2, bx2) - max(ax1, bx1))
             iy = max(0, min(ay2, by2) - max(ay1, by1))
-            if ix * iy > area_a * 0.02:
+            # ponytail: raised from 2% to 5% — Roboflow annotations often have
+            # natural border overlap (panel borders drawn fractionally inside
+            # adjacent panels). 5% tolerates this while still rejecting truly
+            # overlapping layouts.
+            if ix * iy > area_a * 0.05:
                 return False
     return True
 

@@ -16,6 +16,7 @@ from video.image_gen.image_gen import (
     _maybe_upscale,
     _prompt_cache_key,
     _record_oom_event,
+    _refine_upscale,
     _resolve_dominant_char_at_threshold,
     _stable_character_reference,
     clear_oom_events,
@@ -344,3 +345,31 @@ def test_maybe_upscale_lanczos_and_failure_fallback():
         img,
         {"upscaler": {"model": "lanczos", "target_width": 20, "target_height": 20}},
     ) is img
+
+
+def test_refine_upscale_returns_originals_on_setup_failure():
+    """When runtime init crashes, _refine_upscale returns original frames unchanged."""
+    frames = [Path("frame1.png"), Path("frame2.png")]
+    cfg = {"comfyui": {"refine_upscale": True, "refine_workflow_path": "workflow.json"}}
+
+    with patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", side_effect=RuntimeError("comfy down")):
+        result = _refine_upscale(frames, cfg)
+    assert result == frames
+
+
+def test_refine_upscale_returns_originals_when_comfyui_not_running():
+    """When ComfyUI is not running, original frames are returned."""
+    frames = [Path("f1.png")]
+    cfg = {"comfyui": {"refine_upscale": True}}
+
+    runtime = MagicMock()
+    runtime.ensure_running.return_value = False
+    with patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime):
+        result = _refine_upscale(frames, cfg)
+    assert result == frames
+
+
+def test_refine_upscale_returns_originals_when_feature_disabled():
+    """When refine_upscale is False, original frames are returned."""
+    frames = [Path("f1.png")]
+    assert _refine_upscale(frames, {"comfyui": {"refine_upscale": False}}) == frames

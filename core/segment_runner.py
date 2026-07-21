@@ -56,7 +56,7 @@ from core.runtime.vram import (
 )
 
 # ── moved verbatim from core/segment/budget.py / identity.py ──
-from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget  # noqa: F401
+from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget
 from core.segment.identity import _detect_important_trigger, _perceptual_hash
 
 # ── Main per-segment processor ─────────────────────────────────
@@ -121,24 +121,31 @@ def make_process_segment(
         key = f"{topic}_seg{i:02d}"
         ck = cp_mgr.get(key) if resume else None
 
+        # ponytail: budget cap computed once for all return paths
+        _lang = config.get("narrator", {}).get("lang", "hi")
+        _budget = _tts_word_budget(config, seg_min * 60, _lang)
+        _tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
+        _hi = int(words_per_seg * (1 + _tolerance))
+        _cap = _hi if _budget == 0 else min(_budget, _hi)
+
         if ck and "script" in ck:
             script = ck["script"]["data"]
             log.debug(f"  Seg {i}: script from checkpoint")
-            return {"script": script}
+            return {"script": _trim_script_to_word_limit(script, _cap)}
 
         chunk = state.get("source_chunk")
         if chunk:
             log.debug(
                 f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
             )
-            return {"script": chunk.text}
+            return {"script": _trim_script_to_word_limit(chunk.text, _cap)}
 
         if fast_dry_run:
             _title = plan.get("title", f"Part {i}")
             _summary = plan.get("summary", "")
             script = f"{_title}. {_summary} This is a fast dry-run placeholder."
             log.debug(f"  Seg {i}: fast-dry-run stub script ({len(script)} chars)")
-            return {"script": script}
+            return {"script": _trim_script_to_word_limit(script, _cap)}
 
         log.debug(f"  Seg {i}: generating script (LIGHT)")
         writer = writer_agent
@@ -253,6 +260,8 @@ def make_process_segment(
                         record_breaker_failure(_writer_model)
                         raise
                 script = str(getattr(result, "raw", result)).strip()
+
+        script = _trim_script_to_word_limit(script, _cap)
 
         return {"script": script}
 
@@ -429,12 +438,14 @@ def make_process_segment(
         from audio.audio_proxy import tts_generate
         with global_scheduler.task("heavy", f"Seg{i}:TTS"):
             tts_out = tts_generate(
-                script_for_tts, lang=tts_lang, output_dir=out_base / "audio", speed=_tts_speed
+                script_for_tts, lang=tts_lang, output_dir=out_base / "audio",
+                speed=_tts_speed, engine=config.get("tts", {}).get("engine"),
             )
             audio_path = tts_out["wav_path"] if isinstance(tts_out, dict) else tts_out
             word_timestamps = (
                 tts_out.get("word_timestamps") if isinstance(tts_out, dict) else None
             )
+            tts_engine_used = tts_out.get("engine") if isinstance(tts_out, dict) else None
 
         if audio_path is None:
             raise RuntimeError(f"Seg {i}: TTS did not produce audio")
@@ -450,6 +461,7 @@ def make_process_segment(
         return {
             "audio_path": str(audio_path),
             "word_timestamps_json": str(word_timestamps) if word_timestamps else None,
+            "tts_engine": tts_engine_used,
         }
 
     def image_node(state: SegmentState) -> dict:
@@ -1028,7 +1040,7 @@ def make_process_segment(
         try:
             initial_state = _build_segment_state(i)
             _plan = initial_state.get("plan", {})
-            graph.invoke(initial_state)
+            final_state = graph.invoke(initial_state)
 
             from agents.director_agent import UIState as _UIState
 
@@ -1051,6 +1063,7 @@ def make_process_segment(
                 "title": _plan.get("title", f"Part {i}"),
                 "video_path": path_str,
                 "duration_seconds": duration_s,
+                "tts_engine": (final_state or {}).get("tts_engine"),
             })
 
         except Exception as e:

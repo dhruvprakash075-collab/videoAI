@@ -1,4 +1,16 @@
-"""Outline post-processing pulled out of run_long_pipeline."""
+"""Outline post-processing — apply structural locks from DecisionRecord.
+
+Run once after Director produces the outline, before the per-segment loop.
+
+Responsibilities:
+1. Cap images per segment (config: script.max_images_per_segment)
+2. Lock images_per_segment when DecisionRecord.images_per_segment.locked
+3. Normalize char_presence positional aliases (protagonist/mentor/guardian → story keys)
+4. Enforce minimum environment frame ratio (config: visual.environment_frame_ratio)
+5. Merge colliding aliases by max weight (ponytail: heuristic until stable IDs)
+
+All mutations are in-place on the outline list of dicts.
+"""
 from __future__ import annotations
 
 import logging
@@ -17,6 +29,14 @@ def shape_outline(
 ) -> list[dict]:
     """Apply image caps, char_presence normalization, positional-alias mapping,
     and env-frame-ratio enforcement. outline in, outline out.
+
+    Args:
+        outline: List of segment plan dicts from Director
+        config: Full pipeline config (for caps and ratios)
+        images_per_segment_locked: True if DecisionRecord.images_per_segment.locked
+
+    Returns:
+        Mutated outline (same list object returned for chaining)
     """
     # ── moved verbatim from run_long_pipeline ──
 

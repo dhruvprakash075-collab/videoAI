@@ -215,7 +215,9 @@ def run_pre_production(
         user_responses = {
             "visual_style": prev_overlay.get("visual", {}).get("style", ""),
             "subtitle_style": prev_overlay.get("subtitles", {}).get("format", "classic"),
-            "tts_engine": prev_overlay.get("tts", {}).get("engine", "supertonic"),
+            # ponytail: empty default → base config's tts.engine wins (consistent
+            # with the director's engine priority: user > base config > vision).
+            "tts_engine": prev_overlay.get("tts", {}).get("engine", ""),
             "custom_instructions": prev_overlay.get("production_notes", {}).get(
                 "custom_instructions", ""
             ),

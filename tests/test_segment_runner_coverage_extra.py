@@ -339,8 +339,12 @@ def test_make_process_segment_tts_does_not_budget_retry_or_truncate(tmp_path):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
+    # Single TTS call, no budget retry/truncation in the TTS node itself.
+    # The 80-word draft is trimmed once at write time: words_per_seg=50,
+    # tolerance=0.25 → hi=62; seg_min=1 → tts_budget=100; cap = min(100, 62) = 62.
+    # No sentence boundary in the draft → hard cut at exactly 62 words.
     assert len(tts_calls) == 1
-    assert len(tts_calls[0].split()) >= 80
+    assert len(tts_calls[0].split()) == 62
 
 
 def test_returned_phase_functions_checkpoint_skips_and_render_phase(tmp_path):

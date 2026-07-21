@@ -498,39 +498,43 @@ def _refine_upscale(frames: list[Path], cfg: dict) -> list[Path]:
     from video.image_gen.comfyui_runtime import get_comfyui_runtime
     from video.image_gen.comfyui_workflow import WorkflowPatcher
 
-    runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
-    if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
-        log.warning("[refine] ComfyUI not running; skipping refine pass")
-        return frames
-    client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
-
     try:
-        client.free_memory()
+        runtime = get_comfyui_runtime({"comfyui": comfy_cfg})
+        if not runtime.ensure_running(timeout=comfy_cfg.get("auto_start_timeout", 60)):
+            log.warning("[refine] ComfyUI not running; skipping refine pass")
+            return frames
+        client = ComfyUIClient(base_url=runtime.base_url, timeout=comfy_cfg.get("timeout_seconds", 300))
+
+        try:
+            client.free_memory()
+        except Exception as e:
+            log.debug("[refine] free_memory failed (non-fatal): %s", e)
+
+        final_frames: list[Path] = []
+        with tqdm(total=len(frames), desc=" Refine+Upscale", leave=False) as pbar:
+            for i, frame in enumerate(frames):
+                frame = Path(frame)
+                try:
+                    uploaded = client.upload_image(frame, overwrite=True)
+                    patcher = WorkflowPatcher(Path(refine_path))
+                    wf = patcher.get_workflow()
+                    wf["1"]["inputs"]["image"] = uploaded["name"]
+                    wf["11"]["inputs"]["filename_prefix"] = f"{frame.stem}_final"
+                    out = client.generate_image(
+                        wf,
+                        frame.parent,
+                        filename_prefix=f"{frame.stem}_final",
+                        poll_interval=comfy_cfg.get("poll_seconds", 1.0),
+                        timeout=comfy_cfg.get("timeout_seconds", 300),
+                    )
+                    final_frames.append(out[0] if out else frame)
+                except Exception as e:
+                    log.warning("[refine] frame %d (%s) failed: %s; keeping original", i, frame, e)
+                    final_frames.append(frame)
+                pbar.update(1)
+
+        log.info("[refine] Completed FaceDetailer + upscale on %d frames", len(final_frames))
+        return final_frames
     except Exception as e:
-        log.debug("[refine] free_memory failed (non-fatal): %s", e)
-
-    final_frames: list[Path] = []
-    with tqdm(total=len(frames), desc=" Refine+Upscale", leave=False) as pbar:
-        for i, frame in enumerate(frames):
-            frame = Path(frame)
-            try:
-                uploaded = client.upload_image(frame, overwrite=True)
-                patcher = WorkflowPatcher(Path(refine_path))
-                wf = patcher.get_workflow()
-                wf["1"]["inputs"]["image"] = uploaded["name"]
-                wf["11"]["inputs"]["filename_prefix"] = f"{frame.stem}_final"
-                out = client.generate_image(
-                    wf,
-                    frame.parent,
-                    filename_prefix=f"{frame.stem}_final",
-                    poll_interval=comfy_cfg.get("poll_seconds", 1.0),
-                    timeout=comfy_cfg.get("timeout_seconds", 300),
-                )
-                final_frames.append(out[0] if out else frame)
-            except Exception as e:
-                log.warning("[refine] frame %d (%s) failed: %s; keeping original", i, frame, e)
-                final_frames.append(frame)
-            pbar.update(1)
-
-    log.info("[refine] Completed FaceDetailer + upscale on %d frames", len(final_frames))
-    return final_frames
+        log.warning("[refine] refine/upscale pass failed: %s; returning original frames", e)
+        return frames

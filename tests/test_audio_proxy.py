@@ -191,6 +191,188 @@ def test_tts_generate_supertonic_fails_then_omnivoice_succeeds(tmp_path: Path):
     assert out["wav_path"] == wav_out
 
 
+def test_tts_generate_indicf5_fails_supertonic_fails_then_omnivoice_succeeds(tmp_path: Path):
+    """indicf5 -> supertonic -> omnivoice chain (missing fallback — currently crashes)."""
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "omni.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_indicf5_worker",
+            return_value={"status": "error", "message": "indic fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "error", "message": "super fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_omnivoice_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ) as omni,
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path)
+    assert omni.called
+    assert out["wav_path"] == wav_out
+
+
+def test_tts_generate_omnivoice_fails_then_supertonic_succeeds(tmp_path: Path):
+    """omnivoice -> supertonic chain (missing fallback — currently crashes)."""
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "st.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "omnivoice", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_omnivoice_worker",
+            return_value={"status": "error", "message": "omni fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ) as supertonic,
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path)
+    assert supertonic.called
+    assert out["wav_path"] == wav_out
+
+
+def test_tts_generate_omnivoice_fails_supertonic_fails_raises():
+    """Both omnivoice and supertonic fail -> RuntimeError."""
+    audio_proxy._config_cache.clear()
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "omnivoice", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_omnivoice_worker",
+            return_value={"status": "error", "message": "omni fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "error", "message": "super fail"},
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="TTS generation failed"):
+            audio_proxy.tts_generate("hello")
+
+
+def test_tts_generate_indicf5_supertonic_omnivoice_all_fail_raises():
+    """All three engines fail -> RuntimeError."""
+    audio_proxy._config_cache.clear()
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_indicf5_worker",
+            return_value={"status": "error", "message": "indic fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "error", "message": "super fail"},
+        ),
+        patch(
+            "audio.audio_proxy._call_omnivoice_worker",
+            return_value={"status": "error", "message": "omni fail"},
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="TTS generation failed"):
+            audio_proxy.tts_generate("hello")
+
+
+def test_tts_generate_accepts_engine_override(tmp_path: Path):
+    """Caller-supplied engine overrides config engine setting."""
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "ov.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_omnivoice_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ) as omni,
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path, engine="omnivoice")
+    assert omni.called
+    assert out["wav_path"] == wav_out
+
+
+def test_tts_generate_with_explicit_voice_sample_dispatches(tmp_path: Path):
+    """Regression: dispatch must run when voice_sample is passed explicitly
+    (engine block was accidentally nested under `if voice_sample is None`)."""
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "vs.wav"
+    wav_out.write_bytes(b"RIFF")
+    voice = tmp_path / "voice.wav"
+    voice.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "supertonic", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ) as supertonic,
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path, voice_sample=voice)
+    assert supertonic.called
+    assert out["wav_path"] == wav_out
+
+
+def test_tts_generate_reports_engine_that_actually_served(tmp_path: Path):
+    """Return dict records the post-fallback engine for the run manifest."""
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "e.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "indicf5", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_indicf5_worker",
+            return_value={"status": "error", "message": "indic down"},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ),
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path)
+    assert out["engine"] == "supertonic"  # indicf5 requested, supertonic served
+
+
+def test_tts_generate_reports_requested_engine_on_direct_success(tmp_path: Path):
+    audio_proxy._config_cache.clear()
+    wav_out = tmp_path / "e2.wav"
+    wav_out.write_bytes(b"RIFF")
+    with (
+        patch(
+            "audio.audio_proxy.load_config",
+            return_value={"tts": {"engine": "supertonic", "lang": "hi", "voice_profile": {}}},
+        ),
+        patch(
+            "audio.audio_proxy._call_supertonic_worker",
+            return_value={"status": "success", "wav_path": str(wav_out)},
+        ),
+    ):
+        out = audio_proxy.tts_generate("hello", output_dir=tmp_path)
+    assert out["engine"] == "supertonic"
+
+
 def test_tts_generate_raises_when_all_engines_fail():
     audio_proxy._config_cache.clear()
     with (

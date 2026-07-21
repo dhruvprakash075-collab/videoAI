@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from video.image_gen.panel_compositor import _layout_rects, compose_panel_pages
+from video.image_gen.panel_compositor import _layout_rects, _valid_rects, compose_panel_pages
 
 
 def test_compose_panel_pages_uses_distinct_images(tmp_path: Path):
@@ -101,3 +101,28 @@ def test_layout_selection_prefers_panels_that_fit_landscape_shots(tmp_path: Path
     rects = _layout_rects(layout_file, 4, 400, 400, 0)
 
     assert rects[0] == (0, 0, 200, 133)
+
+
+def test_valid_rects_accepts_small_panel_between_1_5_and_3_percent():
+    """A panel that's 2.25% of page area should be valid with 1.5% threshold."""
+    page_w = page_h = 100  # page_area = 10000
+    # Panel (0, 0, 15, 15) → area = 225 → 2.25% (>1.5%, <3%)
+    assert _valid_rects([(0, 0, 15, 15)], page_w, page_h)
+
+
+def test_valid_rects_rejects_panel_below_1_5_percent():
+    """A panel under 1.5% of page area is annotation noise → rejected."""
+    page_w = page_h = 100  # page_area = 10000
+    # Panel (0, 0, 10, 10) → area = 100 → 1.0% (<1.5%)
+    assert not _valid_rects([(0, 0, 10, 10)], page_w, page_h)
+    # 1x1 speck → 0.01%
+    assert not _valid_rects([(0, 0, 1, 1)], page_w, page_h)
+
+
+def test_valid_rects_accepts_tiny_overlap_between_2_and_5_percent():
+    """Two panels overlapping by ~2% should be valid with 5% tolerance."""
+    page_w = page_h = 100
+    # Panel A: (0, 0, 49, 100)  → area = 4900
+    # Panel B: (48, 0, 100, 100) → overlap x=48-49=1 → overlap area = 1*100 = 100
+    # 100 / 4900 = 2.04%  → rejected at 2%, accepted at 5%
+    assert _valid_rects([(0, 0, 49, 100), (48, 0, 100, 100)], page_w, page_h)
