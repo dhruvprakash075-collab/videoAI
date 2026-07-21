@@ -171,6 +171,51 @@ HINGLISH_GLOSSARY: dict[str, str] = {
     "option": "ऑप्शन",
     "proof": "प्रूफ",
     "clue": "क्लू",
+    # --- manga / anime / production domain (curated: the naive mapper mangles
+    # these — क्रेअटिओन instead of क्रिएशन — so they live here, not in rules) ---
+    "manga": "मैंगा",
+    "anime": "एनिमे",
+    "manhwa": "मानह्वा",
+    "webtoon": "वेबटून",
+    "comic": "कॉमिक",
+    "panel": "पैनल",
+    "scene": "सीन",
+    "frame": "फ्रेम",
+    "style": "स्टाइल",
+    "art": "आर्ट",
+    "artist": "आर्टिस्ट",
+    "artwork": "आर्टवर्क",
+    "sketch": "स्केच",
+    "draft": "ड्राफ्ट",
+    "color": "कलर",
+    "visual": "विज़ुअल",
+    "page": "पेज",
+    "book": "बुक",
+    "novel": "नॉवल",
+    "graphic": "ग्राफिक",
+    "chapter": "चैप्टर",
+    "episode": "एपिसोड",
+    "series": "सीरीज़",
+    "volume": "वॉल्यूम",
+    "studio": "स्टूडियो",
+    "industry": "इंडस्ट्री",
+    "standard": "स्टैंडर्ड",
+    "creation": "क्रिएशन",
+    "create": "क्रिएट",
+    "creative": "क्रिएटिव",
+    "verification": "वेरिफिकेशन",
+    "quality": "क्वालिटी",
+    "original": "ओरिजिनल",
+    "version": "वर्जन",
+    "early": "अर्ली",
+    "days": "डेज़",
+    "day": "डे",
+    "there": "देयर",
+    "were": "वर",
+    "digital": "डिजिटल",
+    "publish": "पब्लिश",
+    "popular": "पॉपुलर",
+    "famous": "फेमस",
 }
 
 # @@N@@ token style verified to survive sarvam-translate (diagnostic Test B).
@@ -288,6 +333,12 @@ _VOWELS = {
     "uu": ("ऊ", "ू"),
     "ai": ("ऐ", "ै"),
     "au": ("औ", "ौ"),
+    "ea": ("ई", "ी"),
+    "ey": ("ई", "ी"),
+    "ay": ("ए", "े"),
+    "ow": ("ओ", "ो"),
+    "oi": ("ओइ", "ोइ"),
+    "aw": ("ओ", "ो"),
     "a": ("अ", ""),
     "i": ("इ", "ि"),
     "e": ("ए", "े"),
@@ -311,6 +362,13 @@ def _roman_word_to_devanagari(word: str) -> str:
         return glossary
 
     src = word.lower().strip("'-")
+    # ponytail: high-yield English-orthography rules before the letter walk.
+    # Ceiling: English spelling is irregular, so unglossed words remain
+    # approximate — grow HINGLISH_GLOSSARY for words that must sound right.
+    src = re.sub(r"tion\b", "shun", src)
+    src = src.replace("ck", "k").replace("qu", "kw").replace("wh", "w")
+    src = src.replace("wr", "r").replace("kn", "n")
+    src = re.sub(r"(?<=[b-df-hj-np-tv-z])e\b", "", src)  # silent trailing e
     out: list[str] = []
     i = 0
     while i < len(src):

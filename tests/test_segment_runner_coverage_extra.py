@@ -347,6 +347,46 @@ def test_make_process_segment_tts_does_not_budget_retry_or_truncate(tmp_path):
     assert len(tts_calls[0].split()) == 62
 
 
+def test_tts_checkpoint_engine_sniffed_from_filename(tmp_path):
+    """Old checkpoints lack the engine field; the "<engine>_<hex>.wav" prefix
+    identifies it so the manifest still records the engine that served."""
+    audio = tmp_path / "supertonic_ab12cd34.wav"
+    audio.write_bytes(b"RIFF")
+    image = tmp_path / "image.png"
+    image.write_bytes(b"png")
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"mp4")
+
+    kwargs = _process_kwargs(tmp_path, resume=True, dry_run=True, fast_dry_run=True)
+
+    def full_ck(key):
+        return {
+            "script": {"data": "cached script"},
+            "devanagari_script": {"data": "हिंदी", "script_for_tts": "cached script"},
+            "world_state_applied": {"done": True},
+            "audio": {"data": str(audio), "word_timestamps": None},  # no engine field
+            "images": {"data": [str(image)]},
+            "image_review_done": {"done": True},
+            "video": {"data": str(video)},
+            "render_done": {"done": True},
+        }
+
+    kwargs["cp_mgr"].get.side_effect = full_ck
+    process, *_ = segment_runner.make_process_segment(**kwargs)
+
+    from agents.ui_state import UIState
+
+    with patch.object(UIState, "set_segment_manifest") as set_manifest:
+        process(1)
+
+    success = [
+        c.args[1]
+        for c in set_manifest.call_args_list
+        if c.args[1].get("segment") == 1 and c.args[1].get("status") == "success"
+    ]
+    assert success and success[0]["tts_engine"] == "supertonic"
+
+
 def test_returned_phase_functions_checkpoint_skips_and_render_phase(tmp_path):
     audio = tmp_path / "audio.wav"
     audio.write_bytes(b"RIFF")

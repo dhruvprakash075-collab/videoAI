@@ -63,6 +63,25 @@ def test_protect_hinglish_target_ratio_expands_content_words():
     assert "@@0@@" in protected
 
 
+def test_glossary_covers_manga_domain_words():
+    """Domain words that the naive mapper mangled now have curated spellings."""
+    from agents.hinglish_glossary import transliterate_latin_runs
+
+    assert transliterate_latin_runs("manga creation") == "मैंगा क्रिएशन"
+    assert transliterate_latin_runs("early days") == "अर्ली डेज़"
+    assert transliterate_latin_runs("industry standards") == "इंडस्ट्री स्टैंडर्ड"
+    assert transliterate_latin_runs("comic panel style") == "कॉमिक पैनल स्टाइल"
+
+
+def test_naive_mapper_orthography_rules():
+    """Non-glossary words get the high-yield rules (tion, silent-e, ck, qu)."""
+    from agents.hinglish_glossary import _roman_word_to_devanagari
+
+    assert _roman_word_to_devanagari("fiction") == "फिक्शुन"
+    assert _roman_word_to_devanagari("brave") == "ब्रव"  # silent-e stripped
+    assert _roman_word_to_devanagari("trick") == "ट्रिक"
+
+
 # ── translate_to_devanagari bounded re-translation tests ──────────────────
 
 

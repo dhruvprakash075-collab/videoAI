@@ -396,9 +396,16 @@ def make_process_segment(
         ck = cp_mgr.get(key) if resume else None
 
         if ck and "audio" in ck and Path(ck["audio"]["data"]).exists():
+            _ck_engine = ck["audio"].get("engine")
+            if not _ck_engine:
+                # ponytail: checkpoints saved before the engine field existed lack it;
+                # workers always name outputs "<engine>_<hex>.wav", so sniff the prefix.
+                _prefix = Path(ck["audio"]["data"]).stem.split("_", 1)[0]
+                _ck_engine = _prefix if _prefix in ("indicf5", "supertonic", "omnivoice") else None
             return {
                 "audio_path": ck["audio"]["data"],
                 "word_timestamps_json": ck["audio"].get("word_timestamps"),
+                "tts_engine": _ck_engine,
             }
 
         if dry_run:
@@ -456,6 +463,7 @@ def make_process_segment(
             {
                 "data": str(audio_path),
                 "word_timestamps": str(word_timestamps) if word_timestamps else None,
+                "engine": tts_engine_used,
             },
         )
         return {

@@ -93,13 +93,60 @@ def test_ensure_running_autostarts(tmp_path: Path):
 
 def test_ensure_running_already_running_and_disabled(tmp_path: Path):
     runtime = _runtime(tmp_path, auto_start=True)
-    with patch.object(runtime, "is_running", return_value=True), patch.object(runtime, "start") as start:
+    with (
+        patch.object(runtime, "is_running", return_value=True),
+        patch.object(runtime, "_owns_running_instance", return_value=True),
+        patch.object(runtime, "start") as start,
+    ):
         assert runtime.ensure_running(timeout=3) is True
     start.assert_not_called()
 
     runtime = _runtime(tmp_path, auto_start=False)
     with patch.object(runtime, "is_running", return_value=False):
         assert runtime.ensure_running(timeout=3) is False
+
+
+def test_ensure_running_restarts_foreign_instance(tmp_path: Path):
+    """Instance we didn't spawn (dead-stdout crash class) is killed and restarted."""
+    runtime = _runtime(tmp_path, auto_start=True)
+    with (
+        patch.object(runtime, "is_running", return_value=True),
+        patch.object(runtime, "_owns_running_instance", return_value=False),
+        patch.object(runtime, "_kill_port_owner", return_value=True) as kill,
+        patch.object(runtime, "start", return_value=True) as start,
+        patch("time.sleep"),
+    ):
+        assert runtime.ensure_running(timeout=3) is True
+    kill.assert_called_once()
+    start.assert_called_once_with(timeout=3)
+
+
+def test_ensure_running_foreign_instance_kept_when_autostart_off(tmp_path: Path):
+    """auto_start disabled → we can't replace the foreign instance, so we use it."""
+    runtime = _runtime(tmp_path, auto_start=False)
+    with (
+        patch.object(runtime, "is_running", return_value=True),
+        patch.object(runtime, "_owns_running_instance", return_value=False),
+        patch.object(runtime, "_kill_port_owner", return_value=True),
+        patch.object(runtime, "start") as start,
+    ):
+        assert runtime.ensure_running(timeout=3) is True
+    start.assert_not_called()
+
+
+def test_owns_running_instance_marker_lifecycle(tmp_path: Path):
+    import os
+
+    runtime = _runtime(tmp_path)
+    root = Path(runtime.root)
+    # No marker → not ours
+    assert runtime._owns_running_instance() is False
+    # Marker with a live pid (this test process) → ours
+    (root / "comfyui_runtime.pid").write_text(str(os.getpid()))
+    assert runtime._owns_running_instance() is True
+    # Marker with an implausible dead pid → not ours
+    (root / "comfyui_runtime.pid").write_text("99999999")
+    assert runtime._owns_running_instance() is False
 
 
 def test_start_success_permission_retry_failure_and_timeout(tmp_path: Path):

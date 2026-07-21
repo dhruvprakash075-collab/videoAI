@@ -1,5 +1,6 @@
 """ComfyUI runtime management - checks if running, auto-starts when enabled."""
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -98,10 +99,71 @@ class ComfyUIRuntime:
             self.port, self._base_url = old_port, old_url
         return False
 
+    def _owns_running_instance(self) -> bool:
+        """True when the responding instance was spawned by a pipeline runtime.
+
+        Ownership is a pid marker file written by start(); the pid must still live.
+        """
+        try:
+            pid = int((self._resolve_path(self.root) / "comfyui_runtime.pid").read_text().strip())
+        except (OSError, ValueError):
+            return False
+        try:
+            import psutil
+
+            return psutil.pid_exists(pid)
+        except ImportError:
+            # Can't verify — don't kill blindly.
+            log.debug("[ComfyUI] psutil unavailable; assuming instance is ours")
+            return True
+
+    def _kill_port_owner(self) -> bool:
+        """Terminate whatever listens on our port. Best-effort."""
+        try:
+            import psutil
+        except ImportError:
+            return False
+        killed = False
+        try:
+            for conn in psutil.net_connections(kind="tcp"):
+                if (
+                    conn.laddr
+                    and conn.laddr.port == self.port
+                    and conn.status == psutil.CONN_LISTEN
+                    and conn.pid
+                ):
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        log.warning(f"[ComfyUI] Killing foreign instance PID {conn.pid}")
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except psutil.TimeoutExpired:
+                            proc.kill()
+                        killed = True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        log.warning(f"[ComfyUI] Could not kill PID {conn.pid}: {e}")
+        except Exception as e:
+            log.warning(f"[ComfyUI] Port-owner scan failed: {e}")
+        return killed
+
     def ensure_running(self, timeout: float = 60.0) -> bool:
         """Ensure ComfyUI is running, starting it if auto_start is enabled."""
         if self.is_running():
-            log.info(f"[ComfyUI] Already running at {self._base_url}")
+            if self._owns_running_instance():
+                log.info(f"[ComfyUI] Already running at {self._base_url}")
+                return True
+            # ponytail: a foreign ComfyUI may hold a dead stdout pipe; every prompt
+            # then dies in tqdm with [Errno 22] (seen in production). Another process's
+            # handles can't be inspected, so restart it under our own log files.
+            log.warning(
+                f"[ComfyUI] Instance at {self._base_url} was not started by this pipeline — "
+                "restarting under pipeline management (foreign stdout can crash prompts)"
+            )
+            if self._kill_port_owner() and self.auto_start:
+                time.sleep(1.0)
+                return self.start(timeout=timeout)
+            log.warning("[ComfyUI] Could not replace foreign instance — using it as-is")
             return True
         if self._reuse_running_port():
             return True
@@ -179,6 +241,7 @@ class ComfyUIRuntime:
                     self._close_log_handles()
 
                 log.info(f"[ComfyUI] Started process PID {self._process.pid}")
+                (root_path / "comfyui_runtime.pid").write_text(str(self._process.pid))
 
             except Exception as e:
                 log.error(f"[ComfyUI] Failed to start: {e}")
@@ -214,6 +277,10 @@ class ComfyUIRuntime:
                 finally:
                     self._process = None
                     self._close_log_handles()
+                    with contextlib.suppress(OSError):
+                        (self._resolve_path(self.root) / "comfyui_runtime.pid").unlink(
+                            missing_ok=True
+                        )
 
     @property
     def base_url(self) -> str:
