@@ -184,7 +184,8 @@ async fn run_ffprobe(ffprobe_bin: &Path, input: &Path) -> Result<Value> {
         bail!("ffprobe error: {}", stderr_tail);
     }
 
-    let probe: Value = serde_json::from_slice(&output.stdout).context("ffprobe output invalid JSON")?;
+    let probe: Value =
+        serde_json::from_slice(&output.stdout).context("ffprobe output invalid JSON")?;
     Ok(probe)
 }
 
@@ -210,7 +211,10 @@ fn inspect_probe(
     let size_mb = file_size_bytes.map(|b| b as f64 / 1_048_576.0);
     if let Some(mb) = size_mb {
         if mb < MIN_SIZE_MB {
-            issues.push(format!("file size {:.2} MB below minimum {:.2} MB", mb, MIN_SIZE_MB));
+            issues.push(format!(
+                "file size {:.2} MB below minimum {:.2} MB",
+                mb, MIN_SIZE_MB
+            ));
         }
     }
 
@@ -314,7 +318,10 @@ fn inspect_probe(
     // Audio
     let mut audio_report = AudioReport::default();
     if let Some(audio) = audio_stream {
-        audio_report.channels = audio.get("channels").and_then(Value::as_u64).map(|c| c as u16);
+        audio_report.channels = audio
+            .get("channels")
+            .and_then(Value::as_u64)
+            .map(|c| c as u16);
         audio_report.sample_rate = audio
             .get("sample_rate")
             .and_then(Value::as_str)
@@ -337,7 +344,10 @@ fn inspect_probe(
 
     // Drift
     let mut drift_s = None;
-    if let (Some(v), Some(a)) = (video_stream.get("start_time"), audio_stream.and_then(|s| s.get("start_time"))) {
+    if let (Some(v), Some(a)) = (
+        video_stream.get("start_time"),
+        audio_stream.and_then(|s| s.get("start_time")),
+    ) {
         if let (Some(vs), Some(as_)) = (v.as_str(), a.as_str()) {
             if let (Ok(vf), Ok(af)) = (vs.parse::<f64>(), as_.parse::<f64>()) {
                 drift_s = Some((vf - af).abs());
@@ -439,7 +449,13 @@ mod tests {
         };
         let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(report.passed);
-        assert_eq!(report.resolution, Some(Resolution { width: 1920, height: 1080 }));
+        assert_eq!(
+            report.resolution,
+            Some(Resolution {
+                width: 1920,
+                height: 1080
+            })
+        );
         Ok(())
     }
 
@@ -452,7 +468,13 @@ mod tests {
         };
         let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(report.passed);
-        assert_eq!(report.resolution, Some(Resolution { width: 1080, height: 1920 }));
+        assert_eq!(
+            report.resolution,
+            Some(Resolution {
+                width: 1080,
+                height: 1920
+            })
+        );
         Ok(())
     }
 
@@ -501,7 +523,10 @@ mod tests {
         };
         let report = inspect_probe(&probe, Some(1048576), &config, "test.mp4")?;
         assert!(!report.passed);
-        assert!(report.issues.iter().any(|i| i.contains("deviates from requested")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.contains("deviates from requested")));
         Ok(())
     }
 
@@ -533,7 +558,10 @@ mod tests {
         let report = inspect_probe(&probe, Some(50000), &config, "test.mp4")?; // 50KB
         assert!(!report.passed);
         assert!(report.issues.iter().any(|i| i.contains("below minimum")));
-        assert!(report.issues.iter().any(|i| i.contains("expected landscape")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.contains("expected landscape")));
         Ok(())
     }
 }
