@@ -19,7 +19,7 @@ def mock_dependencies(tmp_path):
     counter = [0]
     cfg = {
         "critic": {"threshold": 60},
-        "script": {"word_count_tolerance": 0.25, "words_per_segment": 50},
+        "script": {"words_per_segment": 50},
         "video": {"output_path": str(tmp_path / "final.mp4")},
         "checkpoint": {"enabled": True, "dir": str(tmp_path)},
         "performance": {"vram_evict_wait_s": 0},
@@ -109,11 +109,7 @@ def test_critic_node_reject_and_rewrite(mock_dependencies):
 
 def test_translate_node_receives_write_time_trimmed_script(mock_dependencies):
     """Translate node adds no trimming of its own: it receives exactly what
-    write_script_node produced (writer output trimmed to the word budget cap).
-    Fixture: words_per_seg=50, tolerance=0.25 → hi=62; seg_min=2 → tts_budget=200;
-    cap = min(200, 62) = 62."""
-    from core.segment.budget import _trim_script_to_word_limit
-
+    write_script_node produced (no word budget cap applied)."""
     long_script = "Word word word. " * 30
     mock_crew = MagicMock()
     mock_crew.kickoff.return_value = long_script
@@ -134,8 +130,7 @@ def test_translate_node_receives_write_time_trimmed_script(mock_dependencies):
         process_seg(1)
 
         called_script = mock_sanitize.call_args[0][0]
-        assert called_script == _trim_script_to_word_limit(long_script.strip(), 62)
-        assert len(called_script.split()) <= 62
+        assert called_script == long_script.strip()
 
 
 def test_translate_node_translation_failure(mock_dependencies):

@@ -226,8 +226,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_root": "../invalid_dir",
         })
         assert resp.status_code == 400
@@ -237,8 +236,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_root": "C:\\nonexistent_directory_abcdef",
         })
         assert resp.status_code == 400
@@ -248,8 +246,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_python": "../invalid_py",
         })
         assert resp.status_code == 400
@@ -259,8 +256,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_python": "C:\\nonexistent_py_file_abcdef.exe",
         })
         assert resp.status_code == 400
@@ -270,8 +266,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_workflow_path": "../invalid_wf.json",
         })
         assert resp.status_code == 400
@@ -281,8 +276,7 @@ class TestConfigExtensionExtended:
         resp = client.post("/api/config", data={
             "voice_engine": "supertonic",
             "dynamic_subtitles": "false",
-            "uncapped_scaling": "false",
-            "max_images_per_segment": 6,
+            "default_images_per_segment": 6,
             "comfyui_workflow_path": "C:\\nonexistent_wf_abcdef.json",
         })
         assert resp.status_code == 400

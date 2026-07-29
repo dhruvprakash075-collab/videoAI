@@ -26,10 +26,8 @@ def config():
         },
         "script": {
             "default_images_per_segment": 6,
-            "max_images_per_segment": 10,
             "dynamic_image_count": True,
             "min_words": 20,
-            "max_words": 400,
         },
     }
 
@@ -95,12 +93,12 @@ def test_build_prompts_falls_back_to_default_count(config):
 
 
 def test_build_prompts_clamps_to_max(config):
-    """If num_images exceeds max_images_per_segment, clamp it."""
+    """If num_images exceeds the config max, build_prompts uses the plan's num_images (no cap)."""
     plan = {"title": "T", "key_event": "X", "mood": "epic", "num_images": 100}
     result = build_prompts("script", plan, config)
     prompts = [p.strip() for p in result.split(";") if p.strip()]
-    max_imgs = config.get("script", {}).get("max_images_per_segment", 10)
-    assert len(prompts) <= max_imgs
+    # No max cap — the plan's num_images is used directly
+    assert len(prompts) == 100
 
 
 def test_build_prompts_clamps_to_min(config):
@@ -171,10 +169,13 @@ def test_validate_script_too_short(config):
     assert validate_script(script, config) is False
 
 
-def test_validate_script_too_long(config):
-    # Default max is 400 words
-    script = " ".join(["word"] * 500)
-    assert validate_script(script, config) is False
+def test_validate_script_long_passes(config):
+    # No upper word limit anymore — any length passes as long as diversity is met
+    import random
+    rng = random.Random(42)
+    words = [f"alpha{rng.randint(0, 999)}" for _ in range(500)]
+    script = " ".join(words)
+    assert validate_script(script, config) is True
 
 
 def test_validate_script_low_diversity(config):

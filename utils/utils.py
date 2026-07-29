@@ -96,21 +96,15 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
     # Image count: when dynamic_image_count is enabled (default) the Director's
     # per-segment plan['num_images'] wins; when disabled, the config default is
     # used as a fixed count (lets the operator force an exact number per segment,
-    # e.g. via the --images-per-segment lock).
+    # e.g. via the --images-per-segment lock). No upper bound — Director decides.
     script_cfg = config.get("script", {})
     default_count = script_cfg.get("default_images_per_segment", 6)
     if script_cfg.get("dynamic_image_count", True):
         target_count = plan.get("num_images", default_count)
     else:
         target_count = default_count
-    # Guard extremes: clamp to [1, max_images_per_segment] so explicit
-    # one-image smoke/CLI locks stay exact.
-    # P3-12 fix: read max_images_per_segment from config instead of hardcoding 30.
-    # Default is 10 (matches config.yaml script.max_images_per_segment) so we
-    # never generate more images than the operator configured, which is important
-    # on a 6GB GPU where each SD call is expensive.
-    _max_imgs = config.get("script", {}).get("max_images_per_segment", 10)
-    target_count = max(1, min(_max_imgs, target_count))
+    # Guard minimum: at least 1 image
+    target_count = max(1, target_count)
 
     log.info(f"Building {target_count} prompts for segment (dynamic image scaling)")
 
@@ -279,16 +273,11 @@ def validate_script(script: str, config: dict) -> bool:
         True if valid, False otherwise
     """
     min_words = config.get("script", {}).get("min_words", 20)
-    max_words = config.get("script", {}).get("max_words", 400)
 
     word_count = len(script.split())
 
     if word_count < min_words:
         log.warning(f"Script too short: {word_count} < {min_words}")
-        return False
-
-    if word_count > max_words:
-        log.warning(f"Script too long: {word_count} > {max_words}")
         return False
 
     # Check for minimum coherence (not all same word repeated)

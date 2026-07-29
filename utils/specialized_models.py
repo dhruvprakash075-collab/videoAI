@@ -28,7 +28,7 @@ def _call_ollama(
 
     The ``timeout`` argument is retained for backward compatibility with
     existing call sites and test fixtures, but the actual per-request timeout
-    now comes from ``ollama.request_timeout`` in the config (default 240s).
+    now comes from ``ollama.request_timeout`` in the config (default 480s).
     The breaker ensures we fail fast when the model is unhealthy.
     """
     try:

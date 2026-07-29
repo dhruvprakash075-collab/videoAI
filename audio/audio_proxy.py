@@ -127,6 +127,9 @@ def _call_indicf5_worker(
             "उनके बाकी सभी दाँत गिर गए हैं।"
         )
     timeout = int(indic_cfg.get("timeout_seconds", 900))
+    speed = float(indic_cfg.get("speed", 0.85))
+    nfe_step = int(indic_cfg.get("nfe_step", 40))
+    cfg_strength = float(indic_cfg.get("cfg_strength", 3.5))
     out_wav = (output_dir / f"indicf5_{uuid.uuid4().hex[:8]}.wav").resolve()
     worker_script = Path(__file__).parent / "indicf5_worker.py"
     temp_dir = Path("studio_checkpoints") / "temp"
@@ -145,6 +148,9 @@ def _call_indicf5_worker(
             f"--ref-audio={ref_audio}",
             f"--ref-text={ref_text}",
             f"--timeout={timeout}",
+            f"--speed={speed}",
+            f"--nfe-step={nfe_step}",
+            f"--cfg-strength={cfg_strength}",
         ]
         log.info("[IndicF5] Calling one-shot worker...")
         result = subprocess.run(

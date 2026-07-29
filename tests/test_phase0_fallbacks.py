@@ -101,7 +101,6 @@ def test_translate_node_falls_back_on_crash():
     counter = [0]
     cfg = {
         "critic": {"threshold": 60},
-        "script": {"word_count_tolerance": 0.25},
         "tts": {"lang": "hi"}
     }
     outline = [{"title": "Intro"}]

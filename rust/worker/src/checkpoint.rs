@@ -26,7 +26,6 @@
 //!   save   — Atomic write one step (data_json must be a valid JSON object)
 //!   clear  — Delete checkpoint + all sibling files (.bak, .tmp, .corrupt.*)
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;

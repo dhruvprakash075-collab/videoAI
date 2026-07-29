@@ -32,8 +32,6 @@ const EXIT_VALIDATION_FAILURE: i32 = 2;
 const MIN_SIZE_MB: f64 = 0.1;
 const DURATION_TOLERANCE_RATIO: f64 = 0.20;
 const DRIFT_WARNING_SECONDS: f64 = 0.2;
-const FPS_TOLERANCE: f64 = 0.1;
-const FFPROBE_TIMEOUT_SECONDS: u64 = 30;
 
 #[derive(Debug, clap::Subcommand)]
 pub enum MediaCommand {
@@ -257,13 +255,11 @@ fn inspect_probe(
                 width, height
             ));
         }
-    } else if config.expect_landscape {
-        if width != 1920 || height != 1080 {
-            issues.push(format!(
-                "expected landscape 1920x1080, got {}x{}",
-                width, height
-            ));
-        }
+    } else if config.expect_landscape && (width != 1920 || height != 1080) {
+        issues.push(format!(
+            "expected landscape 1920x1080, got {}x{}",
+            width, height
+        ));
     }
 
     // FPS

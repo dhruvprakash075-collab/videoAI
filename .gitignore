@@ -104,6 +104,9 @@ external/supertonic_embed/
 external/ponytail/
 external/shadcn-improve/
 external/comfyui-custom-node-skills/
+external/IndicF5/
+external/indicf5/
+vendors/
 
 # ── Local image-generation datasets / reference pools ────────────
 reference_assets/datasets/**

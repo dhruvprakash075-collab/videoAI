@@ -394,6 +394,15 @@ def run_long_pipeline(
     except Exception as exc:
         log.debug(f"UIState progress init skipped: {exc}")
 
+    # Validate Director's rigid contract before proceeding
+    _words_locked = "words_per_segment" in _cli_flags
+    try:
+        from core.outline_shaping import validate_director_plan
+        validate_director_plan(outline, words_locked=_words_locked, images_locked=_images_per_segment_locked)
+    except ValueError as e:
+        log.error(f"[DIRECTOR] Contract violation — aborting: {e}")
+        return {"status": "error", "reason": str(e)}
+
     outline = shape_outline(
         outline, config,
         images_per_segment_locked=_images_per_segment_locked,

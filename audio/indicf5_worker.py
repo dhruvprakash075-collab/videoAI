@@ -21,8 +21,11 @@ def generate(
     ref_audio: Path,
     ref_text: str,
     timeout: int = 900,
+    speed: float = 0.85,
+    nfe_step: int = 40,
+    cfg_strength: float = 3.5,
 ) -> dict:
-    run_script = root / "run_indic.py"
+    run_script = (root / "run_indic.py").resolve()
     if not run_script.exists():
         raise FileNotFoundError(f"IndicF5 runner not found: {run_script}")
     if not ref_audio.exists():
@@ -38,7 +41,13 @@ def generate(
         env = dict(os.environ)
         env.setdefault("PYTHONIOENCODING", "utf-8")
         result = subprocess.run(
-            [python_exe, str(run_script), str(ref_audio), ref_text, str(batch)],
+            [
+                python_exe, str(run_script),
+                str(ref_audio), ref_text, str(batch),
+                f"--speed={speed}",
+                f"--nfe_step={nfe_step}",
+                f"--cfg_strength={cfg_strength}",
+            ],
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -73,6 +82,9 @@ def main() -> int:
     parser.add_argument("--ref-audio", required=True)
     parser.add_argument("--ref-text", required=True)
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--speed", type=float, default=0.85)
+    parser.add_argument("--nfe-step", type=int, default=40)
+    parser.add_argument("--cfg-strength", type=float, default=3.5)
     args = parser.parse_args()
 
     try:
@@ -85,6 +97,9 @@ def main() -> int:
             ref_audio=Path(args.ref_audio),
             ref_text=args.ref_text,
             timeout=args.timeout,
+            speed=args.speed,
+            nfe_step=args.nfe_step,
+            cfg_strength=args.cfg_strength,
         )
     except Exception as exc:
         resp = {"status": "error", "message": str(exc)[:500]}

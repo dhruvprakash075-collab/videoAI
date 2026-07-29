@@ -15,7 +15,7 @@ def _process_kwargs(tmp_path, **overrides):
         "topic": "coverage topic",
         "config": {
             "critic": {"threshold": 60},
-            "script": {"word_count_tolerance": 0.25, "words_per_segment": 50},
+            "script": {"words_per_segment": 50},
             "video": {"output_path": str(tmp_path / "final.mp4")},
             "checkpoint": {"enabled": True, "dir": str(tmp_path)},
             "tts": {"lang": "hi"},
@@ -69,17 +69,6 @@ def test_ollama_alive_true_and_false():
         assert segment_runner._ollama_alive({"ollama": {"host": "http://localhost:11434"}}) is True
     with patch("urllib.request.urlopen", side_effect=OSError("down")):
         assert segment_runner._ollama_alive({"ollama": {"host": "http://localhost:11434"}}) is False
-
-
-def test_tts_word_budget_and_trim_paths():
-    assert segment_runner._tts_word_budget({}, 0, "hi") == 0
-    assert segment_runner._tts_word_budget({"script": {"tts_words_per_minute_hi": 120}}, 30, "hi") == 60
-    assert segment_runner._tts_word_budget({"script": {"tts_words_per_minute_en": 180}}, 20, "en") == 60
-
-    assert segment_runner._trim_script_to_word_limit("one two", 5) == "one two"
-    assert segment_runner._trim_script_to_word_limit("one two", 0) == "one two"
-    assert segment_runner._trim_script_to_word_limit("One two. Three four five.", 3) == "One two."
-    assert segment_runner._trim_script_to_word_limit("one two three four", 2) == "one two"
 
 
 def test_stop_and_start_ollama_paths():
@@ -270,7 +259,7 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
         director_agent_instance=director,
         config={
             "critic": {"threshold": 60},
-            "script": {"word_count_tolerance": 0.25, "words_per_segment": 50},
+            "script": {"words_per_segment": 50},
             "video": {"output_path": str(tmp_path / "final.mp4")},
             "checkpoint": {"enabled": True, "dir": str(tmp_path)},
             "tts": {"lang": "hi"},
@@ -339,12 +328,9 @@ def test_make_process_segment_tts_does_not_budget_retry_or_truncate(tmp_path):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
-    # Single TTS call, no budget retry/truncation in the TTS node itself.
-    # The 80-word draft is trimmed once at write time: words_per_seg=50,
-    # tolerance=0.25 → hi=62; seg_min=1 → tts_budget=100; cap = min(100, 62) = 62.
-    # No sentence boundary in the draft → hard cut at exactly 62 words.
+    # No budget/trim cap anymore — TTS receives the full writer output.
     assert len(tts_calls) == 1
-    assert len(tts_calls[0].split()) == 62
+    assert len(tts_calls[0].split()) == 80
 
 
 def test_tts_checkpoint_engine_sniffed_from_filename(tmp_path):

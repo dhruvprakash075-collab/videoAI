@@ -172,6 +172,9 @@ class IndicF5SubConfig(BaseModel):
     ref_text_file: str = "character_voices/narration_ref_9s_mono24k.txt"
     ref_text: str = ""
     use_pipeline_voice_sample: bool = False
+    speed: float = 1.0
+    nfe_step: int = 32
+    cfg_strength: float = 3.5
     timeout_seconds: int = 900
 
 
@@ -193,15 +196,16 @@ class ScriptConfig(BaseModel):
     model_config = {"extra": "forbid"}
     words_per_segment: int = Field(default=130, ge=50, le=800)
     min_words: int = Field(default=20, ge=1)
-    max_words: int = Field(default=600, ge=1)
     dynamic_image_count: bool = True
     default_images_per_segment: int = Field(default=6, ge=1, le=30)
-    max_images_per_segment: int = Field(default=8, ge=1, le=50)
-    word_count_tolerance: float = 0.6
-    tts_words_per_minute_hi: float = Field(default=100.0, gt=0)
-    tts_words_per_minute_en: float = Field(default=150.0, gt=0)
     writer_max_tokens: int = 1024
-    uncapped_scaling: bool = False
+    # Deprecated (kept for backward compat with existing user yamls)
+    tts_words_per_minute_hi: int = Field(default=0, ge=0)
+    tts_words_per_minute_en: int = Field(default=0, ge=0)
+    word_count_tolerance: float = Field(default=0.0, ge=0.0)
+    max_words: int = Field(default=600, ge=0)
+    max_images_per_segment: int = Field(default=4, ge=0)
+    uncapped_scaling: bool = Field(default=False)
 
 
 class SubtitleOverlay(BaseModel):
@@ -291,7 +295,7 @@ class MemoryConfig(BaseModel):
 class OllamaConfig(BaseModel):
     model_config = {"extra": "forbid"}
     host: str = "http://localhost:11434"
-    request_timeout: int = 240
+    request_timeout: int = 480
     keep_alive: str = "5m"
     breaker_fails: int = 3
     breaker_cooldown_s: int = 30

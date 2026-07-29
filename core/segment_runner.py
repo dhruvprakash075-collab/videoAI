@@ -56,7 +56,6 @@ from core.runtime.vram import (
 )
 
 # ── moved verbatim from core/segment/budget.py / identity.py ──
-from core.segment.budget import _trim_script_to_word_limit, _tts_word_budget
 from core.segment.identity import _detect_important_trigger, _perceptual_hash
 
 # ── Main per-segment processor ─────────────────────────────────
@@ -121,31 +120,24 @@ def make_process_segment(
         key = f"{topic}_seg{i:02d}"
         ck = cp_mgr.get(key) if resume else None
 
-        # ponytail: budget cap computed once for all return paths
-        _lang = config.get("narrator", {}).get("lang", "hi")
-        _budget = _tts_word_budget(config, seg_min * 60, _lang)
-        _tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
-        _hi = int(words_per_seg * (1 + _tolerance))
-        _cap = _hi if _budget == 0 else min(_budget, _hi)
-
         if ck and "script" in ck:
             script = ck["script"]["data"]
             log.debug(f"  Seg {i}: script from checkpoint")
-            return {"script": _trim_script_to_word_limit(script, _cap)}
+            return {"script": script}
 
         chunk = state.get("source_chunk")
         if chunk:
             log.debug(
                 f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
             )
-            return {"script": _trim_script_to_word_limit(chunk.text, _cap)}
+            return {"script": chunk.text}
 
         if fast_dry_run:
             _title = plan.get("title", f"Part {i}")
             _summary = plan.get("summary", "")
             script = f"{_title}. {_summary} This is a fast dry-run placeholder."
             log.debug(f"  Seg {i}: fast-dry-run stub script ({len(script)} chars)")
-            return {"script": _trim_script_to_word_limit(script, _cap)}
+            return {"script": script}
 
         log.debug(f"  Seg {i}: generating script (LIGHT)")
         writer = writer_agent
@@ -153,11 +145,7 @@ def make_process_segment(
         # A 6 GB GPU cannot keep the Director and Writer resident together.
         evict_ollama_models(config, reason="Writer model handoff")
 
-        seg_words = plan.get("target_word_count", words_per_seg)
-        tolerance = config.get("script", {}).get("word_count_tolerance", 0.25)
-        lo = int(words_per_seg * (1 - tolerance))
-        hi = int(words_per_seg * (1 + tolerance))
-        seg_words = max(lo, min(hi, seg_words))
+        seg_words = plan.get("target_word_count") or words_per_seg
         persona = config.get("narrator_persona", "")
 
         from utils.story_planner import build_segment_prompt
@@ -202,7 +190,10 @@ def make_process_segment(
                     model=_writer_model,
                     format_json=True,
                     temperature=0.7,
-                    num_predict=config.get("script", {}).get("writer_max_tokens", 1024),
+                    num_predict=max(
+                        config.get("script", {}).get("writer_max_tokens", 1024),
+                        int(seg_words * 2),
+                    ),
                 )
                 if _raw_json:
                     import json as _json_w
@@ -260,8 +251,6 @@ def make_process_segment(
                         record_breaker_failure(_writer_model)
                         raise
                 script = str(getattr(result, "raw", result)).strip()
-
-        script = _trim_script_to_word_limit(script, _cap)
 
         return {"script": script}
 
@@ -1071,6 +1060,7 @@ def make_process_segment(
                 "title": _plan.get("title", f"Part {i}"),
                 "video_path": path_str,
                 "duration_seconds": duration_s,
+                "expected_duration_s": _plan.get("segment_duration"),
                 "tts_engine": (final_state or {}).get("tts_engine"),
             })
 

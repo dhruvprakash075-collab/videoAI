@@ -696,9 +696,7 @@ async def get_ui_config():
         return {
             "voiceEngine": config.get("tts", {}).get("engine", "indicf5"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
-            # P3-19: return the real saved value instead of always False
-            "uncappedScaling": bool(config.get("script", {}).get("uncapped_scaling", False)),
-            "maxImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
+            "defaultImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
             "imageBackend": image_cfg.get("backend", "comfyui"),
             "compositionMode": image_cfg.get("composition_mode", "one_pass"),
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
@@ -712,8 +710,7 @@ async def get_ui_config():
 async def save_ui_config(
     voice_engine: str = Form(...),
     dynamic_subtitles: str = Form(...),
-    uncapped_scaling: str = Form(...),
-    max_images_per_segment: int = Form(...),
+    default_images_per_segment: int = Form(...),
     image_backend: str | None = Form(None),
     composition_mode: str | None = Form(None),
     comfyui_auto_start: str | None = Form(None),
@@ -744,11 +741,7 @@ async def save_ui_config(
         config.setdefault("subtitles", {})["format"] = (
             "tiktok" if dynamic_subtitles.lower() == "true" else "classic"
         )
-        # P3-19: persist uncapped_scaling as a bool under script section
-        uncapped_bool = uncapped_scaling.lower() == "true"
-        config.setdefault("script", {})["uncapped_scaling"] = uncapped_bool
-        if not uncapped_bool:
-            config.setdefault("script", {})["default_images_per_segment"] = max_images_per_segment
+        config.setdefault("script", {})["default_images_per_segment"] = default_images_per_segment
 
         image_cfg = config.setdefault("image_gen", {})
         if image_backend:

@@ -93,7 +93,7 @@ def _default_config() -> dict:
             "resolution": "1920x1080",
             "output_path": "studio_outputs/final_video.mp4",
         },
-        "script": {"words_per_segment": 130, "min_words": 20, "max_words": 400},
+        "script": {"words_per_segment": 130, "min_words": 20},
         "characters": {
             "protagonist": {
                 "name": "The Protagonist",

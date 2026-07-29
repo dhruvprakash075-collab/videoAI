@@ -29,7 +29,7 @@ class SegmentPlan(BaseModel):
     mood: str = Field(..., description="One of: mysterious, horror, action, dramatic, calm, epic")
     num_images: int = Field(
         ...,
-        description="How many unique images are needed to visually cover this segment (integer, 4-12)",
+        description="REQUIRED, integer ≥ 1 — as many unique images as this segment needs (no fixed band)",
     )
     char_presence: list[dict[str, float]] = Field(
         ...,
@@ -37,11 +37,11 @@ class SegmentPlan(BaseModel):
     )
     target_word_count: int = Field(
         ...,
-        description="Target word count for this segment script (e.g., 200-300 for slow lore, 80-150 for fast action)",
+        description="REQUIRED, integer ≥ 20 — target word count for this segment script (no fixed band)",
     )
     segment_duration: float = Field(
         ...,
-        description="How many seconds this segment should last (e.g., 45.0 for fast, 90.0 for slow). Based on word count and pacing.",
+        description="REQUIRED, float > 0 — how many seconds this segment should last (no fixed band)",
     )
 
 

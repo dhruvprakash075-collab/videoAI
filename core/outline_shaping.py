@@ -3,11 +3,11 @@
 Run once after Director produces the outline, before the per-segment loop.
 
 Responsibilities:
-1. Cap images per segment (config: script.max_images_per_segment)
-2. Lock images_per_segment when DecisionRecord.images_per_segment.locked
-3. Normalize char_presence positional aliases (protagonist/mentor/guardian → story keys)
-4. Enforce minimum environment frame ratio (config: visual.environment_frame_ratio)
-5. Merge colliding aliases by max weight (ponytail: heuristic until stable IDs)
+1. Lock images_per_segment when DecisionRecord.images_per_segment.locked
+2. Normalize char_presence positional aliases (protagonist/mentor/guardian → story keys)
+3. Enforce minimum environment frame ratio (config: visual.environment_frame_ratio)
+4. Merge colliding aliases by max weight (ponytail: heuristic until stable IDs)
+5. Validate director plan contract (target_word_count, num_images, segment_duration)
 
 All mutations are in-place on the outline list of dicts.
 """
@@ -16,9 +16,34 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-__all__ = ["shape_outline"]
+__all__ = ["shape_outline", "validate_director_plan"]
 
 log = logging.getLogger("core.pipeline_long")
+
+
+def validate_director_plan(outline: list[dict], *, words_locked: bool, images_locked: bool) -> None:
+    """Validate that Director's plan satisfies the rigid contract.
+
+    Every segment MUST have:
+      - target_word_count: int ≥ 20 (unless words_locked=True via CLI flag)
+      - num_images: int ≥ 1 (unless images_locked=True via CLI flag)
+      - segment_duration: float > 0 (always required)
+
+    Raises ValueError if any segment violates the contract.
+    """
+    for seg in outline:
+        seg_id = seg.get("seg", "?")
+        if not words_locked:
+            wc = seg.get("target_word_count")
+            if not isinstance(wc, int) or wc < 20:
+                raise ValueError(f"Seg {seg_id}: target_word_count REQUIRED int ≥ 20")
+        if not images_locked:
+            ni = seg.get("num_images")
+            if not isinstance(ni, int) or ni < 1:
+                raise ValueError(f"Seg {seg_id}: num_images REQUIRED int ≥ 1")
+        dur = seg.get("segment_duration")
+        if not isinstance(dur, (int, float)) or dur <= 0:
+            raise ValueError(f"Seg {seg_id}: segment_duration REQUIRED > 0")
 
 
 def shape_outline(
@@ -27,7 +52,7 @@ def shape_outline(
     *,
     images_per_segment_locked: bool,
 ) -> list[dict]:
-    """Apply image caps, char_presence normalization, positional-alias mapping,
+    """Apply image locks, char_presence normalization, positional-alias mapping,
     and env-frame-ratio enforcement. outline in, outline out.
 
     Args:
@@ -40,8 +65,7 @@ def shape_outline(
     """
     # ── moved verbatim from run_long_pipeline ──
 
-    # Cap images per segment
-    _max_imgs = config.get("script", {}).get("max_images_per_segment", 10)
+    # Lock images per segment when DecisionRecord says so
     _default_imgs = config.get("script", {}).get("default_images_per_segment", 6)
     for seg_plan in outline:
         if images_per_segment_locked:
@@ -108,14 +132,6 @@ def shape_outline(
                     _normalized.append(_mapped)
                 seg_plan["char_presence"] = _normalized
             continue
-
-        _ni = seg_plan.get("num_images", _default_imgs)
-        if _ni > _max_imgs:
-            log.info(f"  Seg {seg_plan.get('seg', '?')}: capping images {_ni} → {_max_imgs}")
-            seg_plan["num_images"] = _max_imgs
-            cp_list = seg_plan.get("char_presence")
-            if isinstance(cp_list, list) and len(cp_list) > _max_imgs:
-                seg_plan["char_presence"] = cp_list[:_max_imgs]
 
     # P3: enforce minimum environment/world frames
     _env_ratio = config.get("visual", {}).get("environment_frame_ratio", 0.4)

@@ -2,7 +2,6 @@
 
 - visual.num_scenes default 6 → 4
 - script.default_images_per_segment default 6 → 4
-- script.max_images_per_segment default 10 → 8
 - tts.omnivoice.speed default 0.85 → 0.5
 - subtitles.language default → "en" (force English-only subtitle text)
 - narrator.include_character_descriptions default → false (no visual desc in narration)
@@ -37,13 +36,6 @@ class TestOperatorPreferences:
         assert cfg["script"]["default_images_per_segment"] == 2, (
             f"script.default_images_per_segment must be 2 (matches config.yaml). "
             f"Got: {cfg['script']['default_images_per_segment']}"
-        )
-
-    def test_max_images_per_segment_4(self):
-        cfg = _load_config()
-        assert cfg["script"]["max_images_per_segment"] == 4, (
-            f"script.max_images_per_segment must be 4 (matches config.yaml). "
-            f"Got: {cfg['script']['max_images_per_segment']}"
         )
 
     def test_voice_speed_half(self):

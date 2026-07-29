@@ -125,8 +125,12 @@ def test_script_schema_accepts_tts_word_rates():
     assert valid["script"]["tts_words_per_minute_hi"] == 95
     assert valid["script"]["tts_words_per_minute_en"] == 145
 
+    # Deprecated field: zero is valid (field disabled), negative rejected
+    valid_zero = validate_config({"script": {"tts_words_per_minute_hi": 0}})
+    assert valid_zero["script"]["tts_words_per_minute_hi"] == 0
+
     with pytest.raises(FatalError, match="Config section 'script' validation failed"):
-        validate_config({"script": {"tts_words_per_minute_hi": 0}})
+        validate_config({"script": {"tts_words_per_minute_hi": -1}})
 
 
 def test_decision_record_authority_and_locks():

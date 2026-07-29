@@ -10,40 +10,12 @@ import pytest
 
 from core.segment_runner import (
     _director_aborted,
-    _trim_script_to_word_limit,
-    _tts_word_budget,
     aggressive_vram_cleanup,
     evict_ollama_models,
     get_director_abort,
     log_vram_usage,
     set_director_abort,
 )
-
-
-def test_tts_word_budget_respects_short_duration_and_language():
-    assert _tts_word_budget({}, 15, "hi") == 25
-    assert _tts_word_budget({}, 15, "en") == 37
-    assert _tts_word_budget({}, 0.1, "hi") == 1
-
-
-def test_tts_word_budget_uses_configured_rates():
-    config = {"script": {"tts_words_per_minute_hi": 80, "tts_words_per_minute_en": 120}}
-    assert _tts_word_budget(config, 30, "hi") == 40
-    assert _tts_word_budget(config, 30, "en") == 60
-
-
-def test_tts_word_budget_30s_default_hi_needs_50_words():
-    assert _tts_word_budget({}, 30, "hi") == 50
-
-
-def test_trim_script_hard_caps_run_on_sentence():
-    script = " ".join(f"word{i}" for i in range(100))
-    assert len(_trim_script_to_word_limit(script, 25).split()) == 25
-
-
-def test_trim_script_prefers_sentence_boundary():
-    script = "One two three. Four five six seven. Eight nine ten."
-    assert _trim_script_to_word_limit(script, 7) == "One two three. Four five six seven."
 
 
 @pytest.fixture(autouse=True)
@@ -511,7 +483,7 @@ def test_make_process_segment_creates_closure(tmp_path):
 
     mp4s = [None] * 3
     counter = [0]
-    cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
+    cfg = {"critic": {"threshold": 60}, "script": {"words_per_segment": 130}}
     outline = [{"title": "Intro"}, {"title": "Body"}, {"title": "End"}]
 
     process_seg, *_ = make_process_segment(
@@ -555,7 +527,7 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
 
     mp4s = [None]
     counter = [0]
-    cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
+    cfg = {"critic": {"threshold": 60}, "script": {"words_per_segment": 130}}
     outline = [{"title": "Intro"}]
 
     process_seg, *_ = make_process_segment(
@@ -604,7 +576,7 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
 
     mp4s = [None]
     counter = [0]
-    cfg = {"critic": {"threshold": 60}, "script": {"word_count_tolerance": 0.25}}
+    cfg = {"critic": {"threshold": 60}, "script": {"words_per_segment": 130}}
     outline = [{"title": "Intro"}]
 
     process_seg, *_ = make_process_segment(
@@ -938,133 +910,23 @@ def test_build_retry_wrapper_exhausted():
     assert degradations[0][1] == "segment_skip"
 
 
-# ── TTS duration guard / word budget trim ─────────────────────────────────────
+# ── writer_max_tokens auto-scale ──────────────────────────────────────────────
 
 
-def test_write_script_node_trims_over_long_script_to_word_budget(tmp_path):
-    """write_script_node calls _trim_script_to_word_limit with cap = min(tts_budget, hi)."""
-    from core.segment_runner import make_process_segment
-    from utils.concurrency import global_scheduler
+class TestWriterMaxTokensAutoScale:
+    """Auto-scale formula: max(config_value, int(seg_words * 2))."""
 
-    mp4s = [None]
-    counter = [0]
-    cfg = {
-        "critic": {"threshold": 60},
-        "script": {"word_count_tolerance": 0.25},
-        "narrator": {"lang": "hi"},
-    }
-    outline = [{"title": "Intro"}]
+    def test_uses_config_when_larger(self):
+        config_val = 2048
+        seg_words = 500
+        assert max(config_val, int(seg_words * 2)) == 2048
 
-    process_seg, *_ = make_process_segment(
-        topic="test",
-        config=cfg,
-        outline=outline,
-        n_segs=1,
-        out_base=tmp_path,
-        tts_cfg={},
-        cp_mgr=MagicMock(),
-        world_state=MagicMock(),
-        mem=MagicMock(),
-        ctx_mgr=MagicMock(),
-        director_agent_instance=MagicMock(),
-        writer_agent=MagicMock(),
-        resume=False,
-        dry_run=True,
-        preview_mode=False,
-        words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
-        global_scheduler=global_scheduler,
-        _crewai_lock=threading.RLock(),
-        crewai_lock=threading.RLock(),
-        completed_segs_counter_holder=counter,
-        completed_segs_lock=threading.Lock(),
-        mp4s=mp4s,
-        mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
-    )
+    def test_scales_when_target_exceeds_config(self):
+        config_val = 1024
+        seg_words = 800
+        assert max(config_val, int(seg_words * 2)) == 1600
 
-    # 300 words — way over the 125-word cap (hi=125, tts_budget=200)
-    long_script = " ".join(["word"] * 300) + "."
-
-    with (
-        patch("crewai.Crew"),
-        patch("crewai.Task"),
-        patch(
-            "utils.crewai_breaker.guarded_ollama_call",
-            return_value=f'{{"narration": "{long_script}"}}',
-        ),
-        patch("core.segment_runner.log_vram_usage"),
-        patch("core.segment_runner.aggressive_vram_cleanup"),
-        patch(
-            "core.segment_runner._trim_script_to_word_limit",
-            wraps=_trim_script_to_word_limit,
-        ) as spy_trim,
-    ):
-        process_seg(1)
-
-    assert spy_trim.call_count >= 1
-    # seg_min=2 → 120s → hi@100wpm → 200 word budget
-    # hi = words_per_seg * 1.25 = 125
-    # cap = min(200, 125) = 125
-    _call_args = spy_trim.call_args_list[0]
-    assert _call_args[0][1] == 125, f"expected cap=125, got {_call_args[0][1]}"
-
-
-def test_write_script_node_trims_source_chunk_to_word_budget(tmp_path):
-    """Source chunk text that exceeds budget is trimmed."""
-    from core.segment_runner import make_process_segment
-    from utils.concurrency import global_scheduler
-    from utils.source_splitter import SegmentChunk
-
-    mp4s = [None]
-    counter = [0]
-    cfg = {
-        "critic": {"threshold": 60},
-        "script": {"word_count_tolerance": 0.25},
-        "narrator": {"lang": "hi"},
-    }
-    outline = [{"title": "Intro"}]
-
-    process_seg, *_ = make_process_segment(
-        topic="test",
-        config=cfg,
-        outline=outline,
-        n_segs=1,
-        out_base=tmp_path,
-        tts_cfg={},
-        cp_mgr=MagicMock(),
-        world_state=MagicMock(),
-        mem=MagicMock(),
-        ctx_mgr=MagicMock(),
-        director_agent_instance=MagicMock(),
-        writer_agent=MagicMock(),
-        resume=False,
-        dry_run=True,
-        preview_mode=False,
-        words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
-        global_scheduler=global_scheduler,
-        _crewai_lock=threading.RLock(),
-        crewai_lock=threading.RLock(),
-        completed_segs_counter_holder=counter,
-        completed_segs_lock=threading.Lock(),
-        mp4s=mp4s,
-        mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
-        source_chunks=[
-            SegmentChunk(index=1, text=" ".join(["word"] * 300) + ".", source_chapter="Chapter 1")
-        ],
-    )
-
-    with (
-        patch("core.segment_runner.log_vram_usage"),
-        patch("core.segment_runner.aggressive_vram_cleanup"),
-        patch("core.segment_runner._trim_script_to_word_limit", wraps=_trim_script_to_word_limit) as spy_trim,
-    ):
-        process_seg(1)
-
-    assert spy_trim.call_count >= 1
-    _cap = spy_trim.call_args_list[0][0][1]
-    assert _cap == 125, f"expected cap=125, got {_cap}"
+    def test_edge_zero_seg_words(self):
+        config_val = 1024
+        seg_words = 0
+        assert max(config_val, int(seg_words * 2)) == 1024

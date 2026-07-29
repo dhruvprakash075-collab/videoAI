@@ -43,7 +43,7 @@ class OllamaClient:
         else:
             host = _ollama.get("host", "http://localhost:11434").rstrip("/")
             self._host = validate_local_service_base_url(host)
-        self._timeout = int(_ollama.get("request_timeout", 240))
+        self._timeout = int(_ollama.get("request_timeout", 480))
         self._keep_alive = _ollama.get("keep_alive", "3m")
         _fails = int(_ollama.get("breaker_fails", 3))
         _cooldown = float(_ollama.get("breaker_cooldown_s", 30))

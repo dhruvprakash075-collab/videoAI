@@ -92,7 +92,6 @@ def test_run_long_pipeline_dry_run_success(tmp_path):
         },
         "script": {
             "default_images_per_segment": 2,
-            "max_images_per_segment": 5,
         },
         "memory": {"memory_file": str(tmp_path / "story_memory.json")},
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
@@ -128,7 +127,7 @@ def test_run_long_pipeline_dry_run_success(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
         mock_plan_outline.return_value = [
-            {"seg": 1, "title": "Intro", "num_images": 2, "char_presence": [{}, {}]}
+            {"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0, "char_presence": [{}, {}]}
         ]
         mock_make_seg.side_effect = fake_make_seg
 
@@ -162,7 +161,6 @@ def test_run_long_pipeline_with_decision_record(tmp_path):
         },
         "script": {
             "default_images_per_segment": 2,
-            "max_images_per_segment": 5,
         },
         "memory": {"memory_file": str(tmp_path / "story_memory.json")},
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
@@ -210,9 +208,9 @@ def test_run_long_pipeline_with_decision_record(tmp_path):
         patch("memory.blackboard.get_blackboard", return_value=mock_bb),
     ):
         mock_plan_outline.return_value = [
-            {"seg": 1, "title": "Intro", "num_images": 2},
-            {"seg": 2, "title": "Body", "num_images": 2},
-            {"seg": 3, "title": "End", "num_images": 2},
+            {"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
+            {"seg": 2, "title": "Body", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
+            {"seg": 3, "title": "End", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
         ]
         mock_make_seg.side_effect = fake_make_seg
 
@@ -280,9 +278,9 @@ def test_run_long_pipeline_staged_loop(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
         mock_plan_outline.return_value = [
-            {"seg": 1, "title": "Intro"},
-            {"seg": 2, "title": "Body"},
-            {"seg": 3, "title": "End"},
+            {"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
+            {"seg": 2, "title": "Body", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
+            {"seg": 3, "title": "End", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0},
         ]
         mock_make_seg.side_effect = fake_make_seg
 
@@ -304,7 +302,7 @@ def test_run_long_pipeline_no_dry_run(tmp_path):
 
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "script": {"default_images_per_segment": 2},
         "memory": {"memory_file": str(tmp_path / "story_memory.json")},
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
     }
@@ -338,7 +336,7 @@ def test_run_long_pipeline_no_dry_run(tmp_path):
         patch("core.post_production.finalize_production") as mock_finalize,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro"}]
+        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok", "output": "final.mp4"}
 
@@ -374,7 +372,7 @@ def test_run_long_pipeline_no_segments_generated(tmp_path):
         patch("core.pipeline_long.make_process_segment") as mock_make_seg,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro"}]
+        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         # Process seg returns without placing any MP4 in the list
         _noop = lambda x: None
         mock_make_seg.return_value = (lambda i: None, _noop, _noop, _noop, _noop, _noop)
@@ -426,7 +424,7 @@ def test_run_long_pipeline_endurance_mode(tmp_path):
         patch("core.post_production.finalize_dry_run") as mock_finalize,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "dry_run_endurance"}
 
@@ -474,7 +472,7 @@ def test_run_long_pipeline_staged_loop_failures(tmp_path):
         patch("core.pipeline_long.evict_ollama_models"),
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
 
         with patch("utils.load_config", return_value=cfg):
@@ -520,7 +518,7 @@ def test_run_long_pipeline_segment_failures_non_staged(tmp_path):
         patch("core.pipeline_long.make_process_segment") as mock_make_seg,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
 
         with patch("utils.load_config", return_value=cfg):
@@ -576,7 +574,7 @@ def test_run_long_pipeline_outline_length_locked_truncate(tmp_path):
         patch("memory.blackboard.get_blackboard", return_value=mock_bb),
     ):
         # lock segment_count to 1, but outline returns 2. It will truncate.
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok", "segments": 1}
 
@@ -634,7 +632,7 @@ def test_run_long_pipeline_outline_length_locked_adjust(tmp_path):
         patch("memory.blackboard.get_blackboard", return_value=mock_bb),
     ):
         # lock segment_count to 3, but outline returns 2. It will adjust to 2.
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok", "segments": 2}
 
@@ -678,7 +676,7 @@ def test_run_long_pipeline_worker_shutdown_exceptions(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
         patch("audio.audio_proxy.shutdown_omnivoice_worker", side_effect=Exception("shutdown err")),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok"}
 
@@ -761,7 +759,7 @@ def test_run_long_pipeline_errors_and_edge_cases(tmp_path):
         mock_dir_agent._sync_memory_to_worldstate.side_effect = Exception("sync err")  # line 235
         mock_dir_agent_cls.return_value = mock_dir_agent
 
-        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro"}]
+        mock_plan_outline.return_value = [{"seg": 1, "title": "Intro", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok"}
 
@@ -813,7 +811,7 @@ def test_run_long_pipeline_stale_world_state_clear_fails(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
         patch("pathlib.Path.unlink", side_effect=OSError("permission denied")),  # line 318
     ):
-        mock_plan_outline.return_value = [{"seg": 1}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok"}
 
@@ -828,10 +826,10 @@ def test_run_long_pipeline_stale_world_state_clear_fails(tmp_path):
 def test_run_long_pipeline_image_cap_and_env_ratio(tmp_path):
     from core.pipeline_long import run_long_pipeline
 
-    # default default_images_per_segment is 6, max_images_per_segment is capped at 5
+    # default default_images_per_segment is 6, no upper cap anymore
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 6, "max_images_per_segment": 5},  # capped at 5
+        "script": {"default_images_per_segment": 6},
         "visual": {"environment_frame_ratio": 0.4},
         "memory": {"memory_file": str(tmp_path / "story_memory.json")},
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
@@ -866,13 +864,15 @@ def test_run_long_pipeline_image_cap_and_env_ratio(tmp_path):
         patch("core.post_production.finalize_dry_run") as mock_finalize,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        # outline has segment with 12 images (exceeds max_images_per_segment=5)
+        # outline has segment with 12 images (passes through uncapped)
         # char_presence contains first-frame establish weight, a low weight (<=0.2), and a non-dict to cover line 418
         mock_plan_outline.return_value = [
             {
                 "seg": 1,
                 "title": "Intro",
                 "num_images": 12,
+                "target_word_count": 130,
+                "segment_duration": 60.0,
                 "char_presence": [{"hero": 0.1}, None, {"hero": 0.9}, {"hero": 0.9}, {"hero": 0.9}],
             }
         ]
@@ -935,7 +935,7 @@ def test_run_long_pipeline_stale_world_state_clear_success(tmp_path):
             UIState, "set_progress", side_effect=Exception("UIState progress err")
         ),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.side_effect = fake_make_seg
         mock_finalize.return_value = {"status": "ok"}
 
@@ -973,7 +973,7 @@ def test_run_long_pipeline_staged_loop_abort_early(tmp_path):
         patch("core.pipeline_long.evict_ollama_models"),
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
 
         # Abort is triggered by scripts phase to simulate mid-batch abort
         _noop = lambda x: None
@@ -1035,7 +1035,7 @@ def test_run_long_pipeline_preview_and_exceptions(tmp_path):
     ):
         _noop = lambda x: None
         mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         # mock wrapper to raise exception to trigger 540-541
         mock_wrapper.return_value = MagicMock(side_effect=RuntimeError("executor err"))
 
@@ -1076,7 +1076,7 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
         patch("core.pipeline_long.evict_ollama_models"),
     ):
         _noop = lambda x: None
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
         mock_wrapper.return_value = MagicMock(side_effect=RuntimeError("staged executor err"))
 
@@ -1102,7 +1102,7 @@ def test_run_long_pipeline_staged_exceptions_and_abort(tmp_path):
         patch("core.pipeline_long.get_director_abort", return_value=True),  # trigger line 518
         patch("core.pipeline_long.evict_ollama_models"),
     ):
-        mock_plan_outline.return_value = [{"seg": 1}, {"seg": 2}]
+        mock_plan_outline.return_value = [{"seg": 1, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}, {"seg": 2, "num_images": 2, "target_word_count": 130, "segment_duration": 60.0}]
         _noop = lambda x: None
         mock_make_seg.return_value = (_noop, _noop, _noop, _noop, _noop, _noop)
 
@@ -1188,7 +1188,7 @@ def test_role_normalization_single_named_char_keeps_max_weight(tmp_path):
 
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "script": {"default_images_per_segment": 2},
         "visual": {"environment_frame_ratio": 0},
         "characters": {
             "aria": {"name": "Aria", "description": "heroine"},
@@ -1230,6 +1230,8 @@ def test_role_normalization_single_named_char_keeps_max_weight(tmp_path):
         mock_plan_outline.return_value = [
             {
                 "seg": 1, "title": "Intro", "num_images": 2,
+                "target_word_count": 130,
+                "segment_duration": 60.0,
                 "char_presence": [
                     {"protagonist": 0.9, "mentor": 0.6, "guardian": 0.3},
                     {"protagonist": 0.4},
@@ -1262,7 +1264,7 @@ def test_role_normalization_three_named_characters_map_independently(tmp_path):
 
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "script": {"default_images_per_segment": 2},
         "visual": {"environment_frame_ratio": 0},
         "characters": {
             "aria": {"name": "Aria", "description": "heroine"},
@@ -1304,6 +1306,8 @@ def test_role_normalization_three_named_characters_map_independently(tmp_path):
         mock_plan_outline.return_value = [
             {
                 "seg": 1, "title": "Intro", "num_images": 2,
+                "target_word_count": 130,
+                "segment_duration": 60.0,
                 "char_presence": [
                     {"protagonist": 0.9, "mentor": 0.7, "guardian": 0.5},
                 ],
@@ -1334,7 +1338,7 @@ def test_role_normalization_environment_removed(tmp_path):
 
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "script": {"default_images_per_segment": 2},
         "visual": {"environment_frame_ratio": 0},
         "characters": {
             "aria": {"name": "Aria", "description": "heroine"},
@@ -1374,6 +1378,8 @@ def test_role_normalization_environment_removed(tmp_path):
         mock_plan_outline.return_value = [
             {
                 "seg": 1, "title": "Intro", "num_images": 2,
+                "target_word_count": 130,
+                "segment_duration": 60.0,
                 "char_presence": [
                     {"protagonist": 0.8, "environment": 0.1},
                     {"protagonist": 0.5},
@@ -1398,7 +1404,7 @@ def test_role_normalization_non_dict_frames_unchanged(tmp_path):
 
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
-        "script": {"default_images_per_segment": 2, "max_images_per_segment": 5},
+        "script": {"default_images_per_segment": 2},
         "characters": {
             "aria": {"name": "Aria", "description": "heroine"},
         },
@@ -1439,6 +1445,8 @@ def test_role_normalization_non_dict_frames_unchanged(tmp_path):
         mock_plan_outline.return_value = [
             {
                 "seg": 1, "title": "Intro", "num_images": 2,
+                "target_word_count": 130,
+                "segment_duration": 60.0,
                 "char_presence": [
                     {"protagonist": 0.8},
                     None,  # non-dict

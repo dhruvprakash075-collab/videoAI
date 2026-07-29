@@ -14,7 +14,7 @@ EXPECTED = {
         "set_director_abort", "get_director_abort", "_director_aborted",
         "start_ollama_server", "stop_ollama_server", "schedule_ollama_stop",
         "touch_ollama_active", "evict_ollama_models", "log_vram_usage",
-        "aggressive_vram_cleanup", "_tts_word_budget", "_trim_script_to_word_limit",
+        "aggressive_vram_cleanup",
         "_perceptual_hash", "_detect_important_trigger",
     ],
     "core.pre_production": [

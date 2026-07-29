@@ -11,7 +11,7 @@ class TestConfigAPI:
         return {
             "tts": {"engine": "omnivoice"},
             "subtitles": {"format": "classic"},
-            "script": {"uncapped_scaling": False, "default_images_per_segment": 6},
+            "script": {"default_images_per_segment": 6},
             "image_gen": {
                 "backend": "comfyui",
                 "comfyui": {
@@ -68,8 +68,7 @@ class TestConfigAPI:
             data={
                 "voice_engine": "omnivoice",
                 "dynamic_subtitles": "false",
-                "uncapped_scaling": "false",
-                "max_images_per_segment": 6,
+                "default_images_per_segment": 6,
                 "image_backend": "comfyui",
             },
         )
@@ -95,8 +94,7 @@ class TestConfigAPI:
             data={
                 "voice_engine": "omnivoice",
                 "dynamic_subtitles": "false",
-                "uncapped_scaling": "false",
-                "max_images_per_segment": 6,
+                "default_images_per_segment": 6,
                 "image_backend": "comfyui",
                 "comfyui_auto_start": "true",
                 "comfyui_host": "0.0.0.0",
@@ -137,8 +135,7 @@ class TestConfigAPI:
                 data={
                     "voice_engine": "omnivoice",
                     "dynamic_subtitles": "false",
-                    "uncapped_scaling": "false",
-                    "max_images_per_segment": 6,
+                    "default_images_per_segment": 6,
                     "image_backend": "invalid_backend",
                 },
             )
@@ -151,7 +148,6 @@ class TestConfigAPI:
         config = {
             "tts": {"engine": "omnivoice"},
             "subtitles": {"format": "classic"},
-            "script": {"uncapped_scaling": False},
             "image_gen": {"backend": "comfyui"},
         }
 

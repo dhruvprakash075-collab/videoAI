@@ -26,7 +26,6 @@ def test_dry_run_golden_snapshot(tmp_path, monkeypatch):
         },
         "script": {
             "default_images_per_segment": 2,
-            "max_images_per_segment": 5,
             "words_per_segment": 130,
         },
         "memory": {"memory_file": "studio_checkpoints/story_memory.json"},
@@ -55,8 +54,8 @@ def test_dry_run_golden_snapshot(tmp_path, monkeypatch):
     }
 
     mock_outline = [
-        {"seg": 1, "title": "Introductory Scene", "num_images": 2, "char_presence": [{}, {}]},
-        {"seg": 2, "title": "Climactic Confrontation", "num_images": 2, "char_presence": [{}, {}]},
+        {"seg": 1, "title": "Introductory Scene", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0, "char_presence": [{}, {}]},
+        {"seg": 2, "title": "Climactic Confrontation", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0, "char_presence": [{}, {}]},
     ]
 
     with (

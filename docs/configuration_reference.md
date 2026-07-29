@@ -157,15 +157,9 @@ image_gen:
 | `video.generate_thumbnail` | `true` |
 | `script.words_per_segment` | `100` |
 | `script.min_words` | `20` |
-| `script.max_words` | `600` |
 | `script.dynamic_image_count` | `false` |
 | `script.default_images_per_segment` | `2` |
-| `script.max_images_per_segment` | `4` |
-| `script.word_count_tolerance` | `0.6` |
-| `script.tts_words_per_minute_hi` | `100` |
-| `script.tts_words_per_minute_en` | `150` |
 | `script.writer_max_tokens` | `1024` |
-| `script.uncapped_scaling` | `false` |
 
 ## Subtitles
 

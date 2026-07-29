@@ -101,8 +101,6 @@ const update = (patch) => setConfig((prev) => ({ ...prev, ...patch }));
       const formData = new FormData();
 formData.append('voice_engine', config.voiceEngine);
       formData.append('dynamic_subtitles', String(config.dynamicSubtitles));
-      formData.append('uncapped_scaling', String(config.uncappedScaling));
-      formData.append('max_images_per_segment', config.maxImagesPerSegment);
       formData.append('image_backend', config.imageBackend);
       formData.append('composition_mode', config.compositionMode || 'one_pass');
       formData.append('comfyui_auto_start', String(comfyUi.autoStart));
