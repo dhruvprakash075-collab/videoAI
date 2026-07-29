@@ -76,10 +76,9 @@ Current backend verification:
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q
 .\venv\Scripts\python.exe -m ruff check .
-$env:PYTHONPATH="C:\Video.AI\codex_tmp\scanner_pkgs;C:\Video.AI\codex_tmp\checker_deps"; python -m basedpyright
 ```
 
-Latest local result: `2060 passed, 5 skipped`; Ruff clean; BasedPyright `0 errors, 0 warnings`.
+Latest local result: `1940 passed, 5 skipped, 1 failed` (pre-existing); Ruff clean.
 
 ## Live Documentation
 
