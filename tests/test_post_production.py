@@ -433,10 +433,10 @@ class TestFinalizeProduction:
 
         assert check_video.call_args.kwargs["requested_duration_s"] is None
 
-    def test_qc_failure_returns_error_status(self, tmp_path, monkeypatch):
+    def test_qc_failure_returns_success_with_quality(self, tmp_path, monkeypatch):
         qc = {"passed": False, "issues": ["short video"], "details": {"duration_s": 5.0}}
         result = self._run_production(tmp_path, monkeypatch, qc_result=qc)
-        assert result["status"] == "error"
+        assert result["status"] == "success"  # ponytail: QC is advisory; file is still produced
         assert result["quality"]["passed"] is False
         assert "output" in result  # file still available for inspection
 
