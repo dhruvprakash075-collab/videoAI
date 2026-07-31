@@ -92,11 +92,12 @@ def make_process_segment(
     run_start_ts: float,
     source_chunks: list | None = None,
 ):
-    """Build the per-segment closure. Returns (process_segment, _process_segment_with_budget).
+    """Build the per-segment closure. Returns (process_segment, run_scripts_phase,
+    run_translations_phase, run_tts_phase, run_images_phase, run_renders_phase).
 
     All shared state is captured in the closure so process_segment(i) can be passed
-    directly to executor.submit(). The retry budget wrapper retries up to
-    performance.max_segment_retries (default 2) on exception.
+    directly to executor.submit(). The phase callables run one task (scripts,
+    translations, TTS, images, renders) over a batch of segment indices.
     """
     # Lazy imports to avoid circular import at module load
 

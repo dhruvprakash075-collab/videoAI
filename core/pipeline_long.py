@@ -148,6 +148,162 @@ def request_cancel() -> None:
     set_director_abort(True)
 
 
+# ── Extracted pipeline helpers ───────────────────────────────────────────
+
+
+def _assemble_cli_flags(duration_min, words_per_segment, images_per_segment, segment_count) -> dict:
+    """Assemble CLI structural locks — only explicitly-set non-bool numeric flags."""
+    _cli_flags: dict[str, Any] = {}
+    if (
+        duration_min is not None
+        and isinstance(duration_min, (int, float))
+        and not isinstance(duration_min, bool)
+    ):
+        _cli_flags["total_duration_min"] = duration_min
+    if (
+        words_per_segment is not None
+        and isinstance(words_per_segment, int)
+        and not isinstance(words_per_segment, bool)
+    ):
+        _cli_flags["words_per_segment"] = words_per_segment
+    if (
+        images_per_segment is not None
+        and isinstance(images_per_segment, int)
+        and not isinstance(images_per_segment, bool)
+    ):
+        _cli_flags["images_per_segment"] = images_per_segment
+    if (
+        segment_count is not None
+        and isinstance(segment_count, int)
+        and not isinstance(segment_count, bool)
+    ):
+        _cli_flags["segment_count"] = segment_count
+    return _cli_flags
+
+
+def _resolve_decision_record(config, topic, total, seg_min):
+    """Resolve n_segs/words_per_seg + lock flags from the DecisionRecord or arithmetic fallback.
+
+    Returns (n_segs, words_per_seg, seg_count_locked, images_per_segment_locked,
+    rec_total_duration_min) — the last is None when no record exists so the caller
+    can apply the config["video"]["total_duration_min"] mutation at its own call site.
+    """
+    from utils import _safe_filename
+
+    _rec = None
+    try:
+        from memory.blackboard import get_blackboard
+
+        _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
+        _rec = _bb.read_decision()
+    except Exception as _e:
+        log.warning(f"[PIPELINE] Could not read DecisionRecord from blackboard: {_e}")
+
+    if _rec is not None:
+        n_segs = int(_rec.segment_count.value or 1)
+        words_per_seg = int(
+            _rec.words_per_segment.value or config.get("script", {}).get("words_per_segment", 130)
+        )
+        _seg_count_locked = bool(_rec.segment_count.locked)
+        _images_per_segment_locked = bool(_rec.images_per_segment.locked)
+        log.info(
+            f"[PIPELINE] Using DecisionRecord — "
+            f"segments={n_segs} ({_rec.segment_count.provenance}, locked={_seg_count_locked}), "
+            f"words/seg={words_per_seg} ({_rec.words_per_segment.provenance})"
+        )
+        return n_segs, words_per_seg, _seg_count_locked, _images_per_segment_locked, _rec.total_duration_min.value
+    else:
+        import math as _math
+        n_segs = max(1, _math.ceil(total / seg_min))
+        words_per_seg = config.get("script", {}).get("words_per_segment", 130)
+        _seg_count_locked = False
+        _images_per_segment_locked = False
+        log.info(
+            f"[PIPELINE] No DecisionRecord found — "
+            f"falling back to arithmetic: segments={n_segs}, words/seg={words_per_seg}"
+        )
+        return n_segs, words_per_seg, _seg_count_locked, _images_per_segment_locked, None
+
+
+def _adjust_outline_length(outline, n_segs, mp4s, seg_count_locked):
+    """Align pipeline length to the outline; a locked segment_count truncates instead."""
+    if len(outline) != n_segs:
+        if seg_count_locked:
+            if len(outline) > n_segs:
+                log.warning(
+                    f"Outline produced {len(outline)} segments but segment_count is "
+                    f"LOCKED to {n_segs} — truncating outline to honor the lock."
+                )
+                outline = outline[:n_segs]
+            else:
+                log.warning(
+                    f"Outline produced only {len(outline)} segments but segment_count is "
+                    f"LOCKED to {n_segs} — using the {len(outline)} planned segment(s) "
+                    f"(Director could not expand). Adjusting to {len(outline)}."
+                )
+                n_segs = len(outline)
+                mp4s = [None] * n_segs
+        else:
+            log.warning(
+                f"Outline length ({len(outline)}) differs from requested ({n_segs}). Adjusting pipeline length."
+            )
+            n_segs = len(outline)
+            mp4s = [None] * n_segs
+    return outline, n_segs, mp4s
+
+
+def _run_phase(evict_reason, error_prefix, fn, batch, config):
+    """Run one staged phase: evict models first, then run the batch; failures are logged, not raised."""
+    evict_ollama_models(config, reason=evict_reason)
+    try:
+        fn(batch)
+    except Exception as _pe:
+        log.error(f"{error_prefix} phase failed for batch {batch}: {_pe}", exc_info=True)
+
+
+def _run_staged_batches(config, phase_fns, n_segs, lookahead):
+    """5-phase staged loop (scripts → translations → TTS → images → renders) per lookahead batch."""
+    log.info(
+        f"[C1] Staged loop enabled (lookahead={lookahead}). "
+        f"Running task-wise batching — scripts → translations → TTS → images → renders."
+    )
+    _seg_indices = list(range(1, n_segs + 1))
+    _batch_size = max(1, lookahead)
+    _batches = [
+        _seg_indices[k : k + _batch_size]
+        for k in range(0, len(_seg_indices), _batch_size)
+    ]
+
+    for _bi, _batch in enumerate(_batches):
+        if get_director_abort():
+            break
+        if _bi > 0:
+            start_ollama_server(config, reason=f"batch {_batch}")
+
+        # ponytail: evict per phase (5/batch instead of 1/batch); each phase loads a different
+        # model anyway, so clean separation is safer. Merge phases if model sharing is measured.
+        # ponytail: no abort check between phases within a batch; flag only checked at boundary.
+        for _evict_reason, _error_prefix, _phase_fn in phase_fns:
+            _run_phase(_evict_reason, _error_prefix, _phase_fn, _batch, config)
+
+        if _bi < len(_batches) - 1:
+            stop_ollama_server(config, reason=f"after batch {_batch}")
+
+
+def _run_parallel_segments(executor, fn, n_segs):
+    """Submit one task per segment; per-segment failures are logged, not raised."""
+    futures = {
+        executor.submit(fn, idx): idx
+        for idx in range(1, n_segs + 1)
+    }
+    for future in concurrent.futures.as_completed(futures):
+        seg_idx = futures[future]
+        try:
+            future.result()
+        except Exception as e:
+            log.error(f"Segment {seg_idx} execution failed: {e}", exc_info=True)
+
+
 # ── Main pipeline entry point ────────────────────────────────────────────
 
 
@@ -177,10 +333,12 @@ def run_long_pipeline(
     """
     _ensure_init()
     from agents.ui_state import UIState
+    from audio import add_degradation_callback
     from core.main import create_director, create_writer
     from utils import _safe_filename, load_config, setup_run_logging
     from utils.checkpoint import build_checkpoint_manager
 
+    add_degradation_callback(UIState.add_degradation)
     UIState.reset_run(topic)
     setup_run_logging(Path("logs") / _safe_filename(topic))
     _run_start = time.time()
@@ -191,31 +349,9 @@ def run_long_pipeline(
     config = load_config(project_name=project_name)
 
     # ── Assemble CLI structural locks (only include explicitly-set flags) ──
-    _cli_flags: dict[str, Any] = {}
-    if (
-        duration_min is not None
-        and isinstance(duration_min, (int, float))
-        and not isinstance(duration_min, bool)
-    ):
-        _cli_flags["total_duration_min"] = duration_min
-    if (
-        words_per_segment is not None
-        and isinstance(words_per_segment, int)
-        and not isinstance(words_per_segment, bool)
-    ):
-        _cli_flags["words_per_segment"] = words_per_segment
-    if (
-        images_per_segment is not None
-        and isinstance(images_per_segment, int)
-        and not isinstance(images_per_segment, bool)
-    ):
-        _cli_flags["images_per_segment"] = images_per_segment
-    if (
-        segment_count is not None
-        and isinstance(segment_count, int)
-        and not isinstance(segment_count, bool)
-    ):
-        _cli_flags["segment_count"] = segment_count
+    _cli_flags = _assemble_cli_flags(
+        duration_min, words_per_segment, images_per_segment, segment_count
+    )
 
     # ── Pre-Production ──
     config_overlay = run_pre_production(
@@ -260,53 +396,26 @@ def run_long_pipeline(
     from memory import StoryMemory
 
     mem = StoryMemory(
-        Path(config["memory"].get("memory_file", "studio_checkpoints/story_memory.json"))
+        Path(config.get("memory", {}).get("memory_file", "studio_checkpoints/story_memory.json"))
     )
     if (
         duration_min is not None
         and isinstance(duration_min, (int, float))
         and not isinstance(duration_min, bool)
     ):
-        config["video"]["total_duration_min"] = duration_min
+        config.setdefault("video", {})["total_duration_min"] = duration_min
 
-    total = config["video"]["total_duration_min"]
-    seg_min = config["video"]["segment_duration_min"]
+    total = config.get("video", {}).get("total_duration_min", 10)
+    seg_min = config.get("video", {}).get("segment_duration_min", 2)
     if seg_min == 0:
         raise ValueError(f"segment_duration_min must be > 0, got {seg_min}")
 
     # Read structural decisions from DecisionRecord
-    _rec = None
-    try:
-        from memory.blackboard import get_blackboard
-
-        _bb = get_blackboard(config, topic_slug=_safe_filename(topic))
-        _rec = _bb.read_decision()
-    except Exception as _e:
-        log.warning(f"[PIPELINE] Could not read DecisionRecord from blackboard: {_e}")
-
-    if _rec is not None:
-        n_segs = int(_rec.segment_count.value or 1)
-        words_per_seg = int(
-            _rec.words_per_segment.value or config.get("script", {}).get("words_per_segment", 130)
-        )
-        _seg_count_locked = bool(_rec.segment_count.locked)
-        _images_per_segment_locked = bool(_rec.images_per_segment.locked)
-        log.info(
-            f"[PIPELINE] Using DecisionRecord — "
-            f"segments={n_segs} ({_rec.segment_count.provenance}, locked={_seg_count_locked}), "
-            f"words/seg={words_per_seg} ({_rec.words_per_segment.provenance})"
-        )
-        config["video"]["total_duration_min"] = _rec.total_duration_min.value
-    else:
-        import math as _math
-        n_segs = max(1, _math.ceil(total / seg_min))
-        words_per_seg = config.get("script", {}).get("words_per_segment", 130)
-        _seg_count_locked = False
-        _images_per_segment_locked = False
-        log.info(
-            f"[PIPELINE] No DecisionRecord found — "
-            f"falling back to arithmetic: segments={n_segs}, words/seg={words_per_seg}"
-        )
+    n_segs, words_per_seg, _seg_count_locked, _images_per_segment_locked, _rec_total_duration = _resolve_decision_record(
+        config, topic, total, seg_min
+    )
+    if _rec_total_duration is not None:
+        config.setdefault("video", {})["total_duration_min"] = _rec_total_duration
 
     out_base = Path("studio_outputs") / _safe_filename(topic) / "segments"
     out_base.mkdir(parents=True, exist_ok=True)
@@ -350,9 +459,12 @@ def run_long_pipeline(
     log.info("┌─────────────────────────────────────────┐")
     log.info("│  Estimated Run Time                     │")
     log.info(f"│  Segments:    {n_segs:<26}│")
-    if dry_run:
+    if dry_run or fast_dry_run:
         label = "Fast-dry-run" if fast_dry_run else "Dry-run"
         log.info(f"│  {label}: ~{format_time_hms(est_dry_s):<25}│")
+        log.info("│  TTS/segment: ~2.0 min  →  0 min total  │")
+        log.info("│  SD/segment:  ~1.0 min  →  0 min total  │")
+        log.info("│  Assembly:    ~0.5 min  →  0 min total  │")
     else:
         log.info(f"│  TTS/segment: ~2.0 min  → {n_segs * 2:>2} min total  │")
         log.info(f"│  SD/segment:  ~1.0 min  → {n_segs * 1:>2} min total  │")
@@ -362,28 +474,7 @@ def run_long_pipeline(
     director_agent = create_director(config)
     outline = plan_outline(topic, n_segs, config, director_agent, cp_mgr, resume)
 
-    if len(outline) != n_segs:
-        if _seg_count_locked:
-            if len(outline) > n_segs:
-                log.warning(
-                    f"Outline produced {len(outline)} segments but segment_count is "
-                    f"LOCKED to {n_segs} — truncating outline to honor the lock."
-                )
-                outline = outline[:n_segs]
-            else:
-                log.warning(
-                    f"Outline produced only {len(outline)} segments but segment_count is "
-                    f"LOCKED to {n_segs} — using the {len(outline)} planned segment(s) "
-                    f"(Director could not expand). Adjusting to {len(outline)}."
-                )
-                n_segs = len(outline)
-                mp4s = [None] * n_segs
-        else:
-            log.warning(
-                f"Outline length ({len(outline)}) differs from requested ({n_segs}). Adjusting pipeline length."
-            )
-            n_segs = len(outline)
-            mp4s = [None] * n_segs
+    outline, n_segs, mp4s = _adjust_outline_length(outline, n_segs, mp4s, _seg_count_locked)
     log.info(f"│  Total:       ~{format_time_hms(est_total_s):<25}│")
     log.info("└─────────────────────────────────────────┘")
 
@@ -418,7 +509,7 @@ def run_long_pipeline(
             title = seg.get("title", f"Part {seg_num}")
             mood = seg.get("mood", "neutral")
             words = seg.get("target_word_count", words_per_seg)
-            images = seg.get("num_images", config["script"].get("default_images_per_segment", 6))
+            images = seg.get("num_images", config.get("script", {}).get("default_images_per_segment", 6))
             log.info(
                 f"  [{seg_num:2d}] {title[:40]:40s} | {mood:12s} | {words:>4d} words | {images:>2d} images"
             )
@@ -485,75 +576,17 @@ def run_long_pipeline(
         _lookahead = int(config.get("performance", {}).get("lookahead_segments", 1))
 
         if _staged:
-            log.info(
-                f"[C1] Staged loop enabled (lookahead={_lookahead}). "
-                f"Running task-wise batching — scripts → translations → TTS → images → renders."
-            )
-            _seg_indices = list(range(1, n_segs + 1))
-            _batch_size = max(1, _lookahead)
-            _batches = [
-                _seg_indices[k : k + _batch_size]
-                for k in range(0, len(_seg_indices), _batch_size)
+            _phase_fns = [
+                ("C1 scripts phase", "Scripts", _run_scripts_phase),
+                ("C1 translations phase", "Translations", _run_translations_phase),
+                ("C1 TTS phase", "TTS", _run_tts_phase),
+                ("C1 images phase", "Images", _run_images_phase),
+                ("C1 renders phase", "Renders", _run_renders_phase),
             ]
-
-            for _bi, _batch in enumerate(_batches):
-                if get_director_abort():
-                    break
-                if _bi > 0:
-                    start_ollama_server(config, reason=f"batch {_batch}")
-
-                # ponytail: evict per phase (5/batch instead of 1/batch); each phase loads a different
-                # model anyway, so clean separation is safer. Merge phases if model sharing is measured.
-                # ponytail: no abort check between phases within a batch; flag only checked at boundary.
-                # Phase 1: Scripts (Ollama loads once for writer)
-                evict_ollama_models(config, reason="C1 scripts phase")
-                try:
-                    _run_scripts_phase(_batch)
-                except Exception as _pe:
-                    log.error(f"Scripts phase failed for batch {_batch}: {_pe}", exc_info=True)
-
-                # Phase 2: Translations (Ollama loads once for translator; world_state sequential)
-                evict_ollama_models(config, reason="C1 translations phase")
-                try:
-                    _run_translations_phase(_batch)
-                except Exception as _pe:
-                    log.error(f"Translations phase failed for batch {_batch}: {_pe}", exc_info=True)
-
-                # Phase 3: TTS (CPU, no Ollama)
-                evict_ollama_models(config, reason="C1 TTS phase")
-                try:
-                    _run_tts_phase(_batch)
-                except Exception as _pe:
-                    log.error(f"TTS phase failed for batch {_batch}: {_pe}", exc_info=True)
-
-                # Phase 4: Images + review (ComfyUI/Bonsai loads once)
-                evict_ollama_models(config, reason="C1 images phase")
-                try:
-                    _run_images_phase(_batch)
-                except Exception as _pe:
-                    log.error(f"Images phase failed for batch {_batch}: {_pe}", exc_info=True)
-
-                # Phase 5: Renders + memory review (Ollama loads once for director)
-                evict_ollama_models(config, reason="C1 renders phase")
-                try:
-                    _run_renders_phase(_batch)
-                except Exception as _pe:
-                    log.error(f"Renders phase failed for batch {_batch}: {_pe}", exc_info=True)
-
-                if _bi < len(_batches) - 1:
-                    stop_ollama_server(config, reason=f"after batch {_batch}")
+            _run_staged_batches(config, _phase_fns, n_segs, _lookahead)
         else:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {
-                    executor.submit(_process_segment_with_budget, idx): idx
-                    for idx in range(1, n_segs + 1)
-                }
-                for future in concurrent.futures.as_completed(futures):
-                    seg_idx = futures[future]
-                    try:
-                        future.result()
-                    except Exception as e:
-                        log.error(f"Segment {seg_idx} execution failed: {e}", exc_info=True)
+                _run_parallel_segments(executor, _process_segment_with_budget, n_segs)
 
     mp4s = [p for p in mp4s if p is not None]
 
@@ -572,7 +605,7 @@ def run_long_pipeline(
     from core.post_production import finalize_dry_run, finalize_production
 
     try:
-        if dry_run:
+        if dry_run or fast_dry_run:
             return finalize_dry_run(topic, config, outline, n_segs, mp4s, wall_time_s)
         return finalize_production(topic, config, outline, n_segs, mp4s, wall_time_s)
     finally:

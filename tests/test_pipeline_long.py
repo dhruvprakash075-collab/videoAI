@@ -1,5 +1,6 @@
 """test_pipeline_long.py - tests for core/pipeline_long.py public surface."""
 
+import contextlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,6 +77,94 @@ def test_run_long_pipeline_async_merges_overlay_into_config(tmp_path: Path):
     # The overlay should have been merged
     assert result["overlay"]["b"] == 2
     assert result["overlay"]["nested"]["y"] == 20
+
+
+# ── Pure-function tests (no mocking) ─────────────────────────────────────────
+
+
+def test_ensure_init_idempotent():
+    """First call does real work, second call is a no-op (cached)."""
+    import core.pipeline_long as _pl
+
+    saved = _pl._compat_applied
+    try:
+        _pl._compat_applied = False
+        _pl._ensure_init()
+        assert _pl._compat_applied is True
+        _pl._ensure_init()
+        assert _pl._compat_applied is True
+    finally:
+        _pl._compat_applied = saved
+
+
+def test_deep_merge_pure():
+    from core.pipeline_long import _deep_merge
+
+    base = {"a": 1, "nested": {"x": 10}, "items": ["one"]}
+    override = {"b": 2, "nested": {"y": 20}, "items": ["two", "one"]}
+    result = _deep_merge(base, override)
+    assert result == {"a": 1, "b": 2, "nested": {"x": 10, "y": 20}, "items": ["one", "two"]}
+    assert base["items"] == ["one", "two"]  # ponytail: list-append is in-place
+
+
+def test_deep_merge_override_wins():
+    from core.pipeline_long import _deep_merge
+
+    result = _deep_merge({"x": 1}, "not-a-dict")
+    assert result == "not-a-dict"
+
+
+# ── Fast-dry-run integration test (minimal mocking — real orchestration) ─────
+
+
+def test_fast_dry_run_orchestration(tmp_path):
+    """Run pipeline with fast_dry_run=True, mock only external services.
+
+    Unlike the heavily-mocked tests below, this keeps make_process_segment,
+    shape_outline, StoryMemory, WorldState, ContextWindowManager, and
+    finalize_dry_run real — exercises the actual orchestration code paths.
+    """
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+        "audio": {},
+        "performance": {"staged_loop": False, "max_workers": 1},
+    }
+    outline = [
+        {
+            "seg": 1, "title": "Intro", "num_images": 2,
+            "target_word_count": 130, "segment_duration": 60.0,
+            "char_presence": [{"protagonist": 1.0}],
+        }
+    ]
+    # Only mock external boundaries: LLM/Ollama-dependent calls and CUDA.
+    mocks = [
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.main.create_director"),
+        patch("core.main.create_writer"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("core.pipeline_long.plan_outline", return_value=outline),
+        patch("core.pipeline_long.log_vram_usage"),
+        patch("core.runtime.ollama.start_ollama_server"),
+        patch("core.runtime.ollama.stop_ollama_server"),
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+    ]
+    with contextlib.ExitStack() as stack:
+        for m in mocks:
+            stack.enter_context(m)
+        with patch("utils.load_config", return_value=cfg):
+            res = run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True)
+
+    assert res["status"] == "dry_run"
+    assert res["segments"] == 1
+    assert isinstance(res["output"], str)
+    assert "chapters" in res
+    assert len(res["chapters"]) >= 1
 
 
 # ── run_long_pipeline tests ──────────────────────────────────────────────────
@@ -1477,3 +1566,137 @@ def test_run_long_pipeline_signature_excludes_director_mode():
 
     sig = inspect.signature(run_long_pipeline)
     assert "director_mode" not in sig.parameters
+
+
+# ── WS-1 extracted-helper unit tests ─────────────────────────────────────
+
+
+def test_assemble_cli_flags_only_non_none_ints():
+    from core.pipeline_long import _assemble_cli_flags
+
+    flags = _assemble_cli_flags(5, 130, 4, 1)
+    assert flags == {
+        "total_duration_min": 5,
+        "words_per_segment": 130,
+        "images_per_segment": 4,
+        "segment_count": 1,
+    }
+    # None values are omitted
+    assert _assemble_cli_flags(None, None, None, None) == {}
+    # Bools are excluded (isinstance(True, int) is True)
+    assert _assemble_cli_flags(True, False, 2.5, 1) == {"segment_count": 1}
+    # duration_min accepts float; the others require int
+    assert _assemble_cli_flags(4.5, None, None, None) == {"total_duration_min": 4.5}
+    assert _assemble_cli_flags(None, 130, 2, None) == {
+        "words_per_segment": 130,
+        "images_per_segment": 2,
+    }
+
+
+def test_resolve_decision_record_fallback_and_locks():
+    from core.pipeline_long import _resolve_decision_record
+
+    config = {
+        "video": {"total_duration_min": 5, "segment_duration_min": 2},
+        "script": {"words_per_segment": 150},
+    }
+    # No DecisionRecord (blackboard read fails) → arithmetic fallback, no locks
+    with patch("memory.blackboard.get_blackboard", side_effect=Exception("no blackboard")):
+        n_segs, words_per_seg, seg_locked, img_locked, rec_total = _resolve_decision_record(
+            config, "test_topic", 5, 2
+        )
+    assert n_segs == 3  # ceil(5 / 2)
+    assert words_per_seg == 150
+    assert seg_locked is False
+    assert img_locked is False
+    assert rec_total is None
+
+    # Default words_per_segment when script section has none
+    with patch("memory.blackboard.get_blackboard", side_effect=Exception("no blackboard")):
+        n_segs, words_per_seg, *_ = _resolve_decision_record(
+            {"video": {"total_duration_min": 1, "segment_duration_min": 1}}, "test_topic", 1, 1
+        )
+    assert words_per_seg == 130
+
+    # DecisionRecord present → its values and lock flags win
+    mock_record = MagicMock()
+    mock_record.segment_count.value = 4
+    mock_record.segment_count.locked = True
+    mock_record.segment_count.provenance = "user"
+    mock_record.words_per_segment.value = 120
+    mock_record.words_per_segment.provenance = "user"
+    mock_record.total_duration_min.value = 7
+    mock_record.images_per_segment.locked = True
+    mock_bb = MagicMock()
+    mock_bb.read_decision.return_value = mock_record
+    with patch("memory.blackboard.get_blackboard", return_value=mock_bb):
+        n_segs, words_per_seg, seg_locked, img_locked, rec_total = _resolve_decision_record(
+            config, "test_topic", 5, 2
+        )
+    assert n_segs == 4
+    assert words_per_seg == 120
+    assert seg_locked is True
+    assert img_locked is True
+    assert rec_total == 7
+
+
+def test_adjust_outline_length_locked_vs_unlocked():
+    from core.pipeline_long import _adjust_outline_length
+
+    outline = [{"seg": 1}, {"seg": 2}, {"seg": 3}]
+
+    # Locked + outline longer → truncate outline to n_segs (mp4s stays at original n_segs)
+    mp4s = [None] * 2
+    o, n, m = _adjust_outline_length(outline, 2, mp4s, True)
+    assert len(o) == 2
+    assert n == 2
+    assert len(m) == 2
+    assert m is mp4s
+
+    # Locked + outline shorter → adjust n_segs down to outline length
+    mp4s = [None] * 3
+    o, n, m = _adjust_outline_length([{"seg": 1}], 3, mp4s, True)
+    assert n == 1
+    assert len(m) == 1
+
+    # Unlocked → always adjust to outline length
+    o, n, m = _adjust_outline_length(outline, 2, [None] * 2, False)
+    assert n == 3
+    assert len(m) == 3
+
+    # Lengths already match → unchanged
+    mp4s = [None] * 3
+    o, n, m = _adjust_outline_length(outline, 3, mp4s, False)
+    assert len(o) == 3
+    assert n == 3
+    assert m is mp4s
+
+
+def test_run_staged_batches_phase_failure_logs_and_continues(caplog):
+    from core.pipeline_long import _run_staged_batches
+
+    ran = []
+
+    def _boom(batch):
+        raise RuntimeError("translation boom")
+
+    phases = [
+        ("C1 scripts phase", "Scripts", lambda b: ran.append("scripts")),
+        ("C1 translations phase", "Translations", _boom),
+        ("C1 TTS phase", "TTS", lambda b: ran.append("tts")),
+        ("C1 images phase", "Images", lambda b: ran.append("images")),
+        ("C1 renders phase", "Renders", lambda b: ran.append("renders")),
+    ]
+    with (
+        patch("core.pipeline_long.evict_ollama_models") as mock_evict,
+        patch("core.pipeline_long.start_ollama_server"),
+        patch("core.pipeline_long.stop_ollama_server"),
+    ):
+        _run_staged_batches({}, phases, n_segs=3, lookahead=2)
+
+    # Failure is logged and skipped; later phases + both batches still run
+    assert ran == ["scripts", "tts", "images", "renders"] * 2
+    assert "Translations phase failed for batch [1, 2]: translation boom" in caplog.text
+    assert "Translations phase failed for batch [3]: translation boom" in caplog.text
+    # Evict happens per phase per batch: 5 phases x 2 batches
+    assert mock_evict.call_count == 10
