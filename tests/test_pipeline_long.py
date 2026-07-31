@@ -155,6 +155,7 @@ def test_fast_dry_run_orchestration(tmp_path):
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
     ]
     with contextlib.ExitStack() as stack:
+        mock_preflight = stack.enter_context(patch("core.pipeline_long.run_preflight_checks"))
         for m in mocks:
             stack.enter_context(m)
         with patch("utils.load_config", return_value=cfg):
@@ -165,6 +166,7 @@ def test_fast_dry_run_orchestration(tmp_path):
     assert isinstance(res["output"], str)
     assert "chapters" in res
     assert len(res["chapters"]) >= 1
+    assert mock_preflight.call_args.kwargs.get("dry_run") is True
 
 
 # ── run_long_pipeline tests ──────────────────────────────────────────────────
