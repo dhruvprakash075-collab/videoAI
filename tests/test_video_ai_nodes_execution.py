@@ -738,6 +738,30 @@ class TestExtensionRegistration:
             assert hasattr(node_cls, "execute")
             # ponytail: fingerprint_inputs is optional — only checkpoint/ksampler/portrait implement it
 
+    def test_input_types_override_format_compatible_with_executor(self):
+        """Any class-level INPUT_TYPES override must use V3 format.
+
+        The executor feeds obj_class.INPUT_TYPES() into comfy_api's
+        parse_class_inputs, which reads value[0] as the type marker. The legacy
+        V1 combo format `(["fixed", ...], {...})` makes value[0] a list and
+        crashes with ``TypeError: unhashable type: 'list'`` (seen 2026-07 on a
+        real instance). Nodes without an override inherit the V3-compiled
+        INPUT_TYPES, which is correct by construction.
+        """
+        import asyncio
+        nodes = asyncio.run(VideoAIExtension().get_node_list())
+        for node_cls in nodes:
+            override = node_cls.__dict__.get("INPUT_TYPES")
+            if override is None:
+                continue
+            compiled = override()
+            for section in ("required", "optional"):
+                for name, value in compiled.get(section, {}).items():
+                    assert isinstance(value[0], str), (
+                        f"{node_cls.__name__}.{name}: legacy format {value!r} — "
+                        "value[0] must be a scalar type marker for parse_class_inputs"
+                    )
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 10. Helper function edge cases

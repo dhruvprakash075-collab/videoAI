@@ -1,0 +1,13 @@
+Vendored ComfyUI pin
+====================
+
+The real ComfyUI runtime lives at external/comfyui (gitignored clone).
+Keep this file updated when it is updated, so drift is attributable.
+
+- git commit: 2cdaaf4a (Update line endings check to ignore .ci files. (#14319))
+- recorded: 2026-07-31
+- comfy_api versions present: v0_0_1, v0_0_2 (+ latest)
+
+The test stubs mirror comfy_api.v0_0_2; the executor validation path
+(comfy_api/latest/_io.py parse_class_inputs) is only exercised by the
+real-instance smoke gate: scripts/comfyui_smoke.py.

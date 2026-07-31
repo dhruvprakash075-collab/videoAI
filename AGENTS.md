@@ -36,7 +36,8 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 Tests use `comfy_api.v0_0_2` stubs (`tests/test_video_ai_nodes_execution.py:19-89`).
 If ComfyUI updates `comfy_api`, the stubs must be updated too — `_Schema` validates required fields so drift surfaces as test failures.
-After any ComfyUI update, run the starter workflow at `config/comfyui/workflows/video_ai_text_to_image.json` on a real instance to verify execution end-to-end.
+The stubs do NOT exercise the executor's `parse_class_inputs` (executor-level drift like legacy combo formats only crashes on a real instance); `test_input_types_override_format_compatible_with_executor` guards the known failure mode.
+After any ComfyUI update, run the real-instance smoke gate — `venv\Scripts\python.exe scripts\comfyui_smoke.py` — which runs the starter workflow (`config/comfyui/workflows/video_ai_text_to_image.json`) end-to-end. The vendored ComfyUI pin is recorded in `config/comfyui/vendored_comfyui.txt`; update it whenever the clone at `external/comfyui` is updated.
 
 ## CI / Test Dependencies
 
