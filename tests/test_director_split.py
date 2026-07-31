@@ -261,3 +261,122 @@ def test_prewarm_ollama_fires_two_threads():
         time.sleep(0.2)  # Let daemon threads fire
 
     assert "director" in calls or "writer" in calls  # at least one fired
+
+
+# ── WS-4 mixin split ─────────────────────────────────────────────────────────
+
+
+def _all_mixins():
+    """The 8 role mixins backing the DirectorAgent facade."""
+    from agents.director.config_production import ConfigProductionMixin
+    from agents.director.consultation import ConsultationMixin
+    from agents.director.llm_shims import LlmShimsMixin
+    from agents.director.memory_sync import MemorySyncMixin
+    from agents.director.prompts import PromptsMixin
+    from agents.director.story import StoryMixin
+    from agents.director.translation import TranslationMixin
+    from agents.director.vision import VisionMixin
+
+    return (
+        ConfigProductionMixin,
+        ConsultationMixin,
+        LlmShimsMixin,
+        MemorySyncMixin,
+        PromptsMixin,
+        StoryMixin,
+        TranslationMixin,
+        VisionMixin,
+    )
+
+
+def test_mixin_modules_import_standalone():
+    """Each mixin module imports on its own (no facade dependency, no cycle)."""
+    import importlib
+
+    for module_name in (
+        "agents.director.config_production",
+        "agents.director.consultation",
+        "agents.director.llm_shims",
+        "agents.director.memory_sync",
+        "agents.director.prompts",
+        "agents.director.story",
+        "agents.director.translation",
+        "agents.director.vision",
+    ):
+        module = importlib.import_module(module_name)
+        assert module.__name__ == module_name
+
+    for mixin in _all_mixins():
+        assert isinstance(mixin, type)
+
+
+def test_mixins_do_not_define_init():
+    """Only the facade may own __init__ (mixin-inheritance contract)."""
+    for mixin in _all_mixins():
+        assert "__init__" not in mixin.__dict__, f"{mixin.__name__} defines __init__"
+
+
+def test_director_agent_mro_contains_all_mixins():
+    """DirectorAgent.__mro__ must contain all 8 mixins, with the helper
+    mixins (LlmShimsMixin, PromptsMixin) rightmost so nothing shadows them."""
+    from agents.director.llm_shims import LlmShimsMixin
+    from agents.director.prompts import PromptsMixin
+    from agents.director_agent import DirectorAgent
+
+    mro = list(DirectorAgent.__mro__)
+    for mixin in _all_mixins():
+        assert mixin in mro, f"{mixin.__name__} missing from DirectorAgent.__mro__"
+
+    role_mixins = [
+        m
+        for m in mro
+        if m is not DirectorAgent
+        and m not in (LlmShimsMixin, PromptsMixin)
+        and m is not object
+    ]
+    assert mro.index(LlmShimsMixin) > max(mro.index(m) for m in role_mixins)
+    assert mro.index(PromptsMixin) > max(mro.index(m) for m in role_mixins)
+
+
+def test_facade_class_instantiates_with_mixins():
+    """The facade class is still agents.director_agent.DirectorAgent and
+    instantiates; helpers resolve through the mixin MRO."""
+    from agents.director_agent import DirectorAgent
+
+    a = DirectorAgent(
+        llm_config={
+            "ollama": {"host": "http://localhost:11434"},
+            "models": {"director": "d", "translator": "t"},
+        }
+    )
+    assert isinstance(a, DirectorAgent)
+    assert a._resolve_model("director") == "d"  # LlmShimsMixin
+    assert a._parse_json("") == {}  # PromptsMixin
+    assert a._prompt("nonexistent_template_key") == ""  # PromptsMixin
+    assert a._topic_key("Real Hero") == "real_hero"  # VisionMixin
+    assert a._last_estimated_minutes == 10  # facade __init__ state
+
+
+def test_facade_reexports_public_names():
+    """Every name consumers import from agents.director_agent must still exist."""
+    from agents.director_agent import (
+        DirectorAgent,
+        DirectorLlmClient,
+        UIState,
+        _devanagari_ratio,
+        extract_json,
+        hinglish_ratio,
+        protect_hinglish,
+        restore_hinglish,
+        transliterate_latin_runs,
+    )
+
+    assert callable(DirectorAgent)
+    assert isinstance(DirectorLlmClient, type)
+    assert isinstance(UIState, type)
+    assert callable(_devanagari_ratio)
+    assert callable(extract_json)
+    assert callable(hinglish_ratio)
+    assert callable(protect_hinglish)
+    assert callable(restore_hinglish)
+    assert callable(transliterate_latin_runs)
