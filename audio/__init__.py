@@ -26,7 +26,7 @@ __all__ = [
 ]
 
 # Degradation callback registry — breaks audio→agents import dependency.
-# Pipeline sets this via set_degradation_callback() so audio modules can
+# Pipeline sets this via add_degradation_callback() so audio modules can
 # report degradations without importing UIState directly.
 _degradation_callbacks: list = []
 

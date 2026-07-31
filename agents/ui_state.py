@@ -145,16 +145,17 @@ class UIState:
         'planning' instead of stale values from the previous run.
         """
         import uuid
-        cls.topic = topic
-        cls.segment_current = 0
-        cls.segment_total = 0
-        cls.run_start_ts = time.time()
-        cls.vram_text = ""
-        cls.degradations = []  # B2: reset degradation ledger for new run
-        cls.run_id = str(uuid.uuid4())
-        cls.vram_peaks = []
-        cls.warning_count = 0
-        cls.segment_manifests = {}
+        with cls._log_lock:
+            cls.topic = topic
+            cls.segment_current = 0
+            cls.segment_total = 0
+            cls.run_start_ts = time.time()
+            cls.vram_text = ""
+            cls.degradations = []  # B2: reset degradation ledger for new run
+            cls.run_id = str(uuid.uuid4())
+            cls.vram_peaks = []
+            cls.warning_count = 0
+            cls.segment_manifests = {}
 
     @classmethod
     def set_progress(cls, current: int | None = None, total: int | None = None) -> None:
