@@ -15,6 +15,8 @@ Config knobs (under config["tts"]):
     omnivoice:  { speed: 0.85, num_step: 24, guidance_scale: 2.5 }
     alignment:  { enabled: true, model: "base", device: "cpu", language: "hi" }
 """
+import contextlib
+
 # Audio processing module for Video.AI pipeline
 from .audio_proxy import get_audio_duration, tts_generate
 
@@ -22,3 +24,19 @@ __all__ = [
     "get_audio_duration",
     "tts_generate",
 ]
+
+# Degradation callback registry — breaks audio→agents import dependency.
+# Pipeline sets this via set_degradation_callback() so audio modules can
+# report degradations without importing UIState directly.
+_degradation_callbacks: list = []
+
+
+def add_degradation_callback(cb) -> None:
+    if cb not in _degradation_callbacks:  # identity dedupe — pipeline re-registers per run
+        _degradation_callbacks.append(cb)
+
+
+def record_degradation(segment_idx: int, category: str, reason: str) -> None:
+    for cb in _degradation_callbacks:
+        with contextlib.suppress(Exception):
+            cb(segment_idx, category, reason)

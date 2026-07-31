@@ -50,6 +50,12 @@ def _devanagari_ratio(text: str) -> float:
 
 # ── UIState ──
 
+# ponytail: intentional global singleton — one class-level registry shared by the
+# TUI, FastAPI backend, and the pipeline background thread; _log_lock makes the
+# mutating accessors thread-safe and reset_run() is the lifecycle reset between
+# runs. Ceiling: per-run instances (one state bag per pipeline) would be the
+# upgrade path if a multi-tenant UI is ever needed.
+
 
 class UIState:
     """Shared state for local_ui.py web mode. Set externally by the UI."""

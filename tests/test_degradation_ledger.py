@@ -60,3 +60,23 @@ def test_add_degradation_thread_safe():
     for t in threads:
         t.join()
     assert len(UIState.degradations) == 20
+
+
+def test_add_degradation_callback_dedupes():
+    """Registering the same callback twice should fire one degradation (WS-2)."""
+    from audio import _degradation_callbacks, add_degradation_callback, record_degradation
+
+    recorded = []
+
+    def spy(seg, stage, reason):
+        recorded.append((seg, stage, reason))
+
+    original = list(_degradation_callbacks)
+    try:
+        add_degradation_callback(spy)
+        add_degradation_callback(spy)
+        record_degradation(1, "sfx_skip", "reason")
+    finally:
+        _degradation_callbacks[:] = original
+    assert len(recorded) == 1
+    assert recorded[0] == (1, "sfx_skip", "reason")
