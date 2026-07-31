@@ -174,7 +174,11 @@ _install_optional_dependency_stubs()
 def reset_uistate():
     """Reset ALL UIState class attributes before each test (prevents bleed)."""
     from agents.director_agent import UIState
+    from core.runtime.ollama import clear_evict_cache
+    from video.renderer.assembler import clear_assembler_cache
 
+    clear_evict_cache()
+    clear_assembler_cache()
     UIState.is_ui_mode = False
     UIState.pause_event = threading.Event()
     UIState.active_question = None

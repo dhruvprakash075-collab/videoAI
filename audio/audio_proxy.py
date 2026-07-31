@@ -410,16 +410,22 @@ def _call_supertonic_worker(
         return resp
 
     log.info("[Supertonic] Using one-shot subprocess fallback")
+    temp_file: Path | None = None
     try:
         python_exe = Path(sys.executable)
         worker_script = Path(__file__).parent / "supertonic_worker.py"
         if not worker_script.exists():
             raise FileNotFoundError(f"supertonic_worker.py not found at {worker_script}")
 
+        temp_dir = Path("studio_checkpoints") / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = temp_dir / f"supertonic_input_{uuid.uuid4().hex}.txt"
+        temp_file.write_text(text, encoding="utf-8", errors="replace")
+
         cmd = [
             str(python_exe),
             str(worker_script),
-            f"--text={text}",
+            f"--text-file={temp_file}",
             f"--output={out_wav}",
             f"--voice={voice}",
             f"--steps={steps}",
@@ -446,6 +452,10 @@ def _call_supertonic_worker(
     except Exception as e:
         log.exception(f"[Supertonic] one-shot exception: {e}")
         return {"status": "error", "message": str(e)[:200]}
+    finally:
+        if temp_file is not None:
+            with contextlib.suppress(OSError):
+                temp_file.unlink()
 
 
 def _resolve_omnivoice_python() -> str:
@@ -852,14 +862,9 @@ def translate_hinglish(text: str, seg: int = 0) -> str:
 
     # Fallback: return original text
     log.warning("Translation failed, using original English text")
-    try:
-        from agents.director_agent import UIState
+    from audio import record_degradation
 
-        UIState.add_degradation(
-            seg, "translation_fallback", "Ollama translation failed, using English"
-        )
-    except Exception as e:
-        log.warning(f"Could not add translation degradation to UIState: {e}")
+    record_degradation(seg, "translation_fallback", "Ollama translation failed, using English")
     return text
 
 

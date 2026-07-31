@@ -1,10 +1,10 @@
 """supertonic_worker.py - Supertonic 3 TTS worker.
 
 Two modes (mirrors omnivoice_worker.py):
-  1. One-shot: --text/--output/--voice args, loads model, generates once, exits.
-  2. Persistent: --serve reads line-delimited JSON requests from stdin and
-     emits one JSON response per line, keeping the model loaded across segments.
-     This eliminates per-segment model reload for long pipelines.
+   1. One-shot: --text/--output/--voice args, loads model, generates once, exits.
+   2. Persistent: --serve reads line-delimited JSON requests from stdin and
+      emits one JSON response per line, keeping the model loaded across segments.
+      This eliminates per-segment model reload for long pipelines.
 
 Persistent request (one JSON object per line on stdin):
   {"text": "...", "output": "path.wav",
@@ -28,12 +28,18 @@ Supertonic facts (v1.3.1, v3 model):
     subject to OpenRAIL-M restrictions (no harm, no impersonation without
     consent, attribution required).
 """
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from supertonic import TTS
 
 # Ensure the repository root is importable even when this worker is spawned
 # from a different working directory or via a bare script path.
@@ -47,7 +53,6 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 import numpy as np
 import soundfile as sf
-from supertonic import TTS
 
 # Supertonic v3 sample rate (mono). The TTS.synthesize() tuple is (wav, sample_rate)
 # but we hard-code the known rate for explicit soundfile.write() call.
@@ -154,6 +159,8 @@ def _serve() -> int:
     """
     print("[supertonic] loading model (CPU ONNX)...", file=sys.stderr, flush=True)
     try:
+        from supertonic import TTS
+
         tts = TTS(auto_download=True)
     except Exception as e:
         print(json.dumps({"status": "error", "message": f"model load failed: {e}"}), flush=True)
@@ -200,6 +207,7 @@ def main() -> int:
         description="Supertonic 3 TTS worker (CPU ONNX). Run one-shot or as --serve."
     )
     parser.add_argument("--text", help="Plain text to synthesize (one-shot)")
+    parser.add_argument("--text-file", help="Path to text file (alternative to --text)")
     parser.add_argument("--output", help="Output .wav path (one-shot)")
     parser.add_argument(
         "--voice",
@@ -226,13 +234,18 @@ def main() -> int:
     if args.serve:
         return _serve()
 
-    if not args.text or not args.output:
-        parser.error("--text and --output are required for one-shot mode (or use --serve)")
+    text = args.text
+    if args.text_file:
+        text = Path(args.text_file).read_text(encoding="utf-8").strip()
+    if not text or not args.output:
+        parser.error("--text or --text-file and --output are required for one-shot mode (or use --serve)")
+
+    from supertonic import TTS
 
     tts = TTS(auto_download=True)
     result = _synthesize_once(
         tts=tts,
-        text=args.text,
+        text=text,
         voice=args.voice,
         output=args.output,
         lang=args.lang,

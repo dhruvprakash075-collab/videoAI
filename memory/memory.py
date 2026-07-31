@@ -27,13 +27,17 @@ class StoryMemory:
         self._lock = threading.RLock()
         self.memory_file = memory_file
         self.memory_file.parent.mkdir(parents=True, exist_ok=True)
+        self._cached: dict | None = None
 
     def _load_all(self) -> dict:
         with self._lock:
+            if self._cached is not None:
+                return self._cached
             if not self.memory_file.exists():
                 return {}
             try:
-                return json.loads(self.memory_file.read_text(encoding="utf-8"))
+                self._cached = json.loads(self.memory_file.read_text(encoding="utf-8"))
+                return self._cached
             except (json.JSONDecodeError, Exception) as e:
                 log.warning(f"Corrupt memory file: {e}")
                 return {}
@@ -49,6 +53,7 @@ class StoryMemory:
                     json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
                 os.replace(tmp_path, self.memory_file)
+                self._cached = None
             except Exception:
                 with contextlib.suppress(OSError):
                     tmp_path.unlink(missing_ok=True)
@@ -106,6 +111,7 @@ class StoryMemory:
 
     def clear(self, topic: str) -> None:
         with self._lock:
+            self._cached = None
             data = self._load_all()
             data.pop(topic, None)
             self._save_all(data)

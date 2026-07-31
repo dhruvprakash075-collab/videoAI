@@ -344,8 +344,8 @@ def search_story_web(topic: str, search_extra: list[str] | None = None) -> dict[
 
     from concurrent.futures import ThreadPoolExecutor
 
-    for query in queries:
-        with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for query in queries:
             wiki_future = pool.submit(_search_wikipedia, query)
             ddg_future = pool.submit(_search_duckduckgo, query)
             try:

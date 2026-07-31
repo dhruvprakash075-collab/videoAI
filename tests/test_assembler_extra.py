@@ -19,11 +19,9 @@ log = logging.getLogger("video.renderer.assembler")
 
 
 @pytest.fixture(autouse=True)
-def reset_whisper_cache():
-    """Reset global whisper caching variables between tests to avoid bleed."""
-    assembler._whisper_models.clear()
-    assembler._cached_codec = None
-    assembler._encoder_support_cache.clear()
+def reset_assembler_cache():
+    """Reset global assembler caches between tests to avoid bleed."""
+    assembler.clear_assembler_cache()
 
 
 def test_ts_boundaries():
@@ -113,18 +111,18 @@ def test_get_video_codec_win32_nvenc():
 def test_get_video_codec_fallback_to_libx264():
     """Test video codec fallback to libx264 when nvenc check fails or is missing."""
     # Case 1: nvenc missing in ffmpeg encoders
-    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
-        assembler._cached_codec = None
+    with patch.object(assembler._cache, "encoder_support_cache", {"h264_nvenc": False}):
+        assembler._cache.cached_codec = None
         codec = assembler._get_video_codec()
         assert "libx264" in codec
         assert "h264_nvenc" not in codec
 
     # Reset cache
-    assembler._cached_codec = None
+    assembler._cache.cached_codec = None
 
     # Case 2: ffmpeg subprocess exception (probe fails)
     with (
-        patch.object(assembler, "_encoder_support_cache", {}),
+        patch.object(assembler._cache, "encoder_support_cache", {}),
         patch("subprocess.run", side_effect=FileNotFoundError("ffmpeg not found")),
     ):
         codec = assembler._get_video_codec()
@@ -617,36 +615,31 @@ def test_assembler_run_general_exception():
             assembler._run(["ffmpeg"])
 
 
-def test_assembler_get_video_codec_nvidia_h264_nvenc(monkeypatch):
-    # Reset cached codec to force execution of the platform detection
-    monkeypatch.setattr(assembler, "_cached_codec", None)
-
-    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": True}):
+def test_assembler_get_video_codec_nvidia_h264_nvenc():
+    assembler._cache.cached_codec = None
+    with patch.object(assembler._cache, "encoder_support_cache", {"h264_nvenc": True}):
         codec = assembler._get_video_codec()
         assert "h264_nvenc" in codec
 
 
-def test_assembler_get_video_codec_nvenc_missing(monkeypatch):
-    monkeypatch.setattr(assembler, "_cached_codec", None)
-
-    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
+def test_assembler_get_video_codec_nvenc_missing():
+    assembler._cache.cached_codec = None
+    with patch.object(assembler._cache, "encoder_support_cache", {"h264_nvenc": False}):
         codec = assembler._get_video_codec()
         assert "libx264" in codec
 
 
-def test_assembler_get_video_codec_exception(monkeypatch):
-    monkeypatch.setattr(assembler, "_cached_codec", None)
-
+def test_assembler_get_video_codec_exception():
+    assembler._cache.cached_codec = None
     with patch("subprocess.run", side_effect=Exception("command failed")):
-        assembler._encoder_support_cache.clear()
+        assembler._cache.encoder_support_cache.clear()
         codec = assembler._get_video_codec()
         assert "libx264" in codec
 
 
-def test_assembler_get_video_codec_not_windows(monkeypatch):
-    monkeypatch.setattr(assembler, "_cached_codec", None)
-
-    with patch.object(assembler, "_encoder_support_cache", {"h264_nvenc": False}):
+def test_assembler_get_video_codec_not_windows():
+    assembler._cache.cached_codec = None
+    with patch.object(assembler._cache, "encoder_support_cache", {"h264_nvenc": False}):
         codec = assembler._get_video_codec()
         assert "libx264" in codec
 
@@ -662,9 +655,9 @@ def test_assembler_get_whisper_model_exception_fallback():
         mock_faster.assert_called_once_with("tiny", device="cpu", compute_type="int8")
 
 
-def test_assembler_get_video_codec_cached(monkeypatch):
+def test_assembler_get_video_codec_cached():
     """Test that _get_video_codec returns the cached codec immediately."""
-    monkeypatch.setattr(assembler, "_cached_codec", ["-c:v", "cached_encoder"])
+    assembler._cache.cached_codec = ["-c:v", "cached_encoder"]
     assert assembler._get_video_codec() == ["-c:v", "cached_encoder"]
 
 

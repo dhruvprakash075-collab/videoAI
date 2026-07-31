@@ -72,12 +72,9 @@ def mix_sfx(
     """
 
     def _record_sfx_degradation(reason: str) -> None:
-        try:
-            from agents.director_agent import UIState
+        from audio import record_degradation
 
-            UIState.add_degradation(segment_idx, "sfx_skip", reason)
-        except Exception as exc:
-            log.debug(f"Could not record SFX degradation: {exc}")
+        record_degradation(segment_idx, "sfx_skip", reason)
 
     if not audio_path.exists():
         log.warning(f"Audio file not found: {audio_path} — skipping SFX")
@@ -280,12 +277,9 @@ def master_audio(audio_path: Path, output_dir: Path, segment_idx: int) -> Path:
     """
 
     def _record_master_degradation(reason: str) -> None:
-        try:
-            from agents.director_agent import UIState
+        from audio import record_degradation
 
-            UIState.add_degradation(segment_idx, "mastering_fallback", reason)
-        except Exception as exc:
-            log.debug(f"Could not record mastering degradation: {exc}")
+        record_degradation(segment_idx, "mastering_fallback", reason)
 
     if not audio_path.exists():
         log.warning(f"Audio file not found for mastering: {audio_path}")

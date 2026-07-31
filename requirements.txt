@@ -14,12 +14,6 @@ sentry-sdk>=2.54.0
 # ── Automatic Speech Recognition ───────────────────────────────────
 faster-whisper>=1.2.0
 
-# ── Deep Learning / Adapters ───────────────────────────────────────
-peft>=0.19.0
-
-# ── Translation ────────────────────────────────────────────────────
-transformers>=5.10.2
-
 # ── PyTorch with CUDA 12.8 (matches RTX 4050 driver) ─────────────
 # Install separately: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 # torch>=2.6.0

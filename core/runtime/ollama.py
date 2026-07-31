@@ -13,6 +13,12 @@ log = logging.getLogger("core.segment_runner")
 _pending_ollama_timer = None
 _pending_ollama_timer_lock = threading.Lock()
 
+# Cache for evict_ollama_models: keyed by (host, frozenset(models)) so
+# different configs (e.g. changing Ollama host or model set) don't share
+# the same TTL window. Collapses the 5-per-batch burst ~10:1.
+_EVICT_CACHE: dict[tuple[str, frozenset[str]], float] = {}
+_EVICT_TTL: float = 5.0
+
 
 def touch_ollama_active():
     """Cancel any pending Ollama server stop (task still needs it)."""
@@ -51,8 +57,30 @@ def _ollama_alive(config, timeout: float = 2.0) -> bool:
         return False
 
 
+def clear_evict_cache() -> None:
+    """Reset all evict TTLs so next call runs (for tests)."""
+    _EVICT_CACHE.clear()
+
+
+def _evict_cache_key(config: dict) -> tuple[str, frozenset[str]]:
+    if not isinstance(config, dict):
+        return ("unknown", frozenset())
+    host = config.get("ollama", {}).get("host", "http://localhost:11434")
+    models_cfg = config.get("models", {})
+    models = frozenset(
+        models_cfg[k] for k in ("director", "writer", "reviewer", "translator", "image_engineer")
+        if models_cfg.get(k)
+    )
+    return (host, models)
+
+
 def evict_ollama_models(config: dict, reason: str = "") -> None:
     """Force-evict ALL Ollama models from VRAM (keep_alive=0) before a GPU task."""
+    key = _evict_cache_key(config)
+    now = time.monotonic()
+    if now - _EVICT_CACHE.get(key, 0.0) < _EVICT_TTL:
+        return
+    _EVICT_CACHE[key] = now
     try:
         import json as _js
         import urllib.request as _ur
