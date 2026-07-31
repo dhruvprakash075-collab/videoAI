@@ -10,7 +10,6 @@ from config.config_schemas import (
     ImageGenConfig,
     ShotDistribution,
     UserResponses,
-    VideoAIConfig,
     VisionDocument,
     WriterBreakdown,
     breakdown_from_dict,
@@ -62,15 +61,6 @@ def test_user_responses():
     assert "[FILTERED]" in resp.custom_instructions
 
 
-def test_video_ai_config():
-    cfg = VideoAIConfig.from_dict({"critic": {"threshold": 75}})
-    assert cfg.critic.threshold == 75
-
-    # Trigger exception in from_dict
-    cfg_invalid = VideoAIConfig.from_dict({"critic": "invalid-type"})
-    assert cfg_invalid.critic.threshold == 60
-
-
 def test_image_gen_schema_defaults_and_removed_compositor_rejected():
     img = ImageGenConfig()
     assert img.composition_mode == "one_pass"
@@ -116,6 +106,14 @@ def test_tts_schema_rejects_removed_engines_and_subconfigs():
 def test_tts_schema_accepts_hinglish_ratio():
     valid = validate_config({"tts": {"devanagari": {"hinglish_ratio": 0.4}}})
     assert valid["tts"]["devanagari"]["hinglish_ratio"] == 0.4
+
+
+def test_visual_schema_accepts_negative_prompt():
+    valid = validate_config({"visual": {"negative_prompt": "bright sunlight, bad anatomy"}})
+    assert valid["visual"]["negative_prompt"] == "bright sunlight, bad anatomy"
+
+    with pytest.raises(FatalError, match="Config section 'visual' validation failed"):
+        validate_config({"visual": {"num_scenes": 0}})
 
 
 def test_script_schema_accepts_tts_word_rates():

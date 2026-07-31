@@ -219,7 +219,7 @@ def finalize_dry_run(
 ) -> dict:
     """Dry-run finalization: chapters + manifest, no real concat."""
     default_out = f"studio_outputs/{_safe_filename(topic)}_final_video.mp4"
-    final_out = Path(config["video"].get("output_path", ""))
+    final_out = Path(config.get("video", {}).get("output_path", ""))
     if not final_out.name or final_out.name == "final_video.mp4":
         final_out = Path(default_out)
     final_out.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +246,7 @@ def finalize_production(
     log_vram_usage("Pipeline End (pre-concat)")
 
     default_out = f"studio_outputs/{_safe_filename(topic)}_final_video.mp4"
-    final_out = Path(config["video"].get("output_path", ""))
+    final_out = Path(config.get("video", {}).get("output_path", ""))
     if not final_out.name or final_out.name == "final_video.mp4":
         final_out = Path(default_out)
     final_out.parent.mkdir(parents=True, exist_ok=True)

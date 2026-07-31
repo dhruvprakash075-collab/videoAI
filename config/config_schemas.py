@@ -133,6 +133,7 @@ class VisualConfig(BaseModel):
     num_scenes: int = Field(default=4, ge=1, le=30)
     style: str = "hybrid 2d anime visual novel style"
     environment_frame_ratio: float = 0.4
+    negative_prompt: str = ""
 
 
 class SuperTonicSubConfig(BaseModel):
@@ -489,22 +490,6 @@ class LanguageConfig(BaseModel):
     @classmethod
     def normalize(cls, v: str) -> str:
         return v.strip().lower()
-
-
-class VideoAIConfig(BaseModel):
-    model_config = {"extra": "allow"}
-    critic: CriticConfig = Field(default_factory=CriticConfig)
-    research: ResearchConfig = Field(default_factory=ResearchConfig)
-    seo: SEOConfig = Field(default_factory=SEOConfig)
-    source: SourceConfig = Field(default_factory=SourceConfig)
-    tts: TTSConfig = Field(default_factory=TTSConfig)
-
-    @classmethod
-    def from_dict(cls, raw: dict) -> "VideoAIConfig":
-        try:
-            return cls(**{k: raw[k] for k in raw if k in cls.model_fields})
-        except Exception:
-            return cls()
 
 
 class ConfigOverlay(BaseModel):

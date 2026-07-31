@@ -80,6 +80,18 @@ def test_load_config_rejects_project_name_traversal(tmp_path, monkeypatch):
         load_config(Path("config.yaml"), project_name="../config/config")
 
 
+def test_load_config_returns_fresh_dict_per_call():
+    """Cached/shared mutable config would leak run-1 mutations into run 2."""
+    first = load_config()
+    second = load_config()
+    assert first is not second
+    first["video"]["total_duration_min"] = 99
+    first.setdefault("tts", {})["engine"] = "polluted"
+    fresh = load_config()
+    assert fresh["video"]["total_duration_min"] == 10
+    assert fresh["tts"]["engine"] != "polluted"
+
+
 def test_load_config_validation_failure():
     """Invalid config now raises; fail-fast replaces fail-soft."""
     with patch("config.config.validate_config", side_effect=ValueError("validation error")):

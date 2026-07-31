@@ -1,5 +1,6 @@
 """assembler.py - Phase 1: black-frame MP4. Phase 2: image slideshow with Ken Burns. Final concat."""
 
+import contextlib
 import logging
 import math
 import re
@@ -8,15 +9,27 @@ import threading
 import uuid
 from pathlib import Path
 
-# Whisper model cache to avoid reloading per segment.
-# B5: cache one model per (model_name, device, compute) key so the final-render
-# model choice (whisper_model_final) and the preview model choice (whisper_model)
-# never clobber each other.
-_whisper_models: dict = {}
-_whisper_model_lock = threading.Lock()
+from utils import get_audio_duration
 
-# Thread lock to serialize access to the shared cleanup manifest JSON file
-_manifest_lock = threading.Lock()
+
+# ponytail: assembler module state container — isolated so tests can reset.
+# Migrate to a proper state object if more caches are added.
+class _AssemblerCache:
+    whisper_models: dict = {}
+    whisper_model_lock = threading.Lock()
+    manifest_lock = threading.Lock()
+    whisper_lock = threading.Lock()
+    cached_codec: list | None = None
+    encoder_support_cache: dict = {}
+
+_cache = _AssemblerCache()
+
+
+def clear_assembler_cache():
+    """Reset all module-level caches.  Call from conftest autouse fixture."""
+    _cache.whisper_models.clear()
+    _cache.encoder_support_cache.clear()
+    _cache.cached_codec = None
 
 
 def _get_whisper_model(is_final: bool = False):
@@ -53,38 +66,29 @@ def _get_whisper_model(is_final: bool = False):
 
     cache_key = (model_name, _device, _compute)
 
-    with _whisper_model_lock:
-        cached = _whisper_models.get(cache_key)
-        if cached is not None:
-            return cached
+    with _cache.whisper_model_lock:
+        cached = _cache.whisper_models.get(cache_key)
+    if cached is not None:
+        return cached
 
-        try:
-            from faster_whisper import WhisperModel as FasterWhisperModel
+    try:
+        from faster_whisper import WhisperModel as FasterWhisperModel
 
-            model = FasterWhisperModel(
-                model_name, device=_device, compute_type=_compute
-            )
-            log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
-        except Exception as e:
-            log.exception(f"faster-whisper failed: {e}")
-            return None
+        model = FasterWhisperModel(
+            model_name, device=_device, compute_type=_compute
+        )
+        log.info(f"Whisper: faster-whisper ({model_name}, {_device}, {_compute})")
+    except Exception as e:
+        log.exception(f"faster-whisper failed: {e}")
+        return None
 
-        _whisper_models[cache_key] = model
-        return model
+    _cache.whisper_models[cache_key] = model
+    return model
 
-
-import contextlib
-
-from utils import get_audio_duration
 
 log = logging.getLogger(__name__)
 
-# Dedicated lock for Whisper transcription to prevent CPU/RAM OOM during parallel segment execution
-_whisper_lock = threading.Lock()
 
-
-_cached_codec = None
-_encoder_support_cache: dict = {}
 
 
 def _ffmpeg_supports_encoder(name: str) -> bool:
@@ -92,7 +96,7 @@ def _ffmpeg_supports_encoder(name: str) -> bool:
 
     The result is cached per encoder name so we only shell out to ffmpeg once.
     """
-    cached = _encoder_support_cache.get(name)
+    cached = _cache.encoder_support_cache.get(name)
     if cached is not None:
         return cached
     supported = False
@@ -107,21 +111,20 @@ def _ffmpeg_supports_encoder(name: str) -> bool:
     except Exception:
         log.warning(f"FFmpeg encoder probe failed for {name} -- assuming unavailable")
         supported = False
-    _encoder_support_cache[name] = supported
+    _cache.encoder_support_cache[name] = supported
     return supported
 
 
 def _get_video_codec() -> list:
     """Return GPU encoder if available, fall back to CPU libx264. Cached after first call."""
-    global _cached_codec
-    if _cached_codec is not None:
-        return _cached_codec
+    if _cache.cached_codec is not None:
+        return _cache.cached_codec
     # Probe for NVENC on ALL platforms (not just Windows) so Linux/WSL hosts with
     # an NVIDIA GPU still get hardware acceleration, while hosts without it fall
     # back cleanly to libx264.
     if _ffmpeg_supports_encoder("h264_nvenc"):
         log.debug("Hardware acceleration: h264_nvenc detected")
-        _cached_codec = [
+        _cache.cached_codec = [
             "-c:v",
             "h264_nvenc",
             "-preset",
@@ -137,9 +140,9 @@ def _get_video_codec() -> list:
             "-pix_fmt",
             "yuv420p",
         ]
-        return _cached_codec
+        return _cache.cached_codec
     log.warning("h264_nvenc not available -- falling back to libx264")
-    _cached_codec = [
+    _cache.cached_codec = [
         "-threads",
         "0",
         "-c:v",
@@ -151,7 +154,7 @@ def _get_video_codec() -> list:
         "-pix_fmt",
         "yuv420p",
     ]
-    return _cached_codec
+    return _cache.cached_codec
 
 
 def _encoder_args(config: dict) -> list:
@@ -442,8 +445,8 @@ def create_segment_mp4(
             is_final=is_final,
             subtitle_language=_sub_lang,
         )
-        res = config["video"].get("resolution", "1920x1080")
-        fps = config["video"].get("fps", 24)
+        res = config.get("video", {}).get("resolution", "1920x1080")
+        fps = config.get("video", {}).get("fps", 24)
         # Bug 6: Escape paths for FFmpeg filtergraph on Windows correctly
         # Escape backslashes, colons (FFmpeg filter separator), and single quotes for filtergraph
         srt_path_str = str(srt.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\\\'")
@@ -476,7 +479,7 @@ def create_segment_mp4(
         # P4-4 fix: write the cleanup manifest only on the SUCCESS path (after _run completes
         # without raising), not in finally.  Writing on failure would record assets that may
         # still be needed for debugging or a retry.
-        with _manifest_lock:
+        with _cache.manifest_lock:
             try:
                 import json as _json
 
@@ -840,7 +843,7 @@ def _write_srt(
                 "Check tts.alignment.enabled in config.yaml."
             )
             log.info(f"Generating word-level subtitles using Whisper ({format_style})...")
-            with _whisper_lock:
+            with _cache.whisper_lock:
                 model = _get_whisper_model(is_final=is_final)
                 if model is None:
                     raise RuntimeError("No whisper model available")
