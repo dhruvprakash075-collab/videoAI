@@ -1343,7 +1343,7 @@ def test_consult_fields_headless_default_enter(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value=""),
+        patch("builtins.input", return_value=""),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)
@@ -1360,7 +1360,7 @@ def test_consult_fields_headless_quick_mode(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="3"),
+        patch("builtins.input", return_value="3"),
     ):  # 2 fields + 1 = 3
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)
@@ -1376,7 +1376,7 @@ def test_consult_fields_headless_field_choice(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="1:2"),
+        patch("builtins.input", return_value="1:2"),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)
@@ -1392,7 +1392,7 @@ def test_consult_fields_headless_skip_choice(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="1:0"),
+        patch("builtins.input", return_value="1:0"),
     ):
         mock_stdin.isatty.return_value = True
         # ci=-1 → opts[0] = "epic"
@@ -1407,7 +1407,7 @@ def test_consult_fields_headless_regenerate(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="r"),
+        patch("builtins.input", return_value="r"),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0, allow_regenerate=True)
@@ -1424,7 +1424,7 @@ def test_consult_fields_headless_partial_then_defaults(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="1:2"),
+        patch("builtins.input", return_value="1:2"),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)
@@ -1439,7 +1439,7 @@ def test_consult_fields_headless_invalid_input_ignored(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="garbage"),
+        patch("builtins.input", return_value="garbage"),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)
@@ -1453,7 +1453,7 @@ def test_consult_fields_out_of_range_ignored(agent):
         patch.object(UIState, "auto_accept", False, create=True),
         patch.object(UIState, "is_ui_mode", False, create=True),
         patch.object(sys, "stdin") as mock_stdin,
-        patch("agents.director_agent.input", return_value="99:1"),
+        patch("builtins.input", return_value="99:1"),
     ):
         mock_stdin.isatty.return_value = True
         results = agent.consult_fields(fields, timeout=0)

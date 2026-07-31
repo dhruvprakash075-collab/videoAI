@@ -3,7 +3,6 @@
 Extracted verbatim from ``agents/director_agent.py`` (WS-4 mixin split).
 """
 
-import builtins
 import logging
 import sys
 import threading
@@ -12,23 +11,6 @@ import time
 from agents.ui_state import UIState
 
 log = logging.getLogger(__name__)
-
-
-def _input(prompt: str = "") -> str:
-    """Route ``input`` through the facade module namespace when available.
-
-    Tests patch ``agents.director_agent.input`` (module-namespace) or
-    ``builtins.input``; this mixin no longer lives in that module, so a bare
-    ``input`` call here would bypass the facade-module patch. Reading the
-    module ``__dict__`` at call time serves both patch styles. Falls back to
-    builtins.
-    """
-    _da = sys.modules.get("agents.director_agent")
-    if _da is not None:
-        _inp = _da.__dict__.get("input")
-        if _inp is not None:
-            return _inp(prompt)
-    return builtins.input(prompt)
 
 
 class ConsultationMixin:
@@ -82,7 +64,7 @@ class ConsultationMixin:
                 return None
 
             try:
-                return _input(prompt)
+                return input(prompt)
 
             except (EOFError, KeyboardInterrupt):
                 print()
@@ -256,7 +238,7 @@ class ConsultationMixin:
                 return None
 
             try:
-                return _input(prompt)
+                return input(prompt)
 
             except (EOFError, KeyboardInterrupt):
                 print()
