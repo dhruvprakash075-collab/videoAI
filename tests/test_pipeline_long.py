@@ -167,6 +167,29 @@ def test_fast_dry_run_orchestration(tmp_path):
     assert len(res["chapters"]) >= 1
 
 
+def test_fast_dry_run_calls_preflight_in_dry_mode(tmp_path):
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+
+    with (
+        patch("utils.load_config", return_value=cfg),
+        patch("utils.setup_run_logging"),
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("core.pipeline_long.run_preflight_checks", side_effect=RuntimeError("stop")) as mock_preflight,
+    ):
+        with pytest.raises(RuntimeError, match="stop"):
+            run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True)
+
+    assert mock_preflight.call_args.kwargs["dry_run"] is True
+
+
 # ── run_long_pipeline tests ──────────────────────────────────────────────────
 from unittest.mock import MagicMock
 
