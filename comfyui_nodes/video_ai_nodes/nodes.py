@@ -438,105 +438,37 @@ VideoAI_ProjectConfigLoader.CATEGORY = CATEGORY
 VideoAI_ProjectConfigLoader.FUNCTION = "execute"
 VideoAI_ProjectConfigLoader.RETURN_TYPES = ("INT", "INT", "INT", "FLOAT", "STRING", "STRING", "STRING", "STRING", "BOOLEAN")
 VideoAI_ProjectConfigLoader.RETURN_NAMES = ("WIDTH", "HEIGHT", "STEPS", "CFG", "SAMPLER_NAME", "SCHEDULER", "CHECKPOINT", "NEGATIVE_PROMPT", "UNLOAD_AFTER_BATCH")
-VideoAI_ProjectConfigLoader.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {"config_path": ("STRING", {"default": "config/config.yaml"})},
-    "optional": {"repo_root": ("STRING", {"default": ""}), "barrier": (BARRIER_TYPE, {})},
-})
 
 VideoAI_ConfigCheckpointLoader.CATEGORY = CATEGORY
 VideoAI_ConfigCheckpointLoader.FUNCTION = "execute"
 VideoAI_ConfigCheckpointLoader.RETURN_TYPES = ("MODEL", "CLIP", "VAE", "STRING")
 VideoAI_ConfigCheckpointLoader.RETURN_NAMES = ("MODEL", "CLIP", "VAE", "CHECKPOINT")
-VideoAI_ConfigCheckpointLoader.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {"config_path": ("STRING", {"default": "config/config.yaml"})},
-    "optional": {
-        "repo_root": ("STRING", {"default": ""}),
-        "checkpoint_override": ("STRING", {"default": ""}),
-        "barrier": (BARRIER_TYPE, {}),
-    },
-})
 
 VideoAI_ConfigKSampler.CATEGORY = CATEGORY
 VideoAI_ConfigKSampler.FUNCTION = "execute"
 VideoAI_ConfigKSampler.RETURN_TYPES = ("LATENT", "STRING", "STRING", "INT", "FLOAT", "INT")
 VideoAI_ConfigKSampler.RETURN_NAMES = ("LATENT", "SAMPLER_NAME", "SCHEDULER", "STEPS", "CFG", "SEED")
-VideoAI_ConfigKSampler.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {
-        "model": ("MODEL", {}),
-        "positive": ("CONDITIONING", {}),
-        "negative": ("CONDITIONING", {}),
-        "latent": ("LATENT", {}),
-        "config_path": ("STRING", {"default": "config/config.yaml"}),
-        "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-        "seed_control": (["fixed", "increment", "decrement", "randomize"], {"default": "fixed"}),
-    },
-    "optional": {
-        "repo_root": ("STRING", {"default": ""}),
-        "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-        "sampler_override": ("STRING", {"default": ""}),
-        "scheduler_override": ("STRING", {"default": ""}),
-        "steps_override": ("INT", {"default": 0, "min": 0, "max": 10000}),
-        "cfg_override": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-        "barrier": (BARRIER_TYPE, {}),
-    },
-})
 
 VideoAI_CharacterPortraitLoader.CATEGORY = CATEGORY
 VideoAI_CharacterPortraitLoader.FUNCTION = "execute"
 VideoAI_CharacterPortraitLoader.RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
 VideoAI_CharacterPortraitLoader.RETURN_NAMES = ("IMAGE", "PORTRAIT_HASH", "PORTRAIT_PATH", "CHARACTER_JSON")
-VideoAI_CharacterPortraitLoader.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {"project_name": ("STRING", {"default": ""}), "character_name": ("STRING", {"default": ""})},
-    "optional": {"repo_root": ("STRING", {"default": ""})},
-})
 
 VideoAI_FreeMemoryBarrier.CATEGORY = CATEGORY
 VideoAI_FreeMemoryBarrier.FUNCTION = "execute"
 VideoAI_FreeMemoryBarrier.RETURN_TYPES = (BARRIER_TYPE,)
 VideoAI_FreeMemoryBarrier.RETURN_NAMES = ("BARRIER",)
-VideoAI_FreeMemoryBarrier.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {"enabled": ("BOOLEAN", {"default": True})},
-    "optional": {
-        "unload_models": ("BOOLEAN", {"default": True}),
-        "free_cuda_cache": ("BOOLEAN", {"default": True}),
-        "label": ("STRING", {"default": "barrier"}),
-    },
-})
 
 VideoAI_SmartFaceIDLoraRouter.CATEGORY = CATEGORY
 VideoAI_SmartFaceIDLoraRouter.FUNCTION = "execute"
 VideoAI_SmartFaceIDLoraRouter.RETURN_TYPES = ("MODEL", "CLIP", "BOOLEAN")
 VideoAI_SmartFaceIDLoraRouter.RETURN_NAMES = ("MODEL", "CLIP", "APPLIED")
-VideoAI_SmartFaceIDLoraRouter.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {
-        "model": ("MODEL", {}),
-        "clip": ("CLIP", {}),
-        "checkpoint_name": ("STRING", {"default": ""}),
-        "lora_name": (cls._lora_options(),),
-        "strength_model": ("FLOAT", {"default": 0.8, "min": -20.0, "max": 20.0, "step": 0.01}),
-        "strength_clip": ("FLOAT", {"default": 0.8, "min": -20.0, "max": 20.0, "step": 0.01}),
-        "model_family": (["auto", "sd15", "sdxl", "flux"], {"default": "auto"}),
-    },
-})
 
 VideoAI_VideoFrameSaver.CATEGORY = CATEGORY
 VideoAI_VideoFrameSaver.FUNCTION = "execute"
 VideoAI_VideoFrameSaver.OUTPUT_NODE = True
 VideoAI_VideoFrameSaver.RETURN_TYPES = ("STRING", "INT")
 VideoAI_VideoFrameSaver.RETURN_NAMES = ("SAVED_PATHS", "COUNT")
-VideoAI_VideoFrameSaver.INPUT_TYPES = classmethod(lambda cls: {
-    "required": {
-        "images": ("IMAGE", {}),
-        "output_dir": ("STRING", {"default": "studio_outputs/frames"}),
-        "scene_index": ("INT", {"default": 1, "min": 0, "max": 100000}),
-    },
-    "optional": {
-        "filename_prefix": ("STRING", {"default": "scene"}),
-        "metadata_json": ("STRING", {"default": "", "multiline": True}),
-        "overwrite": ("BOOLEAN", {"default": True}),
-        "barrier": (BARRIER_TYPE, {}),
-    },
-})
 
 NODE_CLASS_MAPPINGS = {
     "VideoAI_ProjectConfigLoader": VideoAI_ProjectConfigLoader,
