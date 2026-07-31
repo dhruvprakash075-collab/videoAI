@@ -380,7 +380,7 @@ def run_long_pipeline(
         config_overlay.setdefault("tts", {})["engine"] = _normalized_engine
 
     # Preflight + checkpoint + memory seeding
-    run_preflight_checks(config, dry_run=dry_run)
+    run_preflight_checks(config, dry_run=(dry_run or fast_dry_run))
     cp_mgr = build_checkpoint_manager(config)
     _seed_director_memory(topic, config_overlay, config)
 
@@ -622,6 +622,5 @@ def run_long_pipeline(
 
 
 # ── run_long_pipeline_async is imported from core.pipeline_cli ───────────
-
 
 
