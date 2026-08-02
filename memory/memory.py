@@ -7,6 +7,8 @@ import os
 import threading
 from pathlib import Path
 
+from config import _safe_filename
+
 log = logging.getLogger(__name__)
 
 # Module-level lock shared across all StoryMemory instances that write to the
@@ -140,7 +142,10 @@ class WorldState:
 
     def __init__(self, topic: str, checkpoint_dir: Path):
         self._lock = threading.RLock()
-        safe = topic.lower().replace(" ", "_")[:40]
+        # ponytail: reuse the shared sanitizer instead of the inline
+        # lower().replace() scheme — the old one let '/', '\' and ':' through
+        # (path traversal / Windows crash on user-supplied topics).
+        safe = _safe_filename(topic.lower())
         self._path = checkpoint_dir / f"world_state_{safe}.json"
         self._data: dict = self._load()
         log.info(
@@ -170,6 +175,16 @@ class WorldState:
             import os
 
             os.replace(tmp_path, self._path)
+
+    def clear(self) -> None:
+        """Delete the persisted world state (run completion / fresh start)."""
+        with self._lock:
+            try:
+                if self._path.exists():
+                    self._path.unlink()
+                    log.info(f"[WorldState] Cleared {self._path}")
+            except Exception as exc:
+                log.warning(f"[WorldState] Could not clear {self._path}: {exc}")
 
     # -- update ---------------------------------------------------------------
 

@@ -297,3 +297,22 @@ def test_checkpoint_clear_unlink_sibling_fails(tmp_path):
         mgr.clear(topic)
         assert not p.exists()
         assert p.with_suffix(".bak").exists()
+
+def test_world_state_path_sanitizes_traversal(tmp_path):
+    """WorldState must not escape the checkpoint dir on hostile topics."""
+    from memory.memory import WorldState
+
+    ws = WorldState(topic="../../evil", checkpoint_dir=tmp_path)
+    ws.update("script", {"seg": 1}, force_save=True, config=None)
+    assert (tmp_path / "world_state_evil.json").exists()
+    assert not (tmp_path.parent / "evil.json").exists()
+
+
+def test_world_state_clear_removes_file(tmp_path):
+    from memory.memory import WorldState
+
+    ws = WorldState(topic="Fog", checkpoint_dir=tmp_path)
+    ws.update("script", {"seg": 1}, force_save=True, config=None)
+    assert (tmp_path / "world_state_fog.json").exists()
+    ws.clear()
+    assert not (tmp_path / "world_state_fog.json").exists()

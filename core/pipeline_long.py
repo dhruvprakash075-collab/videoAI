@@ -434,7 +434,7 @@ def run_long_pipeline(
     world_state = WorldState(topic=topic, checkpoint_dir=ck_dir)
     if not resume:
         try:
-            _ws_file = ck_dir / f"world_state_{_safe_filename(topic)}.json"
+            _ws_file = ck_dir / f"world_state_{_safe_filename(topic.lower())}.json"
             if _ws_file.exists():
                 _ws_file.unlink()
                 log.info("[WorldState] Cleared stale world state (--no-resume)")
@@ -607,7 +607,15 @@ def run_long_pipeline(
     try:
         if dry_run or fast_dry_run:
             return finalize_dry_run(topic, config, outline, n_segs, mp4s, wall_time_s)
-        return finalize_production(topic, config, outline, n_segs, mp4s, wall_time_s)
+        result = finalize_production(topic, config, outline, n_segs, mp4s, wall_time_s)
+        if result.get("status") == "success":
+            # Audit fix: resume artifacts accumulated forever — clear on completion.
+            for i in range(1, n_segs + 1):
+                cp_mgr.clear(f"{topic}_seg{i:02d}")
+            cp_mgr.clear(f"{topic}_meta")
+            world_state.clear()
+            log.info("[Checkpoint] Run completed — cleared resume checkpoints")
+        return result
     finally:
         # B16: stop persistent TTS workers so models are released
         try:
