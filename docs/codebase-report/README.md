@@ -67,6 +67,20 @@ Findings are equal-weight (no HIGH/MED/LOW). Frontend `dashboard/` exempt.
   drift between prompts.yaml and config.yaml; all 6 workflows use fixed seeds;
   skip inventory clean (6 conditional skips, 0 xfails). Details: bugs.md
   #14-25, duplicates.md corrections.
+- **Third pass (config.yaml, CI, hot path, Rust tests, docs)**: config.yaml
+  fully cross-checked against disk — only 2 missing references, both benign
+  (`narration_ref_9s_mono24k.txt` falls back to inline ref_text;
+  `chrome_profile` unused with uploads off); all ComfyUI models/VAE/LoRAs on
+  disk; 3 CI workflows + pyproject read (pinned SHAs, rust CI on `rust/**`
+  paths, maturin wheel); hot-path module bodies (pipeline_long, segment_runner,
+  pipeline_graph, pre/post_production, main, preflight, image_gen, renderer,
+  assembler ≈5.1k lines) read — no CRITICAL, minors only (bugs.md #26-34):
+  preflight.py:50 third `D:\IndicF5` hardcode; YouTube upload exception
+  unguarded (lost manifest on upload crash); image_gen `_refine_upscale`
+  hardcodes node indices "1"/"11"; 4 dead SD-era image_gen helpers still
+  advertised in docstring; README Rust commands fail live (rc=101, verified);
+  docs stale in 3 places (workflow name, IndicF5 root, 2 test counts); Rust
+  67 `#[test]` bodies read (main.rs, text.rs, doctor.rs) — solid.
 
 ## Open items
 

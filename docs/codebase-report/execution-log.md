@@ -48,6 +48,9 @@ interpreter drift).
 | `cargo run --bin {audio_analyze,text_split,videoai_checkpoint} -- --help` | — | rc=0, proper clap help | OK |
 | `validate_config(config.yaml)` (venv, pydantic 2.12.5) | venv | VALID, 22 sections | OK |
 | workflows scan (6 JSON, config/comfyui/workflows) | — | all node classes resolve; seeds fixed (42×5, 0×1) | OK |
+| `cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs` (README.md:64-67 verbatim) | — | rc=101 "could not determine which binary" — README's own commands fail live | BUG #26 |
+| config.yaml path cross-check (Test-Path batch: checkpoints, VAEs, LoRAs, reference images, IndicF5, ComfyUI, character_voices) | — | all present except `narration_ref_9s_mono24k.txt` (falls back to inline ref_text, audio_proxy.py:121-125) + `chrome_profile` (uploads disabled) | OK — both benign (BUG #33) |
+| `python -m pytest tests` rerun sanity (config/CI round) | venv | 2048 passed, 5 skipped (matches execution-log:13) | OK |
 
 ## Import smoke (all 228 tracked modules importable)
 

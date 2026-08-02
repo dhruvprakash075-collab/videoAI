@@ -143,6 +143,54 @@ defines a strict error taxonomy and the suite (2048 passed) exercises it.
 25. Minor: `jobs/job_store.py:7-8` — `DB_PATH` relative to CWD with `mkdir`
     at import time (CWD-dependent side effect on import).
 
+## Third pass — config.yaml full read, hot path, CI, docs (all verified live)
+
+26. **README.md:64-67 documents broken Rust commands** — `cargo run
+    --manifest-path rust/worker/Cargo.toml -- list-jobs` fails rc=101
+    ("could not determine which binary to run"; verified live). Finding #16
+    is not a UX nit: the repo's own quick-start fails. Fix: `--bin
+    videoai-worker` or `default-run`.
+27. **Dead SD-era cache helpers in `video/image_gen/image_gen.py`**:
+    `_prompt_cache_key` (:199), `_master_portrait_hash_for_frame` (:179),
+    `_maybe_upscale` (:235), `_current_project_id` (:196, never assigned).
+    Zero production callers — kept alive only by test_image_gen.py. The
+    docstring (:8-9) advertises them as public surface. Leftovers from the
+    diffusers/SD backend; the ComfyUI path never caches or upscales via them.
+28. **YouTube upload exception unguarded** (core/post_production.py:376-400):
+    when `upload.enabled: true`, a Playwright/upload crash propagates out of
+    `finalize_production` — completed video exists, but run reports error and
+    no manifest is written (manifest write happens after upload). Should be
+    wrapped like the other finalize steps.
+29. **Docs stale in 3 places**: `manga_identity_pose_api.json` referenced by
+    system_architecture.md:51, configuration_reference.md:122,
+    runtime_safety_guide.md:84 — but config.yaml:171 uses
+    `manga_ipadapter_style_api.json`. configuration_reference.md:44 shows
+    `root: D:\IndicF5` (config uses `external\IndicF5`); README.md:81 says
+    "1940 passed, 1 failed" and testing_and_linting.md:12 says "2060 passed"
+    — actual: 2048 passed / 5 skipped; configuration_reference.md:26 claims a
+    top-level `language` key that doesn't exist in config.yaml.
+30. **Third `D:\IndicF5` hardcode**: `core/preflight.py:50` fallback default
+    (plus config_schemas.py:IndicF5SubConfig and configuration_reference.md).
+    Three sources disagree with config.yaml's `external\IndicF5`.
+31. **Hardcoded workflow node indices** (image_gen.py:521-522): refine pass
+    pokes `wf["1"]["inputs"]["image"]` and `wf["11"]["inputs"]["filename_prefix"]`.
+    Verified correct against the current JSON (1=LoadImage, 11=SaveImage) but
+    silently wrong if the refine workflow is ever renumbered. No
+    class-type assertion, unlike WorkflowPatcher.
+32. Nits: `assembler.py:434` dead `if True:` block; `renderer.py:190` dead
+    `sum(...)` expression; `pipeline_long.py:512` fallback default 6 vs
+    config `default_images_per_segment: 2`; `pyproject.toml:146-154` stale
+    "2618-line god module" ignores for director_agent.py (now a 99-line
+    facade); config.yaml:241/261 user_agent has literal `...` placeholder.
+33. **Missing config-file references, both benign**: `character_voices/
+    narration_ref_9s_mono24k.txt` (ref_text_file) absent — inline ref_text
+    fallback verified (audio_proxy.py:121-125); `chrome_profile/` absent —
+    upload disabled. Everything else referenced by config.yaml exists on disk
+    (checkpoints, VAEs, LoRAs, reference images, IndicF5, ComfyUI models).
+34. **Non-finding confirmed**: `performance.max_segment_retries` IS honored in
+    staged mode via `_retry_segment_phase` (segment_runner.py:903-920) — the
+    two retry wrappers (staged vs graph) are redundant but both live.
+
 ## Verified clean
 
 - No stale references to deleted symbols (`VideoAIConfig`, legacy V1
