@@ -263,6 +263,39 @@ defines a strict error taxonomy and the suite (2048 passed) exercises it.
     aggregate Cypher (OPTIONAL MATCH + count — the same failure class that
     took it down mid-audit), `search_graph` works. Function-level sweeps
     should use `search_graph` with `min/max_degree`, not raw Cypher.
+40. **Real run (2026-08-02): IndicF5 TTS engine fails; silent fallback.**
+    `bootstrap_pipeline.py --topic ... --segment-count 1 --words-per-segment
+    130 --yes --no-resume` (84s video SUCCESS): `[IndicF5] Calling one-shot
+    worker...` → huggingface_hub `HTTPStatusError` (client error downloading
+    model assets) → auto-degraded to supertonic (CPU ONNX, worked). IndicF5
+    is the configured primary engine (`config/config.yaml` `tts.engine:
+    indicf5`) and is DOWN in this environment (HF download fails; probably
+    blocked/absent network route). Every real run silently burns a failed
+    IndicF5 attempt + ~30s before falling back. Action: fix HF access for
+    IndicF5, or switch `tts.engine` to `supertonic`.
+41. **Real run: `--words-per-segment` CLI lock not honored by the script
+    critic.** DecisionRecord locked `words/seg=130 (cli_flag)`, but the
+    segment-script critic compared against the Writer's suggested 250
+    (`[DECISION ENGINE] Writer adjusted 'words_per_segment' → 250` before the
+    CLI lock overrode the record): `script word count 120 deviates from
+    target 250 (tolerance ±20%) — rejecting for rewrite`, twice — while the
+    writer was already producing ~130-word scripts (120, then 146). Result:
+    2 wasted rewrite cycles (~2×30s of LLM time) then "Max rewrites reached.
+    Proceeding with unapproved script." The lock propagates to the Decision
+    Record but NOT to the writer/critic target. Fix: seed the writer
+    task's target_word_count from the DecisionRecord's locked value.
+42. **Real run: QC "FAIL" severity doesn't fail the run.** Planned 120s
+    (Director) vs actual 84s (TTS narration 1:23.9) → `Quality check: FAIL —
+    Duration mismatch` logged as WARNING, pipeline still SUCCESS. On short
+    single-segment runs the Director's duration estimate (~2.0min) will
+    routinely overshoot TTS length, so every such run prints FAIL. Either
+    recompute the QC baseline from actual narration length, or downgrade to
+    a warning that doesn't say FAIL.
+43. **Real run perf note (not a bug)**: refine/upscale phase
+    (`manga_refine_upscale_api.json`, FaceDetailer + upscale) took ~85s per
+    image — 8 images ≈ 12 of the 18 total minutes. The dominant cost of a
+    short run. Optional knob: `config/config.yaml` refine skip toggle or
+    fewer refinement passes for one-shot runs.
 
 ## Verified clean
 
