@@ -255,11 +255,13 @@ def run_pre_production(
 
         return config_overlay
 
-    # Phase 2: Director analysis
+    # Phase 2: Director analysis — --duration is an advisory hint, never a lock
+    # (the Director stays free to plan its own segments/duration/words).
     vision_doc = director.analyze_with_research(
         topic,
         research,
-        config.get("video", {}).get("total_duration_min", 10),
+        (cli_flags or {}).get("total_duration_min")
+        or config.get("video", {}).get("total_duration_min", 10),
         content_text=content_text,
     )
 

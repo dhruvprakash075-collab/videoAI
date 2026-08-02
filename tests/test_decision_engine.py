@@ -59,24 +59,52 @@ def test_user_lock_beats_writer_and_director():
     assert rec.words_per_segment.locked is True
 
 
-def test_cli_flag_locks_duration():
-    vision = {"recommended_duration_min": 30}
+def test_cli_duration_is_advisory_hint():
+    """--duration is a hint, not a lock: the Director's structure stands.
+
+    Regression: --duration 1 previously locked total_duration_min and forced
+    segment_count/words_per_segment down (6 segs → 1, 250 → 100 words), i.e. a
+    hidden restriction on the Director. It must only reach the Director as a
+    suggestion.
+    """
+    vision = {"recommended_duration_min": 30, "segment_count": 6, "words_per_segment": 250}
     rec = build_decision_record(
-        FakeDirector(), vision, {}, {}, {"total_duration_min": 6}, BASE_CONFIG
+        FakeDirector(), vision, {}, {}, {"total_duration_min": 1}, BASE_CONFIG
     )
-    assert rec.total_duration_min.value == 6
-    assert rec.total_duration_min.provenance == "cli_flag"
-    assert rec.total_duration_min.locked is True
+    assert rec.total_duration_min.locked is False
+    assert rec.total_duration_min.provenance != "cli_flag"
+    assert rec.segment_count.value == 6
+    assert rec.segment_count.locked is False
+    assert rec.words_per_segment.value == 250
+    assert rec.words_per_segment.locked is False
+
+
+def test_cli_duration_hint_does_not_recompute_segments():
+    """An advisory --duration must not trigger the locked-duration segment recompute."""
+    vision = {"segment_count": 6}
+    rec = build_decision_record(
+        FakeDirector(), vision, {}, {}, {"total_duration_min": 1}, BASE_CONFIG
+    )
+    assert rec.segment_count.value == 6
+    assert rec.segment_count.locked is False
 
 
 def test_cli_flag_beats_user_lock():
     """CLI flag must win when both user and CLI specify the same field."""
-    user = {"total_duration_min": 30}
-    cli = {"total_duration_min": 1}
+    user = {"words_per_segment": 90}
+    cli = {"words_per_segment": 250}
     rec = build_decision_record(FakeDirector(), {}, {}, user, cli, BASE_CONFIG)
-    assert rec.total_duration_min.value == 1
-    assert rec.total_duration_min.provenance == "cli_flag"
-    assert rec.total_duration_min.locked is True
+    assert rec.words_per_segment.value == 250
+    assert rec.words_per_segment.provenance == "cli_flag"
+    assert rec.words_per_segment.locked is True
+
+
+def test_cli_words_lock_still_locks():
+    """--words-per-segment remains a hard lock (only --duration went advisory)."""
+    cli = {"words_per_segment": 250}
+    rec = build_decision_record(FakeDirector(), {}, {}, {}, cli, BASE_CONFIG)
+    assert rec.words_per_segment.value == 250
+    assert rec.words_per_segment.locked is True
 
 
 def test_run_mode_set():

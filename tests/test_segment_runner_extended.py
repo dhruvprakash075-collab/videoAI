@@ -107,6 +107,81 @@ def test_critic_node_reject_and_rewrite(mock_dependencies):
         assert mock_crew.kickoff.call_count == 2
 
 
+def test_critic_node_word_count_gate_rejects_undershoot(mock_dependencies):
+    """Writer scripts far below the target must be rejected before the LLM critic.
+
+    Regression: the writer produced 48 words against a 100-word target and the
+    LLM critic (which never sees the target) rubber-stamped it 94/100 → the
+    segment ran 30s against a 60s plan. The deterministic gate gives the rewrite
+    loop actionable numeric feedback instead.
+    """
+    mock_dependencies["config"]["script"]["word_count_tolerance"] = 0.2
+    mock_crew = MagicMock()
+    mock_crew.kickoff.return_value = "too short"
+
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", side_effect=Exception("ollama fail")),
+        patch("crewai.Task"),
+        patch("crewai.Crew", return_value=mock_crew),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script") as mock_score,
+    ):
+        mock_score.return_value = None
+
+        process_seg, *_ = make_process_segment(**mock_dependencies)
+        process_seg(1)
+
+        # Gate rejects both attempts (2 words vs 50 target, dev 96% > 20%);
+        # the LLM critic never runs; after max rewrites the graph proceeds.
+        mock_score.assert_not_called()
+        assert mock_crew.kickoff.call_count == 2
+
+
+def test_critic_node_word_count_gate_accepts_within_tolerance(mock_dependencies):
+    """Scripts inside the tolerance band pass the gate and reach the LLM critic."""
+    mock_dependencies["config"]["script"]["word_count_tolerance"] = 0.2
+    mock_crew = MagicMock()
+    mock_crew.kickoff.return_value = "word " * 50
+
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", side_effect=Exception("ollama fail")),
+        patch("crewai.Task"),
+        patch("crewai.Crew", return_value=mock_crew),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script") as mock_score,
+    ):
+        mock_score_obj = MagicMock()
+        mock_score_obj.total = 80
+        mock_score.return_value = mock_score_obj
+
+        process_seg, *_ = make_process_segment(**mock_dependencies)
+        process_seg(1)
+
+        mock_score.assert_called_once()
+
+
+def test_critic_node_word_count_gate_off_without_tolerance(mock_dependencies):
+    """Without script.word_count_tolerance the gate is off (opt-in behavior)."""
+    mock_crew = MagicMock()
+    mock_crew.kickoff.return_value = "too short"
+
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", side_effect=Exception("ollama fail")),
+        patch("crewai.Task"),
+        patch("crewai.Crew", return_value=mock_crew),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script") as mock_score,
+    ):
+        mock_score_obj = MagicMock()
+        mock_score_obj.total = 80
+        mock_score.return_value = mock_score_obj
+
+        process_seg, *_ = make_process_segment(**mock_dependencies)
+        process_seg(1)
+
+        mock_score.assert_called_once()
+
+
 def test_translate_node_receives_write_time_trimmed_script(mock_dependencies):
     """Translate node adds no trimming of its own: it receives exactly what
     write_script_node produced (no word budget cap applied)."""

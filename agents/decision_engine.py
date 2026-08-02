@@ -35,7 +35,7 @@ def build_decision_record(
     vision_doc: dict,  # output of analyze_with_research
     writer_input: dict,  # output of consult_with_writer
     user_locks: dict,  # explicit typed user overrides {field: value}
-    cli_flags: dict,  # e.g. {"total_duration_min": 180} from --duration
+    cli_flags: dict,  # e.g. {"total_duration_min": 180} — duration is advisory (never locked)
     config: dict,  # full loaded config
 ) -> "DecisionRecord":
     """Build the authoritative DecisionRecord for a run.
@@ -149,16 +149,14 @@ def _apply_user_locks(rec, user_locks: dict, cli_flags: dict) -> None:
     """
     # P4-33 fix: map internal flag keys to their actual CLI flag names for the
     # rationale string (e.g. "total_duration_min" → "--duration", not "--total_duration_min").
+    # NOTE: --duration is deliberately absent — it is an advisory hint to the
+    # Director (see core/pre_production.py), never a lock.
     _cli_flag_names = {
-        "duration": "--duration",
-        "total_duration_min": "--duration",
         "segment_count": "--segment-count",
         "words_per_segment": "--words-per-segment",
         "images_per_segment": "--images-per-segment",
     }
     cli_map = {
-        "duration": "total_duration_min",
-        "total_duration_min": "total_duration_min",
         "segment_count": "segment_count",
         "words_per_segment": "words_per_segment",
         "images_per_segment": "images_per_segment",

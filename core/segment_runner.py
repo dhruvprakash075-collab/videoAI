@@ -279,6 +279,30 @@ def make_process_segment(
             log.debug(f"  Seg {i}: source-path — critic auto-approves verbatim source")
             return {"critic_approved": True, "critic_feedback": ""}
 
+        # Deterministic word-count gate: the writer must deliver the planned
+        # target (plan.target_word_count or words_per_seg — same expression the
+        # writer prompt uses). The LLM critic never sees the target, so it
+        # rubber-stamps undersized scripts (48 words vs 100 → 30s vs 60s plan).
+        # Opt-in via script.word_count_tolerance; absent → off.
+        _tol = config.get("script", {}).get("word_count_tolerance")
+        if _tol is not None:
+            _target = _plan.get("target_word_count") or words_per_seg
+            _wc = len(script.split())
+            if _target and abs(_wc - _target) / _target > float(_tol):
+                log.warning(
+                    f"  Seg {i}: script word count {_wc} deviates from target {_target}"
+                    f" (tolerance ±{float(_tol):.0%}) — rejecting for rewrite"
+                )
+                return {
+                    "critic_approved": False,
+                    "critic_feedback": (
+                        f"Script is {_wc} words; target is {_target} words "
+                        f"(tolerance ±{float(_tol):.0%}). Expand or trim the narration "
+                        f"to reach the target word count."
+                    ),
+                    "rewrites_attempted": rewrites + 1,
+                }
+
         from utils.critic import is_approved, score_script
 
         threshold = int(config.get("critic", {}).get("threshold", 60))

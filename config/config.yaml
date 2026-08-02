@@ -78,7 +78,7 @@ script:
   dynamic_image_count: false
   default_images_per_segment: 2
   max_images_per_segment: 4
-  word_count_tolerance: 0.6
+  word_count_tolerance: 0.2  # ±20% band vs target (QC-aligned); consumed by the critic_node word-count gate
   tts_words_per_minute_hi: 100
   tts_words_per_minute_en: 150
   writer_max_tokens: 1024
