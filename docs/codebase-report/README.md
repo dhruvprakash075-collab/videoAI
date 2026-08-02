@@ -81,6 +81,17 @@ Findings are equal-weight (no HIGH/MED/LOW). Frontend `dashboard/` exempt.
   advertised in docstring; README Rust commands fail live (rc=101, verified);
   docs stale in 3 places (workflow name, IndicF5 root, 2 test counts); Rust
   67 `#[test]` bodies read (main.rs, text.rs, doctor.rs) — solid.
+- **Fourth pass (re-check, user: "close gap and check again")**: usage.md
+  count verified against `git ls-files` — 229 tracked .py (report said 228;
+  the +1 is a dot-dir tooling script, no production file missed); `vendors/
+  indicf5/` confirmed dead duplicate of `external/IndicF5` (zero refs in all
+  tracked .py); `Modelfile.*` ×3 stale — all `FROM C:\models\*.gguf` targets
+  absent on disk, runtime uses `ollama pull hermes-director` (README.md:25),
+  `cra-guided` zero refs (bugs.md #35-36, unused.md); `static/ab_picker.html`
+  live (local_ui.py:259), `sfx/thunder.wav` owned by unwired audio_fx,
+  `projects/series_1.yaml` live via `--project`; `plans/README.md` stale.
+  Un-audited by design: `rules/` (27 agent-guidance md), `.agents/`,
+  `.opencode/`, `.cursor/` (tooling/guidance, not code).
 
 ## Open items
 

@@ -191,6 +191,21 @@ defines a strict error taxonomy and the suite (2048 passed) exercises it.
     staged mode via `_retry_segment_phase` (segment_runner.py:903-920) — the
     two retry wrappers (staged vs graph) are redundant but both live.
 
+## Fourth pass — gap closure re-check (user: "close gap and check again")
+
+35. **Modelfile.* build recipes stale/broken**: all three `FROM C:\models\*.gguf`
+    targets are absent on disk (verified False ×3: zephyr-7b-beta.Q4_K_M,
+    Hermes-3-Llama-3.1-8B-Q4_K_S, cra-v1-guided-7b-Q4_K_M). Runtime does not
+    use them — `models.director: hermes-director` (config.yaml:2) is an Ollama
+    model name; README.md:25 pulls it from the registry; `Modelfile.cra-guided`
+    has zero references anywhere. `ollama create -f` on any of them fails.
+    Delete, or regenerate against the current model sources.
+36. **usage.md count drift resolved**: report claims "228 tracked .py";
+    ground truth is 229 — the extra file is
+    `.opencode/skills/planning-with-files/scripts/session-catchup.py`
+    (dot-dir tooling, excluded from the pass-1 sweep). No production file was
+    ever missed; the table's per-dir glob rows cover the rest.
+
 ## Verified clean
 
 - No stale references to deleted symbols (`VideoAIConfig`, legacy V1
