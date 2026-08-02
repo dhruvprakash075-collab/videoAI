@@ -46,6 +46,18 @@ def test_content_text_changes_key(tmp_path: Path):
     assert vc.get("topic A", content_text="beta") == {"v": 2}
 
 
+def test_target_duration_min_changes_key(tmp_path: Path):
+    """The --duration hint shapes the Director's analysis, so it must be part
+    of the cache key — otherwise a re-run with a different hint gets a stale
+    vision doc (the observed 17ms cache-hit that ignored --duration 1)."""
+    vc = VisionCache(cache_dir=tmp_path / "vc")
+    vc.set("topic A", {"v": 1}, target_duration_min=1)
+    vc.set("topic A", {"v": 2}, target_duration_min=10)
+    assert vc.get("topic A", target_duration_min=1) == {"v": 1}
+    assert vc.get("topic A", target_duration_min=10) == {"v": 2}
+    assert vc.get("topic A", target_duration_min=None) is None
+
+
 def test_cache_version_mismatch_returns_none(tmp_path: Path):
     d = tmp_path / "vc"
     VisionCache(cache_dir=d).set("topic A", {"v": 1})

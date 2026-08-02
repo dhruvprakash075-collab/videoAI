@@ -99,18 +99,21 @@ class VisionCache:
         self._prp_mtime = mtime
         return self._prp_hash_cache
 
-    def _key(self, topic, content_text: str = ""):
+    def _key(self, topic, content_text: str = "", target_duration_min=None):
         th = hashlib.sha256(topic.strip().encode()).hexdigest()[:12]
         # P2-12 fix: include content_text hash so an edited story file (same topic)
         # produces a different key and doesn't serve a stale vision doc.
         ct_hash = hashlib.sha256((content_text or "").encode()).hexdigest()[:12]
-        return f"{th}:{ct_hash}:{self._config_hash()}:{self._prompt_hash()}"
+        # The duration hint shapes the analysis, so it must be part of the key —
+        # otherwise a re-run with a different --duration serves a stale vision doc.
+        td_hash = hashlib.sha256(str(target_duration_min).encode()).hexdigest()[:8]
+        return f"{th}:{ct_hash}:{self._config_hash()}:{self._prompt_hash()}:{td_hash}"
 
-    def get(self, topic, content_text: str = ""):
+    def get(self, topic, content_text: str = "", target_duration_min=None):
         if self._fr:
             return None
         with self._lock:
-            k = self._key(topic, content_text)
+            k = self._key(topic, content_text, target_duration_min)
             e = self._data.get(k)
             ev = self._meta_data.get(k, {}).get("cache_version", 1)
             if e is None:
@@ -119,9 +122,9 @@ class VisionCache:
                 return None
             return e
 
-    def set(self, topic, vision_doc, content_text: str = ""):
+    def set(self, topic, vision_doc, content_text: str = "", target_duration_min=None):
         with self._lock:
-            k = self._key(topic, content_text)
+            k = self._key(topic, content_text, target_duration_min)
             self._data[k] = vision_doc
             self._meta_data[k] = {
                 "cache_version": CACHE_VERSION,

@@ -201,7 +201,11 @@ class VisionMixin:
             # P2-12 fix: thread force_refresh so the caller can bypass a stale vision doc.
             force_refresh=getattr(self, "_force_refresh", False),
         )
-        cached = cache.get(topic, content_text=content_text or "")
+        cached = cache.get(
+            topic,
+            content_text=content_text or "",
+            target_duration_min=target_duration_min,
+        )
         if cached is not None:
             return cached
 
@@ -326,7 +330,12 @@ class VisionMixin:
             ).encode()
         ).hexdigest()[:12]
         vision_doc["source_hash"] = _input_hash
-        cache.set(topic, vision_doc, content_text=content_text or "")
+        cache.set(
+            topic,
+            vision_doc,
+            content_text=content_text or "",
+            target_duration_min=target_duration_min,
+        )
 
         log.info(
             f"[DIRECTOR] Vision doc: {len(vision_doc.get('characters', []))} character(s), "

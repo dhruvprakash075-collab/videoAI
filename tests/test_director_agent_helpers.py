@@ -852,7 +852,7 @@ def test_analyze_with_research_cache_hit(agent, tmp_path):
         "visual_style": "cinematic",
         "characters": [{"name": "Cached"}],
     }
-    cache.set("test_topic", cached_doc, content_text="")
+    cache.set("test_topic", cached_doc, content_text="", target_duration_min=10)
     result = agent.analyze_with_research("test_topic", {"combined_summary": "x"})
     assert result["theme"] == "Cached Theme"
 
