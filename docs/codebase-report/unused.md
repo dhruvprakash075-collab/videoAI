@@ -29,8 +29,14 @@
 - `sfx/thunder.wav` — referenced by `audio/audio_fx.py:21` (module unwired; the asset goes with it, not separately dead).
 - `projects/series_1.yaml` — loadable project data (`config/config.py:26,62`; `core/pipeline_cli.py --project`); used only when named on the CLI.
 
-## Open item
+## Open item — RESOLVED (pass 5, MCP graph live)
 
-- Function-level no-caller sweep incomplete (MCP crashed); re-run
-  `MATCH (f:Function) OPTIONAL MATCH (x)-[:CALLS]->(f) WHERE x IS NULL ...` when
-  the graph server is back.
+- Function-level no-caller sweep: DONE via `search_graph` max_degree=0 +
+  per-candidate grep. 272 degree-0 functions (251 tests, 13 dashboard, 4
+  production: 3 FastAPI handlers + 1 tooling script — all false positives)
+  + 7 degree-0 methods (3 __init__, 2 _cleanup_proc — false positives;
+  **2 genuinely dead**: `get_temp_items`/`clear_temp_items`
+  project_store.py:992-1000, and the `_call_ollama_streaming`/
+  `_prewarm_ollama` chain llm_client.py:130-199 + llm_shims.py:50-54 —
+  tests-only). See bugs.md #37. `query_graph` aggregate Cypher crashes the
+  server (bugs.md #39); use `search_graph` degree filters.

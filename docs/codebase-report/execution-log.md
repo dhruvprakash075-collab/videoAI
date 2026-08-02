@@ -51,6 +51,9 @@ interpreter drift).
 | `cargo run --manifest-path rust/worker/Cargo.toml -- list-jobs` (README.md:64-67 verbatim) | — | rc=101 "could not determine which binary" — README's own commands fail live | BUG #26 |
 | config.yaml path cross-check (Test-Path batch: checkpoints, VAEs, LoRAs, reference images, IndicF5, ComfyUI, character_voices) | — | all present except `narration_ref_9s_mono24k.txt` (falls back to inline ref_text, audio_proxy.py:121-125) + `chrome_profile` (uploads disabled) | OK — both benign (BUG #33) |
 | `python -m pytest tests` rerun sanity (config/CI round) | venv | 2048 passed, 5 skipped (matches execution-log:13) | OK |
+| MCP `index_status` (codebase-memory v0.10.0) | — | 6561 nodes / 22671 edges, status ready | OK — graph usable |
+| MCP `query_graph` aggregate Cypher (OPTIONAL MATCH + count) | — | **server crash** (pipe closed) | BUG #39 — use search_graph degree filters |
+| MCP `search_graph` max_degree=0, exclude_entry_points | — | 272 functions + 48 methods; production hits grep-verified | OK — closed unused.md open item |
 
 ## Import smoke (all 228 tracked modules importable)
 

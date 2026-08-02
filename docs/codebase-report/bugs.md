@@ -206,6 +206,64 @@ defines a strict error taxonomy and the suite (2048 passed) exercises it.
     (dot-dir tooling, excluded from the pass-1 sweep). No production file was
     ever missed; the table's per-dir glob rows cover the rest.
 
+## Fifth pass — function-level dead-code sweep (MCP graph) + agent-guidance rules audit
+
+37. **Dead functions found via the knowledge graph** (degree-0 / tests-only,
+    previously invisible to the module-level sweep because the modules are
+    used):
+    - `memory/project_store.py:992,997` — `clear_temp_items` +
+      `get_temp_items` on `PermanentMemoryLog`: zero callers in all 229
+      tracked .py (internal `_temp_items` dict is read inline at :930).
+      Delete both.
+    - `agents/llm_client.py:130,199` + `agents/director/llm_shims.py:50,53`
+      — `_call_ollama_streaming` ("token-by-token stream for live UI
+      feedback", llm_client.py:13) and `_prewarm_ollama` ("background
+      warm-up of director + writer models", llm_client.py:14): only tests
+      call them; the shim→client edges exist but the shim roots are
+      uncalled. Two documented features never wired into production. Either
+      wire (UI feedback) or delete.
+    - Verified NOT dead (graph false positives): `get_system_status`,
+      `get_voices`, `get_chat_session` (local_ui.py) — FastAPI route
+      handlers registered via decorator (graph doesn't link decorator);
+      `__init__` ×3 (constructor edges target the class node);
+      `_cleanup_proc` ×2 (self-calls missed).
+38. **Agent-guidance rules contradict repo reality** (`rules/`, 24 files):
+    - `rules/fastapi/api-design.md:90-106` — documents `/api/v1/pipeline/*`
+      + `/health` endpoints; `utils/local_ui.py` has ZERO `api/v1` and ZERO
+      `/health` routes (grep-verified). The documented API contract does not
+      exist; an agent following it builds against ghosts. Rewrite to the
+      actual `/api/*` routes or delete the section.
+    - `rules/common/codebase-onboarding.md:43` + `rules/common/code-tour.md:38`
+      — "Stable Diffusion for image generation": stale; image gen is ComfyUI
+      (SD-era code is dead, see #27).
+    - `rules/common/codebase-onboarding.md:90` — prescribes
+      `venv\Scripts\python.exe utils\local_ui.py`, which crashes with
+      `No module named 'agents'` (#14). Should be `python -m utils.local_ui`.
+    - `rules/python/testing.md` + `testing-advanced.md` — teach
+      `@pytest.mark.unit/integration` + `--strict-markers`; the repo
+      registers no markers (pyproject has only `testpaths`) and organizes by
+      directory. Following the rule verbatim fails on unknown markers.
+    - `rules/python/security.md` — mandates bandit; not installed, not in
+      any CI workflow.
+    - `rules/common/coding-style.md` — "files <800 lines"; repo has
+      segment_runner.py (1126) and assembler.py (1060).
+    - `rules/common/eval-harness.md` — references `.claude/evals/`; no
+      `.claude/` dir exists (repo uses `.agents/`, `.cursor/`, `.opencode/`).
+    - `.opencode/skills/planning-with-files/SKILL.md` — path references point
+      at `$HOME/.claude/...` and `~/.config/opencode/...` copies of the skill;
+      the tracked copy is `C:\Video.AI\.opencode\...`. Multi-copy layout,
+      harmless but confusing.
+    - Consistent (no action): git-workflow (conventional commits match git
+      log), patterns (real `guarded_crewai_kickoff`/`BreakerOpen` imports),
+      performance (heavy 1/1800s, light 16/60s match concurrency.py),
+      .cursor/ponytail.mdc (matches AGENTS.md), .agents skills (hashes match
+      skills-lock.json), pyrightconfig + rust-toolchain (match CI pins).
+39. **MCP server operational note**: codebase-memory-mcp v0.10.0 is alive
+    (6561 nodes / 22671 edges); `query_graph` CRASHES the server on
+    aggregate Cypher (OPTIONAL MATCH + count — the same failure class that
+    took it down mid-audit), `search_graph` works. Function-level sweeps
+    should use `search_graph` with `min/max_degree`, not raw Cypher.
+
 ## Verified clean
 
 - No stale references to deleted symbols (`VideoAIConfig`, legacy V1

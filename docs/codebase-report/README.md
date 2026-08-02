@@ -92,6 +92,21 @@ Findings are equal-weight (no HIGH/MED/LOW). Frontend `dashboard/` exempt.
   `projects/series_1.yaml` live via `--project`; `plans/README.md` stale.
   Un-audited by design: `rules/` (27 agent-guidance md), `.agents/`,
   `.opencode/`, `.cursor/` (tooling/guidance, not code).
+- **Fifth pass (user: "do 3 and 4")**: (3) function-level dead-code sweep
+  via the codebase-memory graph — server back up (v0.10.0, 6561 nodes);
+  `query_graph` aggregate Cypher crashes it, `search_graph` degree filters
+  work. 272 degree-0 functions + 48 methods swept, candidates grep-verified:
+  **2 new dead spots** — `get_temp_items`/`clear_temp_items`
+  (project_store.py:992-1000) and the `_call_ollama_streaming`/
+  `_prewarm_ollama` chain (llm_client.py:130-199, llm_shims.py:50-54,
+  "live UI feedback"/"background warm-up" features never wired); the rest
+  are FastAPI decorator handlers + constructor edges (false positives).
+  (4) All 24 `rules/` + .cursor/ponytail.mdc + .agents skills + .opencode
+  skills/commands read: **api-design.md documents a nonexistent
+  `/api/v1/*`+`/health` contract** (actual API is `/api/*`), onboarding says
+  "Stable Diffusion" (ComfyUI now) and prescribes the crashing local_ui
+  invocation, testing rules teach unregistered pytest markers, security rule
+  mandates bandit (never installed). Full list bugs.md #38.
 
 ## Open items
 
