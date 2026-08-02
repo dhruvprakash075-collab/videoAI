@@ -36,10 +36,6 @@ class PreflightCheck:
     duration_ms: int = 0
 
     @property
-    def is_ok(self) -> bool:
-        return self.status == "ok"
-
-    @property
     def is_fail(self) -> bool:
         return self.status == "fail"
 
@@ -338,5 +334,12 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
+
+    # Standalone run needs the repo root on sys.path (top-level `config` imports);
+    # `-m utils.preflight` already has it.
+    _root = str(Path(__file__).resolve().parent.parent)
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
 
     sys.exit(main())

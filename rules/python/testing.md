@@ -20,18 +20,15 @@ venv\Scripts\python.exe -m coverage report
 
 ## Test Organization
 
-Use `pytest.mark` for test categorization:
+This repo organizes tests by **directory** (`tests/` flat + `tests/unit/`,
+`tests/integration/`), not pytest markers — `pyproject.toml` registers no
+markers, so `@pytest.mark.unit` etc. would fail as unknown markers. Follow
+the existing layout instead:
 
-```python
-import pytest
-
-@pytest.mark.unit
-def test_calculate_total():
-    ...
-
-@pytest.mark.integration
-def test_database_connection():
-    ...
+```
+tests/unit/            — pure unit tests (no external services)
+tests/integration/     — cross-module / fixture-based tests
+tests/                 — everything else, one file per module under test
 ```
 
 ## Mocking External Services

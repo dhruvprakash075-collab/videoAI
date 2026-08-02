@@ -74,8 +74,8 @@ def test_only_user_or_cli_can_relock():
 @pytest.mark.parametrize(
     "field,value,expected",
     [
-        ("words_per_segment", 9999, 800),
-        ("words_per_segment", 1, 50),
+        ("words_per_segment", 9999, 400),
+        ("words_per_segment", 1, 100),
         ("images_per_segment", 99, 30),
         ("segment_count", 0, 1),
         ("segment_duration_min", 999, 30),

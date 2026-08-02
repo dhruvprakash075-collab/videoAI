@@ -9,7 +9,9 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_REPO_ROOT = r"C:\Video.AI"
+# Derived from this file's own location (comfyui_nodes/video_ai_nodes/helpers.py),
+# so other checkouts and CI resolve correctly; VIDEO_AI_ROOT env var still overrides.
+DEFAULT_REPO_ROOT = str(Path(__file__).resolve().parents[2])
 
 
 def resolve_repo_root(explicit: str = "") -> Path:

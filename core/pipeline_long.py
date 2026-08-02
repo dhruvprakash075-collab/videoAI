@@ -497,6 +497,7 @@ def run_long_pipeline(
     outline = shape_outline(
         outline, config,
         images_per_segment_locked=_images_per_segment_locked,
+        words_per_segment_locked=_words_locked,
     )
 
     # Segment Preview (dry-run)
@@ -509,7 +510,7 @@ def run_long_pipeline(
             title = seg.get("title", f"Part {seg_num}")
             mood = seg.get("mood", "neutral")
             words = seg.get("target_word_count", words_per_seg)
-            images = seg.get("num_images", config.get("script", {}).get("default_images_per_segment", 6))
+            images = seg.get("num_images", config.get("script", {}).get("default_images_per_segment", 2))
             log.info(
                 f"  [{seg_num:2d}] {title[:40]:40s} | {mood:12s} | {words:>4d} words | {images:>2d} images"
             )

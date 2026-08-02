@@ -1,5 +1,8 @@
 # Usage Audit — all 228 tracked .py files
 
+> Audit-time snapshot (2026-08-02). Verdicts below predate the fix run; rows
+> marked **DELETED** were removed during Phase 1/2 execution (HANDOFF.md).
+
 Method: AST import-graph (`audit_usage.py`) + per-file verification of every
 ORPHAN-CANDIDATE by grep (absolute + relative import forms) and reading the
 import sites. `compileall` over all tracked files: exit 0 (no syntax errors).
@@ -24,7 +27,7 @@ mixins (re-exported through `agents/director/__init__.py`, imported by
 | `agents/hinglish_glossary.py` | USED |
 | `audio/audio_proxy.py` | USED — 6 prod importers |
 | `audio/tts_alignment.py` | USED |
-| `audio/audio_fx.py` | **UNWIRED** — 0 prod importers; only tests import it |
+| `audio/audio_fx.py` | **DELETED** (was UNWIRED — 0 prod importers; loudnorm stays inline in assembler.py) |
 | `audio/indicf5_worker.py` | ENTRY (CLI) — ran OK (`--help`) |
 | `audio/omnivoice_worker.py` | ENTRY (CLI) — ran OK |
 | `audio/supertonic_worker.py` | ENTRY (CLI) — ran OK |
@@ -88,40 +91,40 @@ mixins (re-exported through `agents/director/__init__.py`, imported by
 | `utils/utils.py` | USED — 7 prod importers |
 | `utils/vision_cache.py` | USED |
 | `utils/youtube_uploader.py` | USED |
-| `utils/web_search.py` | **DEAD** — only tests import it; `agents/director/story.py:51` says it is deprecated |
+| `utils/web_search.py` | **DELETED** (was DEAD — deprecated per `agents/director/story.py:51`) |
 | `utils/diagnose.py` | **DEAD ENTRY** — standalone CLI, not referenced by any launcher/doc; custom dispatch rejects `--help` (bugs.md #5) |
 | `utils/media_analyzer.py` | **DEAD ENTRY** — 0 prod importers; the opt-in Rust native audio bridge (`_native_analyze_audio_wave`) is reachable only through this tool |
-| `utils/retry_manager.py` | **DEAD** — only tests import it; superseded by `core/segment/retry.py` |
+| `utils/retry_manager.py` | **DELETED** (was DEAD — superseded by `core/segment/retry.py`) |
 | `video/image_gen/comfyui_client.py` | USED |
 | `video/image_gen/comfyui_runtime.py` | USED |
 | `video/image_gen/comfyui_workflow.py` | USED |
 | `video/image_gen/image_gen.py` | USED — 3 prod importers |
-| `video/image_gen/ip_adapter.py` | **UNWIRED** — only tests import it |
+| `video/image_gen/ip_adapter.py` | **DELETED** (was UNWIRED — only tests imported it) |
 | `video/image_gen/panel_compositor.py` | USED |
 | `video/renderer/assembler.py` | USED — 2 prod importers |
 | `video/renderer/renderer.py` | USED |
 
 ## Unwired / dead modules — human verdict (each site read)
 
-1. **`audio/audio_fx.py`** — `mix_sfx`, `master_audio`, `apply_premium_voice_processing`
-   have zero production callers. Config `audio_fx.enabled: true`
-   (`config/config.yaml`) + schema exist, but no runtime path executes this
-   module. Consequence: SFX mixing and premium voice processing are silently
-   absent from the pipeline; the loudnorm part exists inline in
-   `video/renderer/assembler.py` (its own 2-pass EBU R128), so only the
-   mix/master parts are missing. Either a feature gap or dead code — either way
-   the config promises behavior the code does not deliver.
-2. **`video/image_gen/ip_adapter.py`** — `IPAdapterManager` never loaded in
-   production. The `ip_adapter_ref` decision and `ip_adapter_scale` config
-   exist, but character face-consistency via IP-Adapter never runs (the only
-   prod reference is a review-metadata string, `core/segment_runner.py:738`).
-3. **`utils/retry_manager.py`** — superseded; 0 prod importers.
-4. **`utils/web_search.py`** — deprecated per `agents/director/story.py:51`;
-   tests keep it alive.
-5. **`utils/media_analyzer.py`** — CLI-only; no prod callers.
-6. **`utils/diagnose.py`** — CLI-only; no launcher references it.
+1. **`audio/audio_fx.py`** — **RESOLVED (deleted 2026-08-02)**. Was: `mix_sfx`,
+   `master_audio`, `apply_premium_voice_processing` with zero production
+   callers; config `audio_fx.enabled: true` promised behavior the pipeline
+   never delivered. Loudnorm stays inline in `video/renderer/assembler.py`
+   (its own 2-pass EBU R128), so the mix/master gap is gone with the module.
+2. **`video/image_gen/ip_adapter.py`** — **RESOLVED (deleted 2026-08-02)**.
+   Was: `IPAdapterManager` never loaded in production; the `ip_adapter_ref`
+   decision and `ip_adapter_scale` config existed but character face-
+   consistency via IP-Adapter never ran (only prod reference was a
+   review-metadata string, `core/segment_runner.py:738`).
+3. **`utils/retry_manager.py`** — **RESOLVED (deleted 2026-08-02)**. Was:
+   superseded by `core/segment/retry.py`; 0 prod importers.
+4. **`utils/web_search.py`** — **RESOLVED (deleted 2026-08-02)**. Was:
+   deprecated per `agents/director/story.py:51`; tests kept it alive.
+5. **`utils/media_analyzer.py`** — KEPT (Rust-audio parity gateway; the
+   opt-in native bridge is reachable only through this tool).
+6. **`utils/diagnose.py`** — KEPT (CLI-only; no launcher references it).
 
-## Tests (109 files)
+## Tests (111 files on disk, post-fix: 114 at HEAD − 4 deleted + 1 added)
 
 All test files import at least one prod module (no orphan test files). Full
 verdicts and findings in test-audit.md.

@@ -629,7 +629,7 @@ class ConfigProductionMixin:
         # -- Clamp integers from writer_input --
         seg_count = max(1, min(20, int((writer_input.get("segment_count") or 3) or 3)))
         img_per_seg = max(1, min(30, int((writer_input.get("image_count_per_segment") or 6) or 6)))
-        words_per = max(50, min(800, int((writer_input.get("words_per_segment") or 390) or 390)))
+        words_per = max(100, min(400, int((writer_input.get("words_per_segment") or 390) or 390)))
 
         # -- Visual Style (skip for voice-only) --
         if _mode != "voice-only":

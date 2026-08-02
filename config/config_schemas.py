@@ -78,7 +78,7 @@ class VisionDocument(BaseModel):
     ambiguity_fields: list[str] = []
     recommendations: list[str] = []
     segment_count: int = Field(default=3, ge=1, le=20)
-    words_per_segment: int = Field(default=130, ge=50, le=800)
+    words_per_segment: int = Field(default=130, ge=100, le=400)
     image_count_per_segment: int = Field(default=6, ge=1, le=30)
     topic: str = ""
     source_hash: str = ""
@@ -94,7 +94,7 @@ class VisionDocument(BaseModel):
 # ── Writer Breakdown ──
 class WriterBreakdown(BaseModel):
     segment_count: int = Field(default=3, ge=1, le=20)
-    words_per_segment: int = Field(default=130, ge=50, le=800)
+    words_per_segment: int = Field(default=130, ge=100, le=400)
     image_count_per_segment: int = Field(default=6, ge=1, le=30)
     opening_hook_style: str = ""
     pacing_notes: str = ""
@@ -167,7 +167,7 @@ class VoiceProfileConfig(BaseModel):
 
 class IndicF5SubConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    root: str = r"D:\IndicF5"
+    root: str = "external/IndicF5"
     python: str = ""
     ref_audio: str = "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav"
     ref_text_file: str = "character_voices/narration_ref_9s_mono24k.txt"
@@ -195,18 +195,15 @@ class TTSConfig(BaseModel):
 
 class ScriptConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    words_per_segment: int = Field(default=130, ge=50, le=800)
+    words_per_segment: int = Field(default=130, ge=100, le=400)
     min_words: int = Field(default=20, ge=1)
     dynamic_image_count: bool = True
-    default_images_per_segment: int = Field(default=6, ge=1, le=30)
+    default_images_per_segment: int = Field(default=2, ge=1, le=30)
     writer_max_tokens: int = 1024
     # Deprecated (kept for backward compat with existing user yamls)
     tts_words_per_minute_hi: int = Field(default=0, ge=0)
     tts_words_per_minute_en: int = Field(default=0, ge=0)
     word_count_tolerance: float = Field(default=0.0, ge=0.0)
-    max_words: int = Field(default=600, ge=0)
-    max_images_per_segment: int = Field(default=4, ge=0)
-    uncapped_scaling: bool = Field(default=False)
 
 
 class SubtitleOverlay(BaseModel):
@@ -502,6 +499,14 @@ class ConfigOverlay(BaseModel):
     video: VideoConfig = VideoConfig()
     visualization: TransitionConfig = TransitionConfig()
     production_notes: ProductionNotes = ProductionNotes()
+    # TRAP: leading underscore makes this a pydantic PRIVATE attr — model_dump()
+    # excludes it and `ConfigOverlay(**{'_director_vision': {...}})` keeps the
+    # default (input silently dropped). Do NOT rename it to a public field in a
+    # future round-trip refactor without also changing every reader. Prod
+    # readers (core/director_memory.py, core/pre_production.py,
+    # agents/director/config_production.py) use raw dicts, so it works today;
+    # the regression test `test_director_vision_roundtrip_is_latent` guards the
+    # documented behavior. Pipeline-injected, not user config.
     _director_vision: DirectorVision = DirectorVision()
     upload: UploadConfig = UploadConfig()
     provenance: dict[str, str] = {}
@@ -697,7 +702,7 @@ class Decision(BaseModel):
 
 class PerSegmentOverride(BaseModel):
     seg: int = Field(ge=1)
-    words: int | None = Field(default=None, ge=50, le=800)
+    words: int | None = Field(default=None, ge=100, le=400)
     images: int | None = Field(default=None, ge=1, le=30)
     locked: bool = False
 
@@ -713,7 +718,7 @@ class DecisionRecord(BaseModel):
     segment_count: Decision = Field(default_factory=lambda: Decision(value=5, provenance="default"))
     segment_duration_min: Decision = Field(default_factory=lambda: Decision(value=2, provenance="default"))
     words_per_segment: Decision = Field(default_factory=lambda: Decision(value=130, provenance="default"))
-    images_per_segment: Decision = Field(default_factory=lambda: Decision(value=6, provenance="default"))
+    images_per_segment: Decision = Field(default_factory=lambda: Decision(value=2, provenance="default"))
     per_segment: list[PerSegmentOverride] = Field(default_factory=list)
     end_mode: Decision = Field(default_factory=lambda: Decision(value="full", provenance="default"))
     cliffhanger_point: Decision | None = None
@@ -754,7 +759,7 @@ class DecisionRecord(BaseModel):
             "total_duration_min": (0.5, 600),
             "segment_count": (1, 200),
             "segment_duration_min": (1, 30),
-            "words_per_segment": (50, 800),
+            "words_per_segment": (100, 400),
             "images_per_segment": (1, 30),
         }
         if field in clamps and isinstance(value, (int, float)):
@@ -814,7 +819,7 @@ def build_default_decision_record(config: dict) -> "DecisionRecord":
     rec.set("segment_count", max(1, -(-video.get("total_duration_min", 10) // max(1, video.get("segment_duration_min", 2)))), "default")
     rec.set("segment_duration_min", video.get("segment_duration_min", 2), "default")
     rec.set("words_per_segment", script.get("words_per_segment", 130), "default")
-    rec.set("images_per_segment", script.get("default_images_per_segment", 6), "default")
+    rec.set("images_per_segment", script.get("default_images_per_segment", 2), "default")
     return rec
 
 

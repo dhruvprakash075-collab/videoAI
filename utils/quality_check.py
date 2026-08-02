@@ -136,5 +136,7 @@ def check_video(
                     f"Resolution: {vs.get('width')}x{vs.get('height')} vs expected {exp_w}x{exp_h}"
                 )
 
-    log.info(f"Quality check: {'PASS' if not issues else 'FAIL'}")
+    # ponytail: QC is advisory (see #42) — "FAIL" reads like the run died, so
+    # name the findings instead; `passed` stays strict for the JSON result.
+    log.info(f"Quality check: {'PASS' if not issues else f'{len(issues)} issue(s) — see list'}")
     return {"passed": len(issues) == 0, "issues": issues, "details": details}

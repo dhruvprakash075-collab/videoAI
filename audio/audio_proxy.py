@@ -108,7 +108,7 @@ def _call_indicf5_worker(
         output_dir = Path("tts_output")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    root = Path(indic_cfg.get("root", r"D:\IndicF5"))
+    root = Path(indic_cfg.get("root", "external/IndicF5"))
     python_exe = indic_cfg.get("python") or sys.executable
     configured_ref = indic_cfg.get(
         "ref_audio", "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav"
@@ -1081,9 +1081,9 @@ def tts_capabilities() -> dict[str, dict[str, Any]]:
             "voice_cloning": True,
             "languages": ["hi", "en-mixed"],
             "vram_hint_gb": 4.0,
-            "notes": "Default Hindi TTS. Uses external D:\\IndicF5 checkout with fixed EMA checkpoint loader.",
+            "notes": "Default Hindi TTS. Uses external IndicF5 checkout with fixed EMA checkpoint loader.",
             "recommended": {
-                "root": r"D:\IndicF5",
+                "root": "external/IndicF5",
                 "ref_audio": "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav",
             },
         },

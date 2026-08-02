@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 DB_PATH = Path("studio_projects") / "jobs" / "video_ai_jobs.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -40,6 +39,8 @@ class JobStore:
         self._ensure_db()
 
     def _connect(self) -> sqlite3.Connection:
+        # Lazy mkdir: importing job_store must not create directories.
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()

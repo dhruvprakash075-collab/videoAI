@@ -29,7 +29,7 @@ Gather raw signals without reading every file:
    - Top 2 levels, ignoring `__pycache__`, `venv/`, `node_modules/`
 
 5. **Config and tooling detection**
-   - `venv\Scripts\python.exe -m ruff check .`, `pyproject.toml`, `.claude/`
+   - `venv\Scripts\python.exe -m ruff check .`, `pyproject.toml`, `.opencode/`
 
 6. **Test structure detection**
    - `tests/`, `pytest.ini`, `conftest.py`
@@ -40,7 +40,7 @@ Gather raw signals without reading every file:
 - Python 3.12.13 in `venv/`
 - CrewAI for multi-agent orchestration
 - Ollama for local LLM serving
-- Stable Diffusion for image generation
+- ComfyUI for image generation
 - FastAPI for local control API
 - React 19 + Vite 8 for dashboard
 
@@ -87,4 +87,4 @@ See `AGENTS.md`, `README.md`, and the live files under `docs/` for the onboardin
 | Run tests | `venv\Scripts\python.exe -m pytest tests/ -q` |
 | Lint | `venv\Scripts\python.exe -m ruff check .` |
 | Dashboard | `cd dashboard && npm run dev` |
-| Local API | `venv\Scripts\python.exe utils\local_ui.py` |
+| Local API | `venv\Scripts\python.exe -m utils.local_ui` |

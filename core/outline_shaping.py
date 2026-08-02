@@ -51,6 +51,7 @@ def shape_outline(
     config: dict,
     *,
     images_per_segment_locked: bool,
+    words_per_segment_locked: bool = False,
 ) -> list[dict]:
     """Apply image locks, char_presence normalization, positional-alias mapping,
     and env-frame-ratio enforcement. outline in, outline out.
@@ -59,6 +60,10 @@ def shape_outline(
         outline: List of segment plan dicts from Director
         config: Full pipeline config (for caps and ratios)
         images_per_segment_locked: True if DecisionRecord.images_per_segment.locked
+        words_per_segment_locked: True if DecisionRecord.words_per_segment.locked
+            (CLI --words-per-segment) — locks the writer/critic target
+            (seg_plan["target_word_count"]) so the critic never checks against
+            the Writer's suggested value.
 
     Returns:
         Mutated outline (same list object returned for chaining)
@@ -66,7 +71,7 @@ def shape_outline(
     # ── moved verbatim from run_long_pipeline ──
 
     # Lock images per segment when DecisionRecord says so
-    _default_imgs = config.get("script", {}).get("default_images_per_segment", 6)
+    _default_imgs = config.get("script", {}).get("default_images_per_segment", 2)
     for seg_plan in outline:
         if images_per_segment_locked:
             _old_ni = seg_plan.get("num_images", _default_imgs)
@@ -132,6 +137,20 @@ def shape_outline(
                     _normalized.append(_mapped)
                 seg_plan["char_presence"] = _normalized
             continue
+
+    # Lock words per segment when DecisionRecord says so — seeds the same
+    # target the writer prompt and the critic gate read (segment_runner.py
+    # `target_word_count or words_per_seg`), mirroring the images lock above.
+    if words_per_segment_locked:
+        _target_words = config.get("script", {}).get("words_per_segment", 130)
+        for seg_plan in outline:
+            _old_wc = seg_plan.get("target_word_count", _target_words)
+            if _old_wc != _target_words:
+                log.info(
+                    f"  Seg {seg_plan.get('seg', '?')}: words locked "
+                    f"{_old_wc} → {_target_words}"
+                )
+            seg_plan["target_word_count"] = _target_words
 
     # P3: enforce minimum environment/world frames
     _env_ratio = config.get("visual", {}).get("environment_frame_ratio", 0.4)

@@ -150,7 +150,7 @@ Approved exceptions:
 - Rust audio analysis/mastering work is allowed when it stays opt-in or fallback-safe from Python, preserves existing Python/FFmpeg fallbacks, and avoids default behavior changes until explicitly approved.
 - Touching `audio/` Python files is allowed only for Rust interop gates, fallback behavior, parity tests, and safe rollout flags such as `VIDEOAI_RUST_AUDIO`.
 
-Mirror constants exactly: heartbeat 10s, stale 120s, cancel grace 30s, poll 5s.
+Mirror constants exactly where both sides exist: heartbeat 10s (main.rs HEARTBEAT_INTERVAL_SECONDS ↔ jobs/worker.py HEARTBEAT_INTERVAL), cancel grace 30s (CANCEL_WAIT_SECONDS), poll 5s (POLL_INTERVAL_SECONDS). Stale-job detection (120s) is Python-only (`jobs/job_store.py mark_stale_running_failed`, called from `utils/local_ui.py`) — the Rust loop is stale-blind by design.
 
 Always run `cargo test && cargo clippy -- -D warnings && cargo fmt --check` before declaring done.
 

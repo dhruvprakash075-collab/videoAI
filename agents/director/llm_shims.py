@@ -46,9 +46,3 @@ class LlmShimsMixin:
         "Output only the translation.",
     ) -> str:
         return self.llm._call_ollama_chat(prompt, model_type=model_type, system_msg=system_msg)
-
-    def _call_ollama_streaming(self, prompt: str, label: str = "") -> str:
-        return self.llm._call_ollama_streaming(prompt, label=label)
-
-    def _prewarm_ollama(self) -> None:
-        self.llm._prewarm_ollama()

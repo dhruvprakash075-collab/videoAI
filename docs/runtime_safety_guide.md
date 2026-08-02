@@ -81,7 +81,7 @@ except BreakerOpen as e:
 
 ## 4. ComfyUI Image OOM Protection
 
-Image generation uses **ComfyUI** (currently the manga identity/pose workflow
+Image generation uses **ComfyUI** (currently the manga ipadapter/style workflow
 with `meinamix_meinaV11.safetensors`).
 VRAM protection is handled by the heavy-task scheduler
 (`global_scheduler.task("heavy", ...)` ensures only one GPU task runs

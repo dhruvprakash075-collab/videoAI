@@ -225,17 +225,6 @@ class OllamaClient:
                 timeout=3,
             )
         # eviction is best-effort
-    def get_resident_models(self) -> list[str]:
-        """Return list of currently loaded model names via /api/ps."""
-        try:
-            req = urllib.request.Request(self._build_url(self._host, "/api/ps"))
-            from utils.url_security import open_validated_url
-
-            with open_validated_url(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
-        except Exception:
-            return []
 # ── Module-level singleton (lazy-initialized) ─────────────────────────────
 _client_instance: OllamaClient | None = None
 _client_lock = threading.Lock()

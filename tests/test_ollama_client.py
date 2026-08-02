@@ -243,13 +243,21 @@ def test_director_call_ollama_returns_empty_on_breaker_open():
 def test_translate_hinglish_delegates_and_records_seg_on_failure():
     """translate_hinglish should use the client and record the real seg on failure."""
     reset_ollama_client()
+    import audio as audio_pkg
     import audio.audio_proxy as ap
     from agents.director_agent import UIState
 
     UIState.degradations = []
-    # Force the client to fail so the fallback degradation path runs
-    with patch("urllib.request.urlopen", side_effect=OSError("down")), patch("time.sleep"):
-        out = ap.translate_hinglish("Hello world", seg=7)
+    # pipeline_long normally wires UIState.add_degradation as the callback; the test
+    # must register it itself to stay order-independent (it does NOT auto-register).
+    registered = list(audio_pkg._degradation_callbacks)
+    audio_pkg.add_degradation_callback(UIState.add_degradation)
+    try:
+        # Force the client to fail so the fallback degradation path runs
+        with patch("urllib.request.urlopen", side_effect=OSError("down")), patch("time.sleep"):
+            out = ap.translate_hinglish("Hello world", seg=7)
+    finally:
+        audio_pkg._degradation_callbacks[:] = registered
     # Falls back to original text
     assert out == "Hello world"
     # Degradation recorded with the REAL segment number (not hardcoded 0)
@@ -553,24 +561,6 @@ def test_evict_ignores_exceptions():
     with patch.object(client, "_post", side_effect=OSError("timeout")):
         client.evict("test-model")  # should not raise
 
-
-def test_get_resident_models():
-    client = _make_client()
-    resp = MagicMock()
-    resp.read.return_value = b'{"models": [{"name": "hermes"}, {"name": "zephyr"}]}'
-    resp.__enter__ = lambda s: s
-    resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=resp):
-        res = client.get_resident_models()
-    assert res == ["hermes", "zephyr"]
-
-
-def test_get_resident_models_exception():
-    client = _make_client()
-    with patch("urllib.request.urlopen", side_effect=OSError("down")):
-        res = client.get_resident_models()
-    assert res == []
 
 def test_ollama_ipv6_localhost():
     """Test that IPv6 localhost is accepted"""

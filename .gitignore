@@ -149,3 +149,6 @@ comfy_*.json
 comfy_test_*.txt
 color_output.png
 fast_output.png
+
+# ── Model eval outputs (run artifacts, not history) ───────────────
+model_eval/

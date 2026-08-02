@@ -35,7 +35,7 @@
 8. utils/crewai_breaker.py       — Guarded kickoff
 9. config/config.yaml            — All tunables
 10. audio/                       — TTS, SFX
-11. video/image_gen/             — Stable Diffusion
+11. video/image_gen/             — ComfyUI workflow client
 12. dashboard/                   — React frontend
 ```
 

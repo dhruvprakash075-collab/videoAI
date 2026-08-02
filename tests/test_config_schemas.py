@@ -251,3 +251,16 @@ def test_removed_config_fields_are_rejected():
 
     with pytest.raises(FatalError, match="Config section 'audio_fx' validation failed"):
         validate_config({"audio_fx": {"loudnorm_two_pass": True}})
+
+
+def test_director_vision_roundtrip_is_latent():
+    """`_director_vision` is a pydantic private attr: model_dump() excludes it
+    and constructor round-trips silently drop the input (keeps theme='').
+    This documents the LATENT behavior — do not "fix" the field name without
+    updating the raw-dict readers (core/director_memory.py, core/pre_production.py,
+    agents/director/config_production.py)."""
+    overlay = ConfigOverlay(_director_vision={"theme": "noir", "mood": "grim"})
+    dumped = overlay.model_dump()
+    assert "_director_vision" not in dumped
+    rebuilt = ConfigOverlay(**dumped)
+    assert rebuilt._director_vision.theme == ""

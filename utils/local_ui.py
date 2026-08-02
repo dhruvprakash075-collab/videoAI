@@ -696,7 +696,7 @@ async def get_ui_config():
         return {
             "voiceEngine": config.get("tts", {}).get("engine", "indicf5"),
             "dynamicSubtitles": config.get("subtitles", {}).get("format", "classic") == "tiktok",
-            "defaultImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 6),
+            "defaultImagesPerSegment": config.get("script", {}).get("default_images_per_segment", 2),
             "imageBackend": image_cfg.get("backend", "comfyui"),
             "compositionMode": image_cfg.get("composition_mode", "one_pass"),
             "comfyUiAdvanced": _comfyui_config_for_ui(config),
@@ -1423,22 +1423,34 @@ async def list_characters():
 
 
 if __name__ == "__main__":
+    import argparse
     import webbrowser
+
+    # --help must exit 0 before any side effect (no browser, no uvicorn)
+    parser = argparse.ArgumentParser(description="Video.AI local control UI (FastAPI on 127.0.0.1:8000)")
+    parser.add_argument(
+        "--port", type=int, default=8000, help="port to listen on (default: 8000)"
+    )
+    parser.add_argument(
+        "--no-browser", action="store_true", help="do not auto-open the dashboard browser"
+    )
+    args = parser.parse_args()
 
     import uvicorn
 
-    # Automatically open browser in a separate thread so it doesn't block startup
-    def open_browser():
-        import time
+    if not args.no_browser:
+        # Automatically open browser in a separate thread so it doesn't block startup
+        def open_browser():
+            import time
 
-        time.sleep(3)  # Wait slightly longer for Vite to be ready
-        try:
-            log.info("Opening browser to new UI at http://localhost:5173 ...")
-            webbrowser.open("http://localhost:5173")
-        except Exception as e:
-            log.debug(f"Failed to open browser automatically: {e}")
+            time.sleep(3)  # Wait slightly longer for Vite to be ready
+            try:
+                log.info("Opening browser to new UI at http://localhost:5173 ...")
+                webbrowser.open("http://localhost:5173")
+            except Exception as e:
+                log.debug(f"Failed to open browser automatically: {e}")
 
-    threading.Thread(target=open_browser, daemon=True).start()
+        threading.Thread(target=open_browser, daemon=True).start()
 
     # Enforce strictly local access
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=args.port)

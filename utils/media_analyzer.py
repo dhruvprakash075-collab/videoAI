@@ -8,6 +8,7 @@ Video.AI project rendering and narration standards.
 """
 
 import json
+import logging
 import math
 import os
 import struct
@@ -16,6 +17,8 @@ import sys
 import wave
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # ANSI colors
 GREEN = "\033[92m"
@@ -67,6 +70,35 @@ def _native_analyze_audio_wave(path: Path) -> dict[str, Any] | None:
         return json.loads(videoai_worker_native.analyze_audio_wave(str(path)))
     except Exception:
         return None
+
+
+def _try_native_audio_master(input_path: Path, output_path: Path) -> bool:
+    """Use the optional PyO3 Rust extension when explicitly enabled.
+
+    The import is intentionally lazy so normal source installs keep using the
+    established Python/pydub path. Native mastering is guarded by
+    VIDEOAI_RUST_AUDIO=1 because the Rust implementation currently represents
+    the fallback FFmpeg chain rather than full premium pydub parity.
+    (moved here from the deleted audio/audio_fx.py — the opt-in Rust bridge
+    survives; the SFX/premium-voice processing it gated did not)
+    """
+    if os.environ.get("VIDEOAI_RUST_AUDIO") != "1":
+        return False
+
+    try:
+        import videoai_worker_native
+    except Exception:
+        return False
+
+    try:
+        report = json.loads(videoai_worker_native.master_audio(str(input_path), str(output_path)))
+        if report.get("passed") and output_path.exists():
+            log.info("Native Rust audio mastering done: %s", output_path.name)
+            return True
+        log.debug("Native Rust audio mastering declined: %s", report)
+    except Exception as exc:
+        log.debug("Native Rust audio mastering failed; falling back to Python: %s", exc)
+    return False
 
 
 def analyze_audio_wave(path: Path) -> dict[str, Any]:

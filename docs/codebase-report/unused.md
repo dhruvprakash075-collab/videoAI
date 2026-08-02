@@ -23,11 +23,34 @@
 ## Checked — NOT dead, keep (preempts false positives)
 
 - `style_resolver.py` — imported by `agents/director/config_production.py:641` + `tests/test_style_resolver.py`.
-- `basicsr/__init__.pyi`, `realesrgan.pyi`, `trafilatura.pyi`, `videoai_worker_native.pyi` — type stubs for lazy optional imports (`video/image_gen/image_gen.py:254`, `utils/source_loader.py:213`, `audio/audio_fx.py:41`); live contracts.
+- `trafilatura.pyi`, `videoai_worker_native.pyi` — type stubs for lazy optional imports (`utils/source_loader.py:213`, `utils/media_analyzer.py:65,89`); live contracts.
+- ~~`basicsr/__init__.pyi`, `realesrgan.pyi` — type stubs for lazy optional imports (`video/image_gen/image_gen.py:254`, `audio/audio_fx.py:41`);~~ **DELETED 2026-08-02**: both `audio_fx.py` (Phase 1) and the `basicsr`/`realesrgan` stubs in image_gen.py were removed, leaving zero references — dead stubs deleted via `git rm`.
 - `setup_youtube_profile.py` — referenced by `utils/youtube_uploader.py:65` + 10 tests.
 - `static/ab_picker.html` — mounted by `utils/local_ui.py:259`.
-- `sfx/thunder.wav` — referenced by `audio/audio_fx.py:21` (module unwired; the asset goes with it, not separately dead).
+- `sfx/thunder.wav` — **RESOLVED (deleted 2026-08-02)** — was "owned by `audio/audio_fx.py:21` (module unwired; the asset goes with it, not separately dead)". audio_fx was deleted (bugs.md #6), so the asset went with it per the plan; `sfx/` is gitignored (.gitignore:43).
 - `projects/series_1.yaml` — loadable project data (`config/config.py:26,62`; `core/pipeline_cli.py --project`); used only when named on the CLI.
+
+## Tier-4 sweep (2026-08-02 session) — dead methods deleted
+
+Re-indexed the knowledge graph (6159 nodes) and ran degree-0 Function/Method
+sweeps against production packages, then verified each candidate by grep (the
+graph under-reports chained-attribute calls like `mem._project.<method>` and
+pydantic-validator calls, so every hit was confirmed at source). 9 methods had
+zero production references and were deleted (each was only exercised by its own
+test, which was pruned too):
+
+- `ProjectStore.set_visual_lock` / `get_visual_lock` / `add_pose_variant` /
+  `add_world_lore` / `get_world_lore` (project_store.py)
+- `StoryStore.load_recent_context` (project_store.py)
+- `PreflightCheck.is_ok` @property (preflight.py) — `is_fail` kept (live at :297)
+- `CircuitBreaker.is_open` (circuit_breaker.py) — query method with a
+  state-mutating side effect; better gone
+- `OllamaClient.get_resident_models` (ollama_client.py)
+
+Non-dead false-positive classes confirmed live: FastAPI `@app.*` route handlers
+(graph misses decorator registration), chained proxy/mixin methods
+(`record_asset_review`, `invent_story`, `read_story`, ...), pydantic
+field/model validators (called by pydantic internals), worker thread targets.
 
 ## Open item — RESOLVED (pass 5, MCP graph live)
 

@@ -10,8 +10,6 @@ What lives here
 * ``_ollama_opts``    — config → (host, timeout, keep_alive)
 * ``_call_ollama``    — non-streaming /api/generate (B1 client + breaker)
 * ``_call_ollama_chat`` — /api/chat for chat-template models (Sarvam etc.)
-* ``_call_ollama_streaming`` — token-by-token stream for live UI feedback
-* ``_prewarm_ollama`` — background warm-up of director + writer models
 
 Backward compatibility
 ----------------------
@@ -23,11 +21,7 @@ Backward compatibility
 
 from __future__ import annotations
 
-import json
 import logging
-import threading
-import time
-import urllib.request
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -126,85 +120,3 @@ class DirectorLlmClient:
         except Exception as e:
             log.exception(f"[OLLAMA] {model_type} client.chat failed: {e}")
             return ""
-
-    def _call_ollama_streaming(self, prompt: str, label: str = "") -> str:
-        """Stream tokens for live UI feedback, accumulate full response for JSON parsing.
-
-        Imports ``UIState`` lazily to avoid a circular import at module load
-        time (ui_state.py is imported by director_agent.py, and we want to
-        keep the Director's LLM client testable in isolation).
-        """
-        from agents.ui_state import UIState  # lazy: avoid circular import
-
-        host = (
-            self.llm_config.get("ollama", {}).get("host", "http://localhost:11434")
-            if isinstance(self.llm_config, dict)
-            else "http://localhost:11434"
-        )
-        # SSRF: validate local service URL before constructing request
-        from utils.url_security import build_validated_url, validate_service_base_url
-
-        validated_host = validate_service_base_url(host)
-        model = self._resolve_model()
-
-        full: list[str] = []
-        tokens = 0
-        for attempt in range(1, 4):
-            full.clear()
-            tokens = 0
-            payload = json.dumps(
-                {
-                    "model": model,
-                    "prompt": prompt,
-                    "format": "json",
-                    "stream": True,
-                    "options": {"temperature": 0.0},
-                }
-            ).encode("utf-8")
-            request = urllib.request.Request(
-                build_validated_url(validated_host, "/api/generate"),
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            try:
-                from utils.url_security import open_validated_url
-
-                with open_validated_url(request, timeout=300) as resp:
-                    UIState._uistate_log(f"[{label}] Streaming...")
-                    for raw_line in resp:
-                        line = raw_line.decode("utf-8").strip()
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        token = chunk.get("response", "")
-                        full.append(token)
-                        tokens += 1
-                        if tokens % 20 == 0:
-                            preview = "".join(full)[-60:]
-                            UIState._uistate_log(f"  ...{preview}")
-                        if chunk.get("done"):
-                            dur = chunk.get("total_duration", 0) / 1e9
-                            UIState._uistate_log(f"[{label}] Done: {tokens} tokens in {dur:.1f}s")
-                            return "".join(full).strip()
-            except Exception as e:
-                if attempt < 3:
-                    time.sleep(2.0**attempt)
-                else:
-                    raise RuntimeError(f"Streaming failed after 3 attempts: {e}") from e
-        return "".join(full).strip()
-
-    def _prewarm_ollama(self) -> None:
-        """Pre-warm the Director and Writer models in background (parallel threads)."""
-
-        def _warm(model_type: str) -> None:
-            try:
-                self._call_ollama("Hello", model_type=model_type)
-                log.info(f"[DIRECTOR] Ollama pre-warmed: {model_type}")
-            except Exception as exc:
-                log.debug(f"[DIRECTOR] Ollama prewarm skipped for {model_type}: {exc}")
-
-        threading.Thread(target=_warm, args=("director",), daemon=True).start()
-        threading.Thread(target=_warm, args=("writer",), daemon=True).start()

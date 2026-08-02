@@ -145,12 +145,6 @@ ignore = [
 "core/post_production.py" = ["E402"]
 "agents/director_agent.py" = [
     "E402",   # sys.path + patches
-    "PLR0915",# 2618-line god module — splitting is its own refactor
-    "PLR0912",# same
-    "PLR0913",# same
-    "PLR0911",# same
-    "C901",   # function complexity
-    "PLR0904",# too-many-public-methods
 ]
 "agents/decision_engine.py" = ["E402"]
 "config/__init__.py" = [

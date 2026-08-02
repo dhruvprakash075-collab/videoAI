@@ -123,3 +123,70 @@ NEEDS DECISION. One line per item. Flag anything where the fix breaks a
 test or needs a pin bump — do not work around those, list them. Do not
 commit unless asked.
 ```
+
+## Execution status (2026-08-02, findings-cleanup session)
+
+All items executed and source-verified. Evidence: execution-log.md fix-run
+gates + this appendix. Suite after fixes: 1942 passed / 5 skipped (1948 after
+the 43-item fixes, minus 6 tests pruned in the tier-4 dead-code sweep).
+
+### bugs.md items
+
+| Item | Verdict | Note |
+|---|---|---|
+| #1 worker.py ignores --help | **FIXED (2nd pass)** | argparse + repo-root sys.path bootstrap added — the first fix had argparse only; `from config import ...` still crashed standalone. Verified `python jobs/worker.py --help` rc=0 |
+| #2 comfyui_smoke --help runs real workflow | FIXED | argparse at script top; verified `--help` prints usage rc=0, no workflow run |
+| #3 preflight standalone crash | FIXED | sys.path bootstrap (preflight.py:343-347) |
+| #4 mixed invocation conventions | FIXED | argparse everywhere; `jobs/run_worker.py` now runs standalone (bootstrap added; verified rc=0) |
+| #5 diagnose --help rejected | FIXED | help dispatch; verified rc=0 |
+| #6 audio_fx never runs | FIXED | module + tests deleted; `audio_fx:` config keys kept (assembler reads loudnorm) |
+| #7 ip_adapter never runs | FIXED | module + tests deleted |
+| #8 retry_manager dead | FIXED | module + tests deleted |
+| #9 web_search dead | FIXED | module + tests deleted |
+| #10 media_analyzer CLI-only | SKIPPED | KEPT — only gateway to opt-in Rust audio analyzer (AGENTS.md Rust interop) |
+| #11 diagnose unreferenced | SKIPPED | KEPT — standalone diagnostic tool |
+| #12 PATH python 3.14.5 | SKIPPED | environment, not code; venv 3.12.13 sanctioned |
+| #13 VRAM under floor | SKIPPED | environment; documented |
+| #14 local_ui script crash | FIXED | argparse + bootstrap |
+| #15 local_ui --help starts uvicorn | FIXED | argparse; verified `-m utils.local_ui --help` rc=0 |
+| #16 cargo run ambiguous | FIXED | `default-run = "videoai-worker"` (Cargo.toml:6) |
+| #17 doctor CWD-relative root | FIXED | `resolve_repo_root()` walk-up (doctor.rs:79) |
+| #18 Rust stale-blind | SKIPPED | decision: doc-comment corrected (lib.rs:22-24); feature deferred — Rust stale-blind by design |
+| #19 _director_vision pydantic drop | FIXED | regression test (test_config_schemas.py:256); prod paths use raw dicts |
+| #20 IndicF5SubConfig root D:\IndicF5 | FIXED | default → `external/IndicF5` (config_schemas.py:170) |
+| #21 hardcoded C:\Video.AI | FIXED | helpers.py:14 derived DEFAULT_REPO_ROOT; verified live via ComfyUI smoke gate |
+| #22 dead schema fields | FIXED | removed (grep-clean) |
+| #23 prompt/config TTS drift | FIXED | prompts.yaml:43,73 supertonic |
+| #24 prompt/config segment length | FIXED | prompts.yaml:20 ~2 min |
+| #25 job_store import-time mkdir | FIXED | lazy mkdir in `_connect` |
+| #26 README broken Rust commands | FIXED | works live via default-run (#16) |
+| #27 dead image_gen helpers | FIXED | deleted (grep-clean) |
+| #28 YouTube upload unguarded | FIXED | try/except wrap; manifest guaranteed (post_production.py:378-406) |
+| #29 docs stale ×3 | FIXED | 7 doc files corrected; README/testing counts now 1948 (this pass) |
+| #30 third D:\IndicF5 (preflight) | FIXED | default → `external/IndicF5` (preflight.py:50) |
+| #31 hardcoded node indices | FIXED | class_type assertions (image_gen.py:390-391) |
+| #32 nits | FIXED | all cleared |
+| #33 missing config refs | SKIPPED | both benign (verified fallbacks) |
+| #34 max_segment_retries non-finding | SKIPPED | confirmed honored; no action |
+| #35 Modelfile.* stale | FIXED | deleted (gitignored; already gone at cleanup) |
+| #36 usage.md count drift | FIXED | session-catchup KEPT (live tooling); count documented |
+| #37 dead functions | FIXED | project_store:992-1000, llm_client:130/199, llm_shims:50/53 deleted |
+| #38 rules/ contradictions | FIXED | 8 files rewritten (api-design → live /api/* contract; onboarding `-m`; testing markers; bandit optional; 800-line exceptions; .claude refs) |
+| #39 MCP server crash note | SKIPPED | operational guidance; search_graph works |
+| #40 IndicF5 engine DOWN | FIXED | config.yaml:20 → supertonic |
+| #41 words lock not honored | FIXED | outline_shaping.py:144-153 seeds `target_word_count` from locked value; critic reads it; test_outline_shaping.py added |
+| #42 QC FAIL wording | **FIXED (2nd pass)** | post_production "FLAGGED (advisory)" + quality_check.py:139 no longer prints FAIL (wording only; `passed` still strict in JSON); #42 originally only half-fixed |
+| #43 refine/upscale perf knob | RESOLVED | no code needed — `comfyui.refine_upscale` toggle already existed (config.yaml:185, schema :339, gate image_gen.py:355); added the cost comment to config.yaml |
+
+### Other work-order sections
+
+| Section | Verdict |
+|---|---|
+| 2. unused.md deletions | FIXED — all disk + git deletions done (see execution-log) |
+| 3. duplicates.md consistency | FIXED — clamps aligned (100-400), prompts aligned (2-4); tts_capabilities "duplicate" RETRACTED (n-gram artifact, config.py:78 has no such function) |
+| 4. test-audit.md | FIXED — vacuous assert removed; 4 dead-module test files deleted; modules' coupled tests kept |
+| 5. other-findings.md | SKIPPED — advisory only (make_process_segment refactor NOT attempted) |
+| 6. nested-loops.md | NO ACTION — verified clean |
+| 7. python-scripts.md | NO ACTION — verified clean |
+| 9. execution-log.md | UPDATED — fix gates, smoke, deletions, corrections |
+| 11. PONYTAIL-DEBT.md | UPDATED — re-harvested to 37 markers (4 added, 3 line refs corrected, footer fixed) |

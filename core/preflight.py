@@ -47,7 +47,7 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
                 f"Unknown engine '{tts_engine}'. Supported: {', '.join(sorted(_KNOWN_TTS_ENGINES))}",
             )
         if tts_engine == "indicf5":
-            indic_root = Path(config.get("tts", {}).get("indicf5", {}).get("root", r"D:\IndicF5"))
+            indic_root = Path(config.get("tts", {}).get("indicf5", {}).get("root", "external/IndicF5"))
             if indic_root.exists():
                 return ("ok", f"IndicF5 checkout available: {indic_root}")
             return ("fail", f"IndicF5 checkout NOT FOUND: {indic_root} (will fall back)")

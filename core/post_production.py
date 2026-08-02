@@ -69,7 +69,8 @@ def write_manifest(topic: str, result: dict, config: dict, n_segs: int, wall_tim
         "duration_s": result.get("duration_s", 0),
         "quality_check": result.get("quality", {}),
         "youtube_upload": result.get("youtube_upload", "not_attempted"),
-        "warning_count": _UIS.warning_count,
+        # derived: add_degradation is the only writer, so len(degradations) IS the count
+        "warning_count": len(_UIS.degradations),
         "vram_peaks": list(_UIS.vram_peaks),
         "degradations": list(_UIS.degradations),
         "segments": _UIS.list_segment_manifests(),
@@ -352,12 +353,11 @@ def finalize_production(
         expected_duration_s=_expected_duration_s if _expected_duration_s > 0 else None,
         requested_duration_s=_requested_duration_s,
     )
-    log.info(f"  Quality: {'PASS' if qc['passed'] else 'FAIL'}")
+    log.info(f"  Quality: {'PASS' if qc['passed'] else 'FLAGGED (advisory — see issues)'}")
     if qc["issues"]:
         for issue in qc["issues"]:
             log.warning(f"    - {issue}")
 
-    _quality_passed = qc["passed"]
     _success_result: dict[str, Any] = {
         "status": "success",  # ponytail: QC is advisory; duration mismatch is warning-only, not pipeline error
         "output": str(final_video),
@@ -376,28 +376,32 @@ def finalize_production(
     upload_cfg = config.get("upload", {})
     if upload_cfg.get("enabled", False) and upload_cfg.get("platform") == "youtube":
         log.info("[YouTube] Auto-upload enabled. Initiating Playwright upload...")
+        try:
+            from utils.seo_generator import generate_seo_metadata
 
-        from utils.seo_generator import generate_seo_metadata
+            seo_meta = generate_seo_metadata(topic, outline, config)
+            title = seo_meta.get("title", topic)
+            tags = seo_meta.get("tags", [])
 
-        seo_meta = generate_seo_metadata(topic, outline, config)
-        title = seo_meta.get("title", topic)
-        tags = seo_meta.get("tags", [])
+            from utils.youtube_uploader import upload_to_youtube
 
-        from utils.youtube_uploader import upload_to_youtube
+            desc_lines = [f"Auto-generated video about: {topic}\n\nChapters:"] + (chapters or [])
+            description = "\n".join(desc_lines)
 
-        desc_lines = [f"Auto-generated video about: {topic}\n\nChapters:"] + (chapters or [])
-        description = "\n".join(desc_lines)
-
-        uploaded = upload_to_youtube(
-            video_path=final_video,
-            title=title,
-            description=description,
-            tags=tags,
-            visibility=upload_cfg.get("visibility", "private"),
-            profile_dir=upload_cfg.get("profile_dir", "chrome_profile"),
-            headless=True,
-        )
-        _success_result["youtube_upload"] = "success" if uploaded else "failed"
+            uploaded = upload_to_youtube(
+                video_path=final_video,
+                title=title,
+                description=description,
+                tags=tags,
+                visibility=upload_cfg.get("visibility", "private"),
+                profile_dir=upload_cfg.get("profile_dir", "chrome_profile"),
+                headless=True,
+            )
+            _success_result["youtube_upload"] = "success" if uploaded else "failed"
+        except Exception as e:
+            # Upload failure must not kill the pipeline; manifest still written below.
+            log.warning(f"[YouTube] Auto-upload failed: {e}")
+            _success_result["youtube_upload"] = "error"
 
     # Manifest (written after upload so youtube_upload status is included)
     write_manifest(topic, _success_result, config, n_segs, wall_time_s)

@@ -99,7 +99,7 @@ class UIState:
     # ── Phase 0 manifest tracking ──
     run_id: str = ""
     vram_peaks: list = []
-    warning_count: int = 0
+    # warning_count was removed: len(degradations) is the single source of truth
     segment_manifests: dict = {}
 
     @classmethod
@@ -134,7 +134,6 @@ class UIState:
         """Record a silent quality fallback (B2). Thread-safe append."""
         with cls._log_lock:
             cls.degradations.append({"seg": seg, "stage": stage, "reason": reason})
-            cls.warning_count += 1
         log.warning(f"[DEGRADATION] Seg {seg} | {stage}: {reason}")
 
     @classmethod
@@ -154,7 +153,6 @@ class UIState:
             cls.degradations = []  # B2: reset degradation ledger for new run
             cls.run_id = str(uuid.uuid4())
             cls.vram_peaks = []
-            cls.warning_count = 0
             cls.segment_manifests = {}
 
     @classmethod

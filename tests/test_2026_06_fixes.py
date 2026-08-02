@@ -253,16 +253,6 @@ class TestP48AudioFxEnabled:
             f"P4-8 doc: expected at least 3 of the missing SFX names in the comment, found {found}"
         )
 
-    def test_audio_fx_module_default_sfx_dict(self):
-        """The runtime code path: _DEFAULT_SFX in audio/audio_fx.py should
-        include `thunder` and have the other 9 keys as no-ops (None) until
-        WAVs are provided.
-        """
-        from audio.audio_fx import _DEFAULT_SFX
-
-        assert "thunder" in _DEFAULT_SFX, "thunder SFX missing from _DEFAULT_SFX"
-        assert _DEFAULT_SFX["thunder"], "thunder SFX value is empty"
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # P4-23: Fractional duration flows through CLI / schema / guard / clamp
@@ -324,9 +314,9 @@ class TestP423FloatDurationFlow:
         clamped = DecisionRecord._clamp("total_duration_min", 0.1)
         assert clamped == 0.5
         assert isinstance(clamped, (int, float))
-        # Clamp at upper bound: 9999 should drop to 600
+        # Clamp at upper bound: 9999 should drop to 400 (prompt contract 100-400)
         clamped_hi = DecisionRecord._clamp("words_per_segment", 9999.5)
-        assert clamped_hi == 800
+        assert clamped_hi == 400
         # Now segment_duration_min lower: 0.1 should be raised to 1
         sd_clamped = DecisionRecord._clamp("segment_duration_min", 0.1)
         assert sd_clamped == 1

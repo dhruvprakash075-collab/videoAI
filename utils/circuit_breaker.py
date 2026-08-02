@@ -95,9 +95,6 @@ class CircuitBreaker:
             remaining = self._open_until - time.time()
             return max(0.0, remaining)
 
-    def is_open(self) -> bool:
-        return not self.allow_request()
-
     # ── Transitions ────────────────────────────────────────────────────────
 
     def record_success(self) -> None:

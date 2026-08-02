@@ -32,7 +32,8 @@ Rationale: Immutable data prevents hidden side effects, makes debugging easier, 
 
 MANY SMALL FILES > FEW LARGE FILES:
 - High cohesion, low coupling
-- 200-400 lines typical, 800 max
+- 200-400 lines typical, 800 max (existing exceptions: segment_runner.py 1126,
+  assembler.py 1060 — do not grow these further)
 - Extract utilities from large modules
 - Organize by feature/domain, not by type
 

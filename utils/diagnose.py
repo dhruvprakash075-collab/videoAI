@@ -402,9 +402,9 @@ def diagnose_system():
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or sys.argv[1].lower() in ("-h", "--help", "help"):
         print(f"Usage: python {sys.argv[0]} [gpu | media <file_path> | system | all]")
-        sys.exit(1)
+        sys.exit(0 if len(sys.argv) >= 2 else 1)
 
     cmd = sys.argv[1].lower()
 

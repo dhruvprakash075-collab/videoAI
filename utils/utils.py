@@ -98,7 +98,7 @@ def build_prompts(script: str, plan: dict, config: dict) -> str:
     # used as a fixed count (lets the operator force an exact number per segment,
     # e.g. via the --images-per-segment lock). No upper bound — Director decides.
     script_cfg = config.get("script", {})
-    default_count = script_cfg.get("default_images_per_segment", 6)
+    default_count = script_cfg.get("default_images_per_segment", 2)
     if script_cfg.get("dynamic_image_count", True):
         target_count = plan.get("num_images", default_count)
     else:

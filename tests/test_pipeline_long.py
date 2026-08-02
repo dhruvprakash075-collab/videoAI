@@ -940,7 +940,7 @@ def test_run_long_pipeline_stale_world_state_clear_fails(tmp_path):
 def test_run_long_pipeline_image_cap_and_env_ratio(tmp_path):
     from core.pipeline_long import run_long_pipeline
 
-    # default default_images_per_segment is 6, no upper cap anymore
+    # default default_images_per_segment is 2, no upper cap anymore
     cfg = {
         "video": {"total_duration_min": 1, "segment_duration_min": 1},
         "script": {"default_images_per_segment": 6},

@@ -47,8 +47,6 @@ class StoryMixin:
         feeds, User-Agent). The returned ``list[ResearchItem]`` is adapted into
         the dict shape the Director's downstream phases expect:
         ``{topic, combined_summary, result_count, raw_results}``.
-
-        Replaces the legacy ``utils.web_search`` path (now deprecated).
         """
 
         log.info(f"[DIRECTOR] Phase 1/5: Researching '{topic}'...")

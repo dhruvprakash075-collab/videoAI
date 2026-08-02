@@ -58,6 +58,141 @@ from core.runtime.vram import (
 # ── moved verbatim from core/segment/budget.py / identity.py ──
 from core.segment.identity import _detect_important_trigger, _perceptual_hash
 
+
+def _gather_memory_items(mem, state, seg_idx: int | None = None) -> list:
+    """Collect project+story memory items for context injection.
+
+    Non-fatal: returns [] on any error. When seg_idx is given and the read
+    fails, records a degradation (matches the two graph-node call sites).
+    """
+    try:
+        d = state.get("memory_data") or mem.read()
+        items: list = []
+        for scope_key in ("project", "story"):
+            data = d.get("memory_items", {}).get(scope_key, [])
+            if isinstance(data, list):
+                items.extend(data)
+        return items
+    except Exception as exc:
+        if seg_idx is not None:
+            from agents.director_agent import UIState as _UIState
+
+            _UIState.add_degradation(seg_idx, "memory_context_injection", str(exc))
+        return []
+
+
+def _review_important_images(
+    *, mem, director_agent_instance, topic, plan, script, config, state
+) -> dict:
+    """Review each image with an important trigger (identity-aware review).
+
+    Extracted from the former LocalGraphContext.do_important_image_review body;
+    keeps its memory-context + enrich_prompts fallback behavior identical.
+    """
+    images = state.get("images", [])
+    seg_idx = state["i"]
+
+    from utils.scene_director import enrich_prompts
+
+    mem_items = _gather_memory_items(mem, state, seg_idx=seg_idx)
+    if not mem_items:
+        log.debug(f"[DIRECTOR] No memory items available for seg {seg_idx}")
+
+    enriched_prompts = state.get("enriched_prompts")
+    if not enriched_prompts:
+        raw_prompts = build_prompts(script, plan, config)
+        enrich_result = enrich_prompts(
+            raw_prompts, script, config, plan, memory_items=mem_items
+        )
+        enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+
+    results = []
+    for idx, img_path in enumerate(images):
+        if idx >= len(enriched_prompts):
+            break
+
+        current_hash = _perceptual_hash(img_path)
+        prompt = enriched_prompts[idx]
+        cp = plan.get("char_presence", [])
+        frame_cp = cp[idx] if (isinstance(cp, list) and idx < len(cp)) else {}
+
+        is_important, _ = _detect_important_trigger(idx, frame_cp, prompt, script)
+
+        # Identity-hash change detection: if the dominant char's stored
+        # identity hash differs from the current frame, force a review.
+        if not is_important and frame_cp and getattr(mem, "_project", None) is not None:
+            try:
+                dom_char = max(frame_cp, key=lambda name: frame_cp[name])
+                if frame_cp[dom_char] >= 0.3:
+                    stored = mem._project.get_character_assets(dom_char)
+                    stored_hash = (stored or {}).get("identity_hash", "")
+                    if stored_hash and current_hash and stored_hash != current_hash:
+                        is_important = True
+            except Exception as exc:
+                log.debug(f"[DIRECTOR] Identity hash check skipped for {img_path}: {exc}")
+
+        if not is_important:
+            continue
+
+        try:
+            decision_res = director_agent_instance.review_important_image(
+                image_path=img_path,
+                prompt=prompt,
+                char_presence=frame_cp,
+                project_id=topic,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "vision" in err_str.lower() or "model" in err_str.lower():
+                log.warning(
+                    f"[DIRECTOR] Vision model unavailable for {img_path}: {e} — auto-approving"
+                )
+            else:
+                log.warning(
+                    f"[DIRECTOR] Important image review failed for {img_path}: {e}"
+                )
+            decision_res = {
+                "decision": "approve",
+                "reason": "review_failed",
+                "locked": False,
+            }
+
+        if frame_cp:
+            dom_char = max(frame_cp, key=lambda name: frame_cp[name])
+            if frame_cp[dom_char] >= 0.3:
+                try:
+                    if getattr(mem, "_project", None) is None:
+                        log.info(
+                            "[DIRECTOR] One-time mode — skipping asset review (no project store)"
+                        )
+                    else:
+                        decision = decision_res.get("decision", "approve")
+                        lora_meta = None
+                        if decision == "lora_candidate":
+                            lora_meta = {
+                                "trigger_word": f"{dom_char}_v1",
+                                "minimum_needed": 20,
+                            }
+                        _id_hash = current_hash or None
+                        mem._project.record_asset_review(
+                            char_key=dom_char,
+                            asset_path=img_path,
+                            decision=decision,
+                            reason=decision_res.get("reason", ""),
+                            locked=decision_res.get("locked", False),
+                            lora_metadata=lora_meta,
+                            ip_adapter_ref=(decision == "ip_ref"),
+                            negative_example=(decision == "reject"),
+                            identity_hash=_id_hash,
+                        )
+                except Exception as e:
+                    log.warning(f"[DIRECTOR] Failed to record asset review: {e}")
+
+        results.append({"image": img_path, "decision": decision_res})
+
+    return {"important_image_reviews": results}
+
+
 # ── Main per-segment processor ─────────────────────────────────
 
 
@@ -507,15 +642,7 @@ def make_process_segment(
         _visual_style = config.get("visual", {}).get("style", "")
         from utils.scene_director import enrich_prompts
 
-        _memory_items_for_image = []
-        try:
-            _mem_data = state.get("memory_data") or mem.read()
-            for _sk in ("project", "story"):
-                _items = _mem_data.get("memory_items", {}).get(_sk, [])
-                if isinstance(_items, list):
-                    _memory_items_for_image.extend(_items)
-        except Exception as exc:
-            log.debug(f"  Seg {i}: memory items unavailable for image prompts: {exc}")
+        _memory_items_for_image = _gather_memory_items(mem, state)
 
         enrich_result = enrich_prompts(
             build_prompts(script, plan, config),
@@ -622,129 +749,17 @@ def make_process_segment(
 
         def do_important_image_review(self, state):
             images = state.get("images", [])
-            plan = state["plan"]
-            script = state.get("script", "")
-
             if not images:
                 return {}
-
-            from utils import build_prompts
-            from utils.scene_director import enrich_prompts
-
-            _mem_items = []
-            try:
-                _d = state.get("memory_data") or self.mem.read()
-                for _sk in ("project", "story"):
-                    _items = _d.get("memory_items", {}).get(_sk, [])
-                    if isinstance(_items, list):
-                        _mem_items.extend(_items)
-            except Exception as e:
-                from agents.director_agent import UIState as _UIState
-                _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
-                log.debug(f"[DIRECTOR] Memory context unavailable for seg {state['i']}: {e}")
-
-            enriched_prompts = state.get("enriched_prompts")
-            if not enriched_prompts:
-                raw_prompts = build_prompts(script, plan, self.config)
-                enrich_result = enrich_prompts(
-                    raw_prompts, script, self.config, plan, memory_items=_mem_items
-                )
-                enriched_prompts = (
-                    enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
-                )
-
-            results = []
-            for idx, img_path in enumerate(images):
-                if idx >= len(enriched_prompts):
-                    break
-
-                current_hash = _perceptual_hash(img_path)
-                prompt = enriched_prompts[idx]
-                cp = plan.get("char_presence", [])
-                frame_cp = cp[idx] if (isinstance(cp, list) and idx < len(cp)) else {}
-
-                is_important, _ = _detect_important_trigger(
-                    idx,
-                    frame_cp,
-                    prompt,
-                    script,
-                )
-
-                # Identity-hash change detection: if the dominant char's stored
-                # identity hash differs from the current frame, force a review.
-                if (
-                    not is_important
-                    and frame_cp
-                    and getattr(self.mem, "_project", None) is not None
-                ):
-                    try:
-                        dom_char = max(frame_cp, key=lambda name: frame_cp[name])
-                        if frame_cp[dom_char] >= 0.3:
-                            stored = self.mem._project.get_character_assets(dom_char)
-                            stored_hash = (stored or {}).get("identity_hash", "")
-                            if stored_hash and current_hash and current_hash != stored_hash:
-                                is_important = True
-                    except Exception as exc:
-                        log.debug(f"[DIRECTOR] Identity hash check skipped for {img_path}: {exc}")
-
-                if is_important:
-                    try:
-                        decision_res = self.director_agent_instance.review_important_image(
-                            image_path=img_path,
-                            prompt=prompt,
-                            char_presence=frame_cp,
-                            project_id=self.topic,
-                        )
-                    except Exception as e:
-                        err_str = str(e)
-                        if "vision" in err_str.lower() or "model" in err_str.lower():
-                            log.warning(
-                                f"[DIRECTOR] Vision model unavailable for {img_path}: {e} — auto-approving"
-                            )
-                        else:
-                            log.warning(
-                                f"[DIRECTOR] Important image review failed for {img_path}: {e}"
-                            )
-                        decision_res = {
-                            "decision": "approve",
-                            "reason": "review_failed",
-                            "locked": False,
-                        }
-
-                    if frame_cp:
-                        dom_char = max(frame_cp, key=lambda name: frame_cp[name])
-                        if frame_cp[dom_char] >= 0.3:
-                            try:
-                                if getattr(self.mem, "_project", None) is None:
-                                    log.info(
-                                        "[DIRECTOR] One-time mode — skipping asset review (no project store)"
-                                    )
-                                else:
-                                    decision = decision_res.get("decision", "approve")
-                                    lora_meta = None
-                                    if decision == "lora_candidate":
-                                        lora_meta = {
-                                            "trigger_word": f"{dom_char}_v1",
-                                            "minimum_needed": 20,
-                                        }
-                                    _id_hash = current_hash or None
-                                    self.mem._project.record_asset_review(
-                                        char_key=dom_char,
-                                        asset_path=img_path,
-                                        decision=decision,
-                                        reason=decision_res.get("reason", ""),
-                                        locked=decision_res.get("locked", False),
-                                        lora_metadata=lora_meta,
-                                        ip_adapter_ref=(decision == "ip_ref"),
-                                        negative_example=(decision == "reject"),
-                                        identity_hash=_id_hash,
-                                    )
-                            except Exception as e:
-                                log.warning(f"[DIRECTOR] Failed to record asset review: {e}")
-
-                    results.append({"image": img_path, "decision": decision_res})
-
-            return {"important_image_reviews": results}
+            return _review_important_images(
+                mem=self.mem,
+                director_agent_instance=self.director_agent_instance,
+                topic=self.topic,
+                plan=state["plan"],
+                script=state.get("script", ""),
+                config=self.config,
+                state=state,
+            )
 
         def do_render(self, state):
             return render_node(state)
@@ -757,20 +772,9 @@ def make_process_segment(
             plan = state["plan"]
             images = state.get("images", [])
 
-            from utils import build_prompts
             from utils.scene_director import enrich_prompts
 
-            _mem_items = []
-            try:
-                _d = state.get("memory_data") or self.mem.read()
-                for _sk in ("project", "story"):
-                    _items = _d.get("memory_items", {}).get(_sk, [])
-                    if isinstance(_items, list):
-                        _mem_items.extend(_items)
-            except Exception as e:
-                from agents.director_agent import UIState as _UIState
-                _UIState.add_degradation(state["i"], "memory_context_injection", str(e))
-                log.debug(f"[DIRECTOR] Memory context unavailable for seg {state['i']}: {e}")
+            _mem_items = _gather_memory_items(self.mem, state, seg_idx=state["i"])
 
             enriched_prompts = state.get("enriched_prompts")
             if not enriched_prompts:

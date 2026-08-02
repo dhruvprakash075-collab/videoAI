@@ -88,7 +88,7 @@ Findings are equal-weight (no HIGH/MED/LOW). Frontend `dashboard/` exempt.
   tracked .py); `Modelfile.*` ×3 stale — all `FROM C:\models\*.gguf` targets
   absent on disk, runtime uses `ollama pull hermes-director` (README.md:25),
   `cra-guided` zero refs (bugs.md #35-36, unused.md); `static/ab_picker.html`
-  live (local_ui.py:259), `sfx/thunder.wav` owned by unwired audio_fx,
+  live (local_ui.py:259), `sfx/thunder.wav` deleted with its owner audio_fx (unused.md),
   `projects/series_1.yaml` live via `--project`; `plans/README.md` stale.
   Un-audited by design: `rules/` (27 agent-guidance md), `.agents/`,
   `.opencode/`, `.cursor/` (tooling/guidance, not code).
@@ -112,7 +112,9 @@ Findings are equal-weight (no HIGH/MED/LOW). Frontend `dashboard/` exempt.
 
 - Function-level no-caller query (codebase-memory MCP) crashed mid-session;
   file-level sweep below is AST + git verified instead.
-- Report-first: no fixes applied. Fixes await approval (bugs.md items).
-- Repo state: working tree clean — `agents/decision_engine.py` +
-  `tests/test_decision_engine.py` (dirty at audit start) since committed
-  (bb6e6411c, c9a59b525); only `docs/codebase-report/` untracked.
+- **Post-audit status (2026-08-02)**: all approved fixes applied (HANDOFF.md
+  #1-43; execution-log.md), suite re-run 1948 passed / 5 skipped, ComfyUI
+  smoke gate green, Phase 2 deletions done (gitlab CI files, coverage
+  baseline, task_plan.md, plans/, model_eval untracked+ignored, director.db
+  and ComfyUI test artifacts removed). Report-first constraint lifted —
+  fixes were executed and verified, see HANDOFF.md for the per-item status.

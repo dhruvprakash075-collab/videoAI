@@ -44,11 +44,11 @@ Operator CLI/UI
 
 ## Current Runtime Defaults
 
-- TTS default: `indicf5`
+- TTS default: `supertonic`
 - Image backend: `comfyui`
 - Composition mode: `one_pass`
 - Image size: `768x512`
-- ComfyUI workflow: `config/comfyui/workflows/manga_identity_pose_api.json`
+- ComfyUI workflow: `config/comfyui/workflows/manga_ipadapter_style_api.json`
 - Checkpoint: `meinamix_meinaV11.safetensors`
 - Final video target: `1920x1080`
 - Segment mode: staged loop enabled

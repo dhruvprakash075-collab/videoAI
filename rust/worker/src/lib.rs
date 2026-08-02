@@ -16,9 +16,13 @@
 //!
 //! Constants (mirrored from Python, MUST stay in sync):
 //! - HEARTBEAT_INTERVAL_SECONDS = 10
-//! - STALE_JOB_SECONDS = 120
-//! - CANCEL_GRACE_SECONDS = 30
+//! - CANCEL_GRACE_SECONDS = 30 (CANCEL_WAIT_SECONDS in jobs/worker.py)
 //! - POLL_INTERVAL_SECONDS = 5
+//!
+//! Stale-job detection (120s) is Python-only: `jobs/job_store.py
+//! mark_stale_running_failed`, called by `utils/local_ui.py` at startup.
+//! The Rust supervisor loop is stale-blind by design — it only supervises
+//! the bootstrap subprocess it spawned.
 //!
 //! The optional `python-extension` feature gates the PyO3 bridge used
 //! only for `videoai_worker_native` packaging and CI smoke tests.

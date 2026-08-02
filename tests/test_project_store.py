@@ -32,20 +32,6 @@ def test_project_reload_keeps_data(tmp_root):
     assert ps2.get_character("Hero") is not None
 
 
-def test_visual_lock_set_and_get(tmp_root):
-    ps = ProjectStore("proj", root=tmp_root)
-    ps.set_visual_lock("hero", "tall, silver hair, blue cloak", seed=42, lora_path="x.safetensors")
-    lock = ps.get_visual_lock("hero")
-    assert lock["seed"] == 42
-    assert lock["lora_path"] == "x.safetensors"
-
-
-def test_visual_lock_sparse_description_skipped(tmp_root):
-    ps = ProjectStore("proj", root=tmp_root)
-    ps.set_visual_lock("ghost", "x")  # too short
-    assert ps.get_visual_lock("ghost") is None
-
-
 def test_motif_persist(tmp_root):
     ps = ProjectStore("proj", root=tmp_root)
     ps.log_recurring_motif("thorn", "a black thorn symbol recurs")
@@ -60,7 +46,6 @@ def test_story_segment_save(tmp_root):
     ss = StoryStore("story1", project_name="proj", root=tmp_root)
     ss.save_segment(1, "the script", "a summary")
     assert len(ss._data["segments"]) == 1
-    assert ss.load_recent_context(3).startswith("Segment 1:")
 
 
 def test_story_segment_dedup_on_resave(tmp_root):
@@ -232,16 +217,6 @@ def test_get_character_none(tmp_path, monkeypatch):
     # PML get non-existent char
     pml = PermanentMemoryLog(topic="story", base_dir=str(tmp_path))
     assert pml.get_character("Unknown") is None
-
-
-def test_world_lore(tmp_path, monkeypatch):
-    import memory.project_store as psmod
-
-    monkeypatch.setattr(psmod, "PROJECTS_ROOT", tmp_path)
-
-    ps = ProjectStore("proj", root=tmp_path)
-    ps.add_world_lore("magic", "requires a wand")
-    assert ps.get_world_lore() == {"magic": "requires a wand"}
 
 
 def test_story_store_segment_capping(tmp_path):

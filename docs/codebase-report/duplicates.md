@@ -6,14 +6,15 @@ Method: token n-gram (k=6) similarity over function bodies of ≥12 lines, all
 first-party prod modules; threshold ≥0.55. Full AST scan, no fuzzy matching
 dependencies.
 
-**Result: 1 near-hit, 1 genuine duplicate.**
+**Result: 1 near-hit. The `tts_capabilities` "duplicate" was retracted after
+source verification (2026-08-02):**
 
-- `audio/audio_proxy.py:1063` `tts_capabilities()` vs `config/config.py:78`
-  `_default_config()` — token similarity **1.00** (identical body).
-  Manual comparison: both return the same TTS engine capability table
-  (engines, sample rates, latencies, quality flags) duplicated verbatim in two
-  modules. Two sources of truth for the same table — edit one and the other
-  silently drifts. Fix: single source (config), read from audio_proxy.
+- ~~`audio/audio_proxy.py:1063` `tts_capabilities()` vs `config/config.py:78`
+  `_default_config()` — token similarity 1.00 (identical body).~~ **RETRACTED** —
+  `config/config.py:78` is `_default_config()` and does NOT define
+  `tts_capabilities`; the function exists in exactly one place
+  (`audio/audio_proxy.py:1063`). The reported match was an n-gram artifact.
+  No fix needed; the "two sources of truth" row in HANDOFF.md #3 is void.
 
 No other pair reached 0.55 — the rest of the production codebase has no
 duplicated functions.

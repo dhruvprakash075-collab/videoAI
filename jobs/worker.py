@@ -3,12 +3,18 @@ import os
 import signal
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+
+# Standalone run needs the repo root on sys.path (top-level `config`/`jobs` imports).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 if os.name == "nt":
     CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -17,8 +23,8 @@ else:
     CREATE_NEW_PROCESS_GROUP = 0
     CTRL_BREAK_EVENT = signal.SIGINT
 
-from config import _safe_filename
-from jobs.job_store import (
+from config import _safe_filename  # noqa: E402 — needs sys.path bootstrap above
+from jobs.job_store import (  # noqa: E402
     STATUS_CANCEL_REQUESTED,
     STATUS_CANCELED,
     STATUS_FAILED,
@@ -293,5 +299,9 @@ class Worker:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    # --help must exit 0 before the worker loop starts (no poll loop on --help)
+    argparse.ArgumentParser(description="Video.AI job worker loop").parse_args()
     w = Worker()
     w.run_forever()

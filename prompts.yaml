@@ -17,7 +17,7 @@ vision_document: |
   Analyze the following story and produce a complete production vision.
   
   STORY TOPIC: {topic}
-  Target video duration: {target_duration} minutes. Plan segment_count accordingly (~1 min per segment).
+  Target video duration: {target_duration} minutes. Plan segment_count accordingly (~2 min per segment).
   {research_block}
   
   Analyze and output JSON with these keys:
@@ -40,7 +40,7 @@ vision_document: |
       {{establishing, environment, character_medium, character_closeup,
       emotional_detail, action}}.
   
-    "tts_recommendation": "omnivoice".
+    "tts_recommendation": "supertonic".
   
     "subtitle_style": Object with {{format: classic|tiktok, size: small|medium|large,
     color: white|yellow|cyan, position: bottom|centered}}.
@@ -70,7 +70,7 @@ vision_document: |
     "emotions": "emotion1, emotion2, emotion3",
     "pacing": "slow atmospheric",
     "shot_distribution": {{"establishing": 0.15, "environment": 0.25, "character_medium": 0.30, "character_closeup": 0.15, "emotional_detail": 0.10, "action": 0.05}},
-    "tts_recommendation": "omnivoice",
+    "tts_recommendation": "supertonic",
     "subtitle_style": {{"format": "classic", "size": "small", "color": "white", "position": "bottom"}},
     "ambiguity_detected": false,
     "ambiguity_question": "",
@@ -142,7 +142,7 @@ writer_breakdown: |
   {{
     "segment_count": <int 3-8>,
     "words_per_segment": <int 100-400, average word count>,
-    "image_count_per_segment": <int 5-12>,
+    "image_count_per_segment": <int 2-4, same contract as the vision doc>,
     "opening_hook_style": "...",
     "pacing_notes": "..."
   }}

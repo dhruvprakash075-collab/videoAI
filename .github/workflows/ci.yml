@@ -45,6 +45,15 @@ jobs:
           from agents.ui_state import UIState
           print('All core imports OK')
           "
+      # external/comfyui is gitignored, so CI cannot diff the clone against the
+      # pin; this guards the weaker but still useful property: the pinned commit
+      # must exist upstream (a stale/fabricated pin fails here).
+      - name: Verify vendored ComfyUI pin is reachable upstream
+        run: |
+          pin=$(sed -n 's/.*git commit: \([0-9a-f]\{7,\}\).*/\1/p' config/comfyui/vendored_comfyui.txt)
+          test -n "$pin" || { echo "No pin found in config/comfyui/vendored_comfyui.txt"; exit 1; }
+          curl -fsS -o /dev/null "https://api.github.com/repos/comfyanonymous/ComfyUI/commits/$pin" \
+            || { echo "Pinned ComfyUI commit $pin not found upstream — update config/comfyui/vendored_comfyui.txt"; exit 1; }
 
   typecheck:
     runs-on: ubuntu-latest
@@ -66,13 +75,13 @@ jobs:
       - name: Type check with mypy
         run: |
           python -m mypy --follow-imports=skip --ignore-missing-imports config/config.py config/config_schemas.py \
-                         utils/errors.py utils/retry_manager.py \
+                         utils/errors.py \
                          utils/crewai_breaker.py utils/checkpoint.py \
                          utils/circuit_breaker.py agents/ui_state.py \
                          core/post_production.py \
                          tests/test_config.py tests/test_config_schemas.py \
                          tests/test_post_production.py tests/test_uistate.py \
-                         tests/test_retry_manager.py tests/test_crewai_breaker.py \
+                         tests/test_crewai_breaker.py \
                          tests/test_checkpoint.py tests/test_circuit_breaker.py \
                          tests/unit/ tests/integration/
 

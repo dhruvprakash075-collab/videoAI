@@ -3,6 +3,7 @@ name = "videoai-worker"
 version = "0.1.0"
 edition = "2021"
 publish = false
+default-run = "videoai-worker"
 
 [lib]
 crate-type = ["rlib", "cdylib"]

@@ -276,39 +276,6 @@ class ProjectStore:
 
     # Visual locks (per-character appearance lock)
 
-    def set_visual_lock(
-        self,
-        char_key: str,
-        description: str,
-        seed: int | None = None,
-        lora_path: str | None = None,
-        provenance: str = "director",
-    ) -> None:
-        """Store a visual lock for a character (Req 13)."""
-        with self._lock:
-            if not description or len(description) < 20:
-                log.info(
-                    f"[ProjectStore] Visual lock skipped for '{char_key}' "
-                    f"— description too sparse ({len(description)} chars)"
-                )
-                return
-            self._data["visual_locks"][char_key] = {
-                "description": description,
-                "seed": seed,
-                "lora_path": lora_path,
-                "provenance": provenance,
-                "updated_at": time.time(),
-            }
-            log.info(f"[ProjectStore] Visual lock set for '{char_key}'")
-            self._save()
-
-    def get_visual_lock(self, char_key: str) -> dict | None:
-        with self._lock:
-            entry = self._data["visual_locks"].get(char_key)
-            if entry is None:
-                return None
-            return dict(entry)
-
     def save_memory_item(self, item: dict) -> None:
         """Store a validated memory item in project.json."""
         cleaned = _validate_memory_item(item)
@@ -407,18 +374,6 @@ class ProjectStore:
                 "is_approved": bool(char.get("approved_at", "")),
                 **file_meta,
             }
-
-    def add_pose_variant(self, char_key: str, pose_path: str) -> None:
-        """Add a pose variant path to a character's pose_variants list."""
-        with self._lock:
-            char = self._data["characters"].get(char_key)
-            if char is None:
-                return
-            variants = char.get("pose_variants", [])
-            if pose_path not in variants:
-                variants.append(pose_path)
-                char["pose_variants"] = variants
-                self._save()
 
     def approve_character(self, char_key: str) -> None:
         """Mark a character sheet as approved (sets approved_at timestamp)."""
@@ -536,16 +491,6 @@ class ProjectStore:
 
     # World lore
 
-    def add_world_lore(self, key: str, value: str) -> None:
-        with self._lock:
-            self._data["world_lore"][key] = value
-            self._save()
-
-    def get_world_lore(self) -> dict:
-        with self._lock:
-            return dict(self._data.get("world_lore", {}))
-
-
 # StoryStore — per-story state (segments, arc, audit)
 
 
@@ -614,11 +559,6 @@ class StoryStore:
                 {"segment": segment, "script": script, "summary": summary}
             )
             self._save_story()
-
-    def load_recent_context(self, n: int = 3) -> str:
-        with self._lock:
-            segs = self._data.get("segments", [])[-n:]
-            return "\n".join(f"Segment {s['segment']}: {s['summary']}" for s in segs)
 
     def save_memory_item(self, item: dict) -> None:
         """Store a validated memory item in story.json."""
@@ -988,16 +928,6 @@ class PermanentMemoryLog:
             self._project.save_memory_item(cleaned)
         else:
             self._story.save_memory_item(cleaned)
-
-    def clear_temp_items(self) -> None:
-        """Clear the in-memory temporary item store (call at segment boundary)."""
-        with self._lock:
-            self._temp_items.clear()
-
-    def get_temp_items(self) -> dict:
-        """Return all in-memory temporary items (read-only copy)."""
-        with self._lock:
-            return dict(self._temp_items)
 
     def check_continuity(self, segment_assets: dict) -> bool:
         return self._story.check_continuity(segment_assets, self._project)

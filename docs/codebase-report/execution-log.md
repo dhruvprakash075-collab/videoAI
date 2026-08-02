@@ -78,3 +78,52 @@ interpreter drift).
   YouTube upload, no model eval, no cleanup deletes (`--days-old 1` only
   lists), no dataset imports, no video rendering, no whisper/faster-whisper.
 - `--help`-safe entries verified; remaining tools not exercised beyond help.
+
+## Fix-run gates
+
+- **Clamp contract correction (post-fix review)**: the words_per_segment clamp
+  change originally updated only DecisionRecord._clamp (100-400); the four
+  Pydantic Fields (config_schemas.py:81, :97, :198, :705) still said ge=50,
+  le=800, so the schema accepted 50-800 and _clamp silently coerced. Tightened
+  all four Fields to ge=100, le=400 so schema and clamp agree. Verified: no
+  user/project yaml carries out-of-range words_per_segment (only
+  config.yaml:100); all test paths using words=50 (bootstrap_source, local_ui
+  api, segment_runner tests) bypass the Pydantic Fields (raw dicts / untyped
+  request) — suite still 1948 passed / 5 skipped.
+ (2026-08-02, findings-cleanup execution)
+
+| Command | Result | Verdict |
+|---|---|---|
+| `git status --porcelain` (pre-fix) | clean, 0 changes | OK |
+| `python -m pytest tests` (baseline, pre-fix) | 2048 passed, 5 skipped, 1 warning, 32.51 s | OK — matches report baseline |
+| Silent-failure 23-site re-sweep (read-only agent) | 0 true silent failures; 5 path drifts in bugs.md:79-89 citations (agents/ollama_client.py→utils/, utils/check_environment.py→scripts/, core/preflight.py→utils/, utils/main.py→core/, tests/test_no_broad_suppress.py→tests/unit/) — line numbers + behavior accurate, no fabrication | OK — audit claim holds |
+| Bonus except-pass sweep (core/audio/video/agents/memory/utils) | all benign (omnivoice_worker:57, comfyui_client:266, assembler:334, critic:217, media_analyzer:63/68, main:138, segment_runner:251, pre_production:462, identity:108) | OK |
+| `python -m pytest tests` (post-fix, Phase 1 complete) | 1948 passed, 5 skipped (user-run) | OK — matches fix plan (~100 test deletions) |
+| `scripts/comfyui_smoke.py` (post-fix, helpers.py root resolution #21) | venv | `submitted: 2ac131a9-…`, `scene_01.png` 558 066 bytes, "SMOKE OK (1 new frame(s))" | OK — #21 verified live; smoke gate green (2026-08-02) |
+| Phase 2 deletions | — | removed: comfy_test_err.txt, comfy_test_out.txt, color_output.png, fast_output.png, comfy_color_workflow.json, comfy_fast_workflow.json, director.db (8 MB, zero refs), jobs/_temp_content.txt, vendors/indicf5/; git rm: .gitlab-ci.yml, GITLAB_SETUP_INSTRUCTIONS.md, coverage_baseline.txt, task_plan.md, plans/README.md; model_eval/ untracked + ignored (.gitignore:154); Modelfile.* ×3 already gone | OK (2026-08-02) |
+| Second-pass CLI gates (verification pass) | — | `jobs/worker.py --help` → **rc=1 ModuleNotFoundError: config** (argparse fix was incomplete — no path bootstrap); `jobs/run_worker.py --help` → **rc=1 ModuleNotFoundError: jobs** (same); `utils/diagnose.py --help` rc=0; `scripts/comfyui_smoke.py --help` rc=0 (no workflow run); `-m utils.local_ui --help` rc=0 | 2 BROKEN → fixed |
+| Second-pass fixes | — | worker.py + run_worker.py: repo-root sys.path bootstrap added before first-party imports (same pattern as preflight.py:343); quality_check.py:139 "Quality check: FAIL" → advisory wording (no test asserted on the text; `passed` stays strict in JSON) | FIXED (2026-08-02) |
+| Post-fix re-verify | — | `jobs/worker.py --help` rc=0 usage; `jobs/run_worker.py --help` rc=0 usage | OK |
+| Re-audit pass (removed + rejected claims, 2026-08-02) | — | 19/20 claims re-verified correct; exceptions: sfx/thunder.wav orphaned after audio_fx deletion → deleted (gitignored `sfx/` :43, never tracked); series_1.yaml "config.py:26,62" anchors were fabricated (file is dynamic `--project` input only); audio_fx.enabled comment now states module deleted (enabled stays first key for P4-8 regex test); PONYTAIL-DEBT.md 37→38 (quality_check:139 row) | 2 leftovers fixed |
+
+## Items 3/4/5/7/8/9 execution (2026-08-02 user-approved sweep)
+
+| Item | Change | Verdict |
+|---|---|---|
+| #8/#9 disk deletes | `sfx/` (empty after thunder.wav) and `model_eval/` (untracked eval runs) removed from disk; both gitignored (`.gitignore:43,154`) so nothing tracked | DONE |
+| #7 CI broken-ref fix + pin check | **Found: ci.yml typecheck job referenced `utils/retry_manager.py` and `tests/test_retry_manager.py` — both deleted in Phase 1, so GitHub CI mypy was failing on load.** Removed both dead refs. Added a lint-job step that verifies the vendored ComfyUI pin (`2cdaaf4a`) still resolves upstream (GitHub API) — a real drift-diff can't run in CI because `external/comfyui` is gitignored; this guards a stale/fabricated pin. | FIXED |
+| #3 warning_count dedupe | `UIState.warning_count` had no independent writers (only `add_degradation` +++ and `reset_run`), so it always == `len(degradations)`. Removed the field; `post_production.py` now emits `len(_UIS.degradations)`. `degradations` is the single source of truth. | DONE (65 tests green) |
+| #4 tier-4 dead-code sweep | Re-indexed graph (6159 nodes); degree-0 Function/Method sweep + per-candidate grep. 9 methods had zero production refs → deleted: ProjectStore.set_visual_lock/get_visual_lock/add_pose_variant/add_world_lore/get_world_lore, StoryStore.load_recent_context, PreflightCheck.is_ok (is_fail kept — live), CircuitBreaker.is_open, OllamaClient.get_resident_models. Pruned 6 matching test functions. False positives confirmed live: `@app.*` handlers, chained proxy/mixin methods, pydantic validators, thread targets. | 1942 passed / 5 skipped (= 1948 − 6 test deletions) |
+| #5 make_process_segment cognitive refactor | Extracted module-level `_gather_memory_items` (deduped 3× block) and `_review_important_images` (the 125-line identity review peak, formerly `LocalGraphContext.do_important_image_review`). Signature + graph wiring + return contract unchanged; single caller intact. **Cognitive 358 → 267 (−25%)** per graph; function 1060 → 929 lines. | 106 segment_runner/pipeline tests green |
+| Test order-dependence fix (found during #4) | `test_translate_hinglish_delegates_and_records_seg_on_failure` passed only because an earlier test imported pipeline_long (registering `UIState.add_degradation` as the degradation callback). Made the test self-contained (registers/restores the callback itself). | FIXED — order-independent now |
+| Full gates | `pytest tests/` 1942 passed / 5 skipped (23.85s); ruff clean; compileall exit 0; config load + schema valid (refine_upscale under `image_gen:`, enabled); `cargo test` + `cargo clippy -D warnings` + `cargo fmt --check` all clean | ALL GREEN |
+
+## Final deep-clean pass (2026-08-02, user-approved A + B)
+
+| Item | Change | Verdict |
+|---|---|---|
+| Dead stubs (tracked) | `git rm realesrgan.pyi basicsr/__init__.pyi basicsr/archs/__init__.pyi basicsr/archs/rrdbnet_arch.pyi` — zero production references; their only consumer paths (image_gen.py:254, audio_fx.py) were deleted in Phase 1. `unused.md:26` claim corrected. | DONE |
+| Gitignored disk residue | `logs/` (9 MB today), `tts_output/` (26 MB), `temp_srt_files/`, `custom_checkpoints_path/`, `vendors/`, `studio_checkpoints/temp/`, `studio_outputs/ab_test/segments`, `studio_projects/_one_time/*`, other empty test-residue dirs, `rust/{cache,temp_srt_files,tts_output,studio_*}`. | DONE |
+| Kept (user decision) | `hf_cache/` (144 MB) — model cache kept to avoid re-download | KEPT |
+| Untracked but useful (flagged) | `tests/test_outline_shaping.py` — tests `core/outline_shaping.py` shape_outline (committed); 2 tests pass; no other coverage exists. NOT committed (user said "ask first", not "commit it") — flagged for future. | FLAGGED |
+| Gates | `pytest tests/` **1942 passed / 5 skipped**; ruff exit 0; config loads | ALL GREEN |

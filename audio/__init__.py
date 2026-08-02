@@ -5,8 +5,10 @@ Submodules:
     tts_alignment: Whisper-based word-level alignment for subtitles
     supertonic_worker: Persistent CPU ONNX worker subprocess (Supertonic 3)
     omnivoice_worker: Persistent GPU worker subprocess (OmniVoice)
-    indicf5_worker: One-shot subprocess wrapper for IndicF5 (external D:\IndicF5)
-    audio_fx: Mastering chain (loudnorm, ducking, SFX mix)
+    indicf5_worker: One-shot subprocess wrapper for IndicF5 (external IndicF5)
+    (audio_fx removed — SFX/premium-voice module was unwired; loudnorm lives in
+     video/renderer/assembler.py; the opt-in Rust mastering bridge moved to
+     utils/media_analyzer.py)
 
 Config knobs (under config["tts"]):
     engine: "indicf5" | "supertonic" | "omnivoice"  (normalized via normalize_tts_engine)

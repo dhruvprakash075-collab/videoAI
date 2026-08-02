@@ -1554,10 +1554,10 @@ def test_produce_runtime_config_clamps_image_count(agent):
 
 
 def test_produce_runtime_config_clamps_words_per_segment(agent):
-    """Words per segment is clamped to 50-800."""
+    """Words per segment is clamped to 100-400 (prompt contract)."""
     vision = {"characters": [{"name": "A"}]}
     result = agent.produce_runtime_config(vision, {}, {"words_per_segment": 9999})
-    assert result["script"]["words_per_segment"] == 800
+    assert result["script"]["words_per_segment"] == 400
 
 
 def test_produce_runtime_config_narrator_voice_mapping(agent):

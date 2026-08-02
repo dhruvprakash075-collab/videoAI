@@ -5,9 +5,9 @@ from audio import omnivoice_worker
 
 
 def test_set_seed_noop():
+    # no-raise intent: _set_seed(None) and _set_seed(-1) must not raise
     omnivoice_worker._set_seed(None)
     omnivoice_worker._set_seed(-1)
-    assert True
 
 
 def test_set_seed_deterministic(monkeypatch):

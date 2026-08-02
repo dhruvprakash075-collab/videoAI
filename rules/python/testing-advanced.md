@@ -167,21 +167,16 @@ tests/
 
 ## pytest Configuration
 
+The repo's actual config (pyproject.toml): `testpaths = tests`; no custom
+markers are registered and `--strict-markers` is NOT set — do not add
+`@pytest.mark.*` tags, they would be unknown markers. Keep it flat:
+
 ```ini
 [pytest]
 testpaths = tests
 python_files = test_*.py
 python_classes = Test*
 python_functions = test_*
-addopts =
-    --strict-markers
-    --disable-warnings
-    --cov=mypackage
-    --cov-report=term-missing
-markers =
-    slow: marks tests as slow
-    integration: marks tests as integration tests
-    unit: marks tests as unit tests
 ```
 
 ## Running Tests

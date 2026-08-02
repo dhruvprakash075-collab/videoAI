@@ -187,7 +187,6 @@ def build_html(
                     # look up the first/last word timestamp for each line's span.
                     all_words = [w for w in word_data if w.get("word", "").strip()]
                     if all_words:
-                        sum(len(l.split()) for l in lines)
                         timings = []
                         word_idx = 0
                         for line in lines:

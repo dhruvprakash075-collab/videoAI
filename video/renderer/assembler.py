@@ -431,86 +431,85 @@ def create_segment_mp4(
 
     duration = get_audio_duration(audio)
 
-    if True:
-        _font, ass_style, format_style = _resolve_subtitle_style(config)
-        sub_cfg = config.get("subtitles", {})
-        _sub_lang = sub_cfg.get("language", "en")
-        _write_srt(
-            script,
-            srt,
-            duration,
-            audio=audio,
-            format_style=format_style,
-            word_timestamps_json=word_timestamps_json,
-            is_final=is_final,
-            subtitle_language=_sub_lang,
+    _font, ass_style, format_style = _resolve_subtitle_style(config)
+    sub_cfg = config.get("subtitles", {})
+    _sub_lang = sub_cfg.get("language", "en")
+    _write_srt(
+        script,
+        srt,
+        duration,
+        audio=audio,
+        format_style=format_style,
+        word_timestamps_json=word_timestamps_json,
+        is_final=is_final,
+        subtitle_language=_sub_lang,
+    )
+    res = config.get("video", {}).get("resolution", "1920x1080")
+    fps = config.get("video", {}).get("fps", 24)
+    # Bug 6: Escape paths for FFmpeg filtergraph on Windows correctly
+    # Escape backslashes, colons (FFmpeg filter separator), and single quotes for filtergraph
+    srt_path_str = str(srt.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\\\'")
+    log.info(f"Seg {seg_num}: {duration:.1f}s | images={len(images) if images else 0}")
+
+    if images:
+        w, h = res.split("x")
+        kb_mode = config.get("video", {}).get("ken_burns", "light")
+        cmd = _build_image_slideshow_cmd(
+            images, audio, w, h, fps, duration, srt_path_str, ass_style, config, seg_num,
         )
-        res = config.get("video", {}).get("resolution", "1920x1080")
-        fps = config.get("video", {}).get("fps", 24)
-        # Bug 6: Escape paths for FFmpeg filtergraph on Windows correctly
-        # Escape backslashes, colons (FFmpeg filter separator), and single quotes for filtergraph
-        srt_path_str = str(srt.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\\\'")
-        log.info(f"Seg {seg_num}: {duration:.1f}s | images={len(images) if images else 0}")
-
-        if images:
-            w, h = res.split("x")
-            kb_mode = config.get("video", {}).get("ken_burns", "light")
-            cmd = _build_image_slideshow_cmd(
-                images, audio, w, h, fps, duration, srt_path_str, ass_style, config, seg_num,
-            )
-            cmd.append(str(mp4))
-            log.info("Executing single-pass complex filtergraph for Ken Burns assembly...")
-            if kb_mode == "full":
-                _assembly_timeout = max(900, int(duration * 12) + 300)
-            else:
-                _assembly_timeout = max(300, int(duration * 4) + 120)
-            _run(cmd, timeout=_assembly_timeout)
-
+        cmd.append(str(mp4))
+        log.info("Executing single-pass complex filtergraph for Ken Burns assembly...")
+        if kb_mode == "full":
+            _assembly_timeout = max(900, int(duration * 12) + 300)
         else:
-            cmd = _build_black_frame_cmd(
-                audio, res, fps, duration, srt_path_str, ass_style, config,
-            )
-            cmd.append(str(mp4))
-            _run(cmd, timeout=300)
+            _assembly_timeout = max(300, int(duration * 4) + 120)
+        _run(cmd, timeout=_assembly_timeout)
 
-        # ENDURANCE MODE: Track intermediate assets for cleanup only after final concat succeeds.
-        # Deletion is deferred to the pipeline orchestrator to preserve debugging artifacts.
-        # Assets are tracked in cleanup_manifest.json per segment.
-        # P4-4 fix: write the cleanup manifest only on the SUCCESS path (after _run completes
-        # without raising), not in finally.  Writing on failure would record assets that may
-        # still be needed for debugging or a retry.
-        with _cache.manifest_lock:
-            try:
-                import json as _json
+    else:
+        cmd = _build_black_frame_cmd(
+            audio, res, fps, duration, srt_path_str, ass_style, config,
+        )
+        cmd.append(str(mp4))
+        _run(cmd, timeout=300)
 
-                manifest_path = out_dir.parent / "cleanup_manifest.json"
-                manifest = {}
-                if manifest_path.exists():
-                    manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest.setdefault("pending_cleanup", []).extend(
-                    [
-                        {"type": "audio", "path": str(audio)} if audio and audio.exists() else None,
-                        *(
-                            [
-                                {"type": "image", "path": str(Path(img))}
-                                for img in (images or [])
-                                if Path(img).exists()
-                            ]
-                        ),
-                        {"type": "srt", "path": str(srt)} if srt.exists() else None,
-                    ]
-                )
-                manifest["pending_cleanup"] = [
-                    e for e in manifest["pending_cleanup"] if e is not None
+    # ENDURANCE MODE: Track intermediate assets for cleanup only after final concat succeeds.
+    # Deletion is deferred to the pipeline orchestrator to preserve debugging artifacts.
+    # Assets are tracked in cleanup_manifest.json per segment.
+    # P4-4 fix: write the cleanup manifest only on the SUCCESS path (after _run completes
+    # without raising), not in finally.  Writing on failure would record assets that may
+    # still be needed for debugging or a retry.
+    with _cache.manifest_lock:
+        try:
+            import json as _json
+
+            manifest_path = out_dir.parent / "cleanup_manifest.json"
+            manifest = {}
+            if manifest_path.exists():
+                manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.setdefault("pending_cleanup", []).extend(
+                [
+                    {"type": "audio", "path": str(audio)} if audio and audio.exists() else None,
+                    *(
+                        [
+                            {"type": "image", "path": str(Path(img))}
+                            for img in (images or [])
+                            if Path(img).exists()
+                        ]
+                    ),
+                    {"type": "srt", "path": str(srt)} if srt.exists() else None,
                 ]
-                manifest_path.write_text(
-                    _json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-                )
-                log.debug(
-                    f"Assets tracked for deferred cleanup: {len(manifest['pending_cleanup'])} files"
-                )
-            except Exception as cleanup_err:
-                log.debug(f"Cleanup manifest write failed: {cleanup_err}")
+            )
+            manifest["pending_cleanup"] = [
+                e for e in manifest["pending_cleanup"] if e is not None
+            ]
+            manifest_path.write_text(
+                _json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            log.debug(
+                f"Assets tracked for deferred cleanup: {len(manifest['pending_cleanup'])} files"
+            )
+        except Exception as cleanup_err:
+            log.debug(f"Cleanup manifest write failed: {cleanup_err}")
 
     log.info(f"Segment saved: {mp4}")
     return mp4

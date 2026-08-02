@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -37,35 +37,6 @@ def test_director_agent_resolve_model(agent):
     assert agent._resolve_model("director") == "director-model"
     assert agent._resolve_model("translator") == "translator-model"
     assert agent._resolve_model("unknown") == "llama3"
-
-
-def test_director_agent_prewarm_ollama(agent):
-    with patch("urllib.request.urlopen") as mock_urlopen, patch("threading.Thread") as mock_thread:
-        # Mock Thread to execute synchronously
-        def mock_thread_init(target, args=(), kwargs=None, daemon=True):
-            if kwargs is None:
-                kwargs = {}
-            mock_t = MagicMock()
-            mock_t.start = lambda: target(*args, **kwargs)
-            return mock_t
-
-        mock_thread.side_effect = mock_thread_init
-
-        agent._prewarm_ollama()
-        mock_urlopen.assert_called()
-
-
-def test_director_agent_call_ollama_streaming(agent):
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_res = MagicMock()
-        mock_res.__iter__.return_value = [
-            b'{"response": "streamed output"}\n',
-            b'{"response": "", "done": true, "total_duration": 1000000000}\n',
-        ]
-        mock_urlopen.return_value.__enter__.return_value = mock_res
-
-        res = agent._call_ollama_streaming("prompt", "test-label")
-        assert "streamed output" in res
 
 
 def test_director_consult_on_config(agent):

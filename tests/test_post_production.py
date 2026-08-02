@@ -75,7 +75,6 @@ class TestWriteManifest:
         monkeypatch.chdir(tmp_path)
         fake_uis = MagicMock()
         fake_uis.degradations = ["tts_fallback"]
-        fake_uis.warning_count = 1
         fake_uis.vram_peaks = []
         fake_uis.segment_manifests = {"seg1": {"id": 1}}
         fake_uis.list_segment_manifests.return_value = [{"id": 1}]

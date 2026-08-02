@@ -46,6 +46,14 @@ Useful flags are defined in `bootstrap_pipeline.py`:
 .\venv\Scripts\python.exe bootstrap_pipeline.py --sentry-smoke
 ```
 
+> **Invocation convention:** top-level scripts (`bootstrap_pipeline.py`,
+> `scripts/*`, `tools/*`, `utils/*.py`) run as files:
+> `venv\Scripts\python.exe path\to\script.py --help`.
+> Package modules (`core/*`, `jobs/*`, `utils/local_ui.py`, `utils/preflight.py`)
+> need `-m` so `config`/`agents` are importable:
+> `venv\Scripts\python.exe -m core.pipeline_cli --help`. Running them as
+> files fails with `ModuleNotFoundError` — that's expected, use `-m`.
+
 ## Local UI
 
 The local FastAPI backend is `utils/local_ui.py`; dashboard assets live in `dashboard/`.
@@ -78,7 +86,7 @@ Current backend verification:
 .\venv\Scripts\python.exe -m ruff check .
 ```
 
-Latest local result: `1940 passed, 5 skipped, 1 failed` (pre-existing); Ruff clean.
+Latest local result: `1942 passed, 5 skipped`; Ruff clean.
 
 ## Live Documentation
 

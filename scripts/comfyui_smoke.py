@@ -77,4 +77,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    # --help must exit 0 before any side effect (no server, no workflow)
+    argparse.ArgumentParser(description="Real-instance ComfyUI smoke gate").parse_args()
     sys.exit(main())

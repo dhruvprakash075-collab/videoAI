@@ -201,7 +201,6 @@ def reset_uistate():
     # Phase 0 manifest tracking
     UIState.run_id = ""
     UIState.vram_peaks = []
-    UIState.warning_count = 0
     UIState.segment_manifests = {}
     yield
 

@@ -4,8 +4,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from audio.audio_fx import _try_native_audio_master
-from utils.media_analyzer import _native_analyze_audio_wave
+from utils.media_analyzer import _native_analyze_audio_wave, _try_native_audio_master
 
 
 def test_native_audio_master_skips_import_when_flag_unset(tmp_path, monkeypatch):

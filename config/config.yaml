@@ -17,7 +17,7 @@ visual:
   environment_frame_ratio: 0.4
 tts:
   lang: hi
-  engine: indicf5
+  engine: supertonic
   indicf5:
     root: external\IndicF5
     python: C:\Video.AI\venv\Scripts\python.exe
@@ -74,13 +74,10 @@ video:
 script:
   words_per_segment: 100
   min_words: 20
-  max_words: 600
   dynamic_image_count: false
   default_images_per_segment: 2
-  max_images_per_segment: 4
   word_count_tolerance: 0.2  # ±20% band vs target (QC-aligned); consumed by the critic_node word-count gate
   writer_max_tokens: 1024
-  uncapped_scaling: false
 characters:
   protagonist:
     name: The Protagonist
@@ -185,6 +182,8 @@ image_gen:
     reference_image_dir: reference_assets/face_reference_pools/anime_face
     reference_usage: direct
     reference_seed_mode: prompt_hash
+    # Refine+upscale (FaceDetailer) pass — ~85s per image; set false to skip
+    # it entirely for fast one-shot runs.
     refine_upscale: true
     refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
@@ -213,6 +212,9 @@ performance:
   lookahead_segments: 3
 audio_fx:
   enabled: true
+  # audio_fx module deleted 2026-08-02 (was unwired). program_loudnorm/target_lufs
+  # below are read by video/renderer/assembler.py (2-pass EBU R128); `enabled` and
+  # the SFX list are a feature spec only — no SFX mixing exists (thunder.wav removed).
   # Note: The following 9 SFX WAV files are currently missing and treated as no-ops:
   # wind, rain, heartbeat, footsteps, door_creak, whisper, scream, explosion, bell.
   volume: 0.25
@@ -238,7 +240,7 @@ research:
     - wikimedia
     - rss
   rss_urls: []
-  user_agent: VideoAI/6.0 (+https://github.com/...)
+  user_agent: VideoAI/6.0
   budget: 3
   timeout_s: 15
   per_source_limit: 3
@@ -258,4 +260,4 @@ source:
     - .docx
   max_words: 50000
   url_timeout_s: 30
-  user_agent: VideoAI/6.0 (+https://github.com/...)
+  user_agent: VideoAI/6.0

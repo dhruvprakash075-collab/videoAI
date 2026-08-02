@@ -158,7 +158,7 @@ Status: READY FOR REVIEW
 ## Eval Storage
 
 ```
-.claude/
+.opencode/            (or docs/evals/ — anything tracked; .claude/ does not exist here)
   evals/
     feature-xyz.md      # Eval definition
     feature-xyz.log     # Eval run history

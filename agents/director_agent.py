@@ -12,8 +12,8 @@ Module map (WS-4 refactor — mixin split, 2026-07)
   only the facade defines ``__init__``.
 * ``UIState`` and ``_devanagari_ratio`` live in ``agents/ui_state.py``.
   Re-exported here for backward compat.
-* LLM client methods (``_call_ollama*``, ``_prewarm_ollama``, ``_resolve_model``,
-  ``_ollama_opts``) live in ``agents/llm_client.py`` as the
+* LLM client methods (``_call_ollama``, ``_call_ollama_chat``,
+  ``_resolve_model``, ``_ollama_opts``) live in ``agents/llm_client.py`` as the
   ``DirectorLlmClient`` class. ``DirectorAgent.__init__`` constructs one
   in ``self.llm``; thin delegation shims in ``LlmShimsMixin`` preserve the
   public method names that tests and other modules rely on.

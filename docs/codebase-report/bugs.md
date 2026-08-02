@@ -1,7 +1,11 @@
 # Bugs & Breaks — equal-weight findings
 
 Every finding below was reproduced or verified at source. No severity ranking —
-all are equally reportable. No fixes applied (report-first; approval required).
+all are equally reportable. **Execution status (2026-08-02)**: findings #1-43
+were executed per HANDOFF.md — see HANDOFF.md "Execution status" appendix for
+per-item verdicts. This file remains the audit-time record; execution-log.md
+carries the post-fix evidence, including the second-pass corrections (worker
+path bootstrap, QC wording).
 
 ## CLI contract breaks (entry points that misbehave)
 

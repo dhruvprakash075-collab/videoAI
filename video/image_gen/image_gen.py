@@ -5,8 +5,6 @@ ComfyUI is the image backend (config image_gen.backend: comfyui).
 Public surface:
 - generate_images(prompts, output_dir, config, char_presence=None)
 - get_oom_report(), clear_oom_events(), _record_oom_event()
-- _prompt_cache_key()
-- _maybe_upscale()
 """
 
 import hashlib
@@ -14,7 +12,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from tqdm import tqdm
 
@@ -171,135 +169,6 @@ def generate_images(
             log.warning(f"[image_gen] ComfyUI failed: {e}")
             raise
     raise ValueError(f"Unsupported image backend: {backend}")
-
-
-# ── CACHE HELPERS ────────────────────────────
-
-
-def _master_portrait_hash_for_frame(char_key: str | None, ps=None) -> str:
-    """Look up the master portrait content hash for a character.
-
-    Returns the hash if the project store has one, else ''. Used in the
-    per-frame cache key so portrait regeneration invalidates stale PNGs.
-    """
-    if not char_key:
-        return ""
-    try:
-        if ps is None:
-            from memory.project_store import ProjectStore
-            ps = ProjectStore(_current_project_id or "_default")
-        return ps.get_master_portrait_hash(char_key)
-    except Exception:
-        return ""
-
-
-_current_project_id: str = ""
-
-
-def _prompt_cache_key(
-    prompt: str,
-    cfg: dict,
-    neg_prompt: str = "",
-    lora_state: str = "",
-    seed: int = 0,
-    lora_fingerprint: str = "",
-    throttled_steps: int | None = None,
-    master_portrait_hash: str = "",
-) -> str:
-    """Return an 8-char hex MD5 hash of prompt + generation parameters."""
-    if isinstance(prompt, list):
-        prompt = ";".join([str(p) for p in prompt])
-    elif not isinstance(prompt, str):
-        prompt = str(prompt)
-    steps = cfg.get("steps", 4)
-    width = cfg.get("width", 1024)
-    height = cfg.get("height", 1024)
-    guidance_scale = cfg.get("guidance_scale", 3.5)
-    model_id = cfg.get("sd_model_path") or "comfyui"
-    effective_steps = throttled_steps if throttled_steps is not None else steps
-    raw = (
-        f"{prompt}|steps={effective_steps}|w={width}|h={height}"
-        f"|gs={guidance_scale}|neg={neg_prompt}|lora={lora_state}|model={model_id}"
-        f"|seed={seed}|lora_fp={lora_fingerprint}|mp_hash={master_portrait_hash}"
-    )
-    return hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
-
-
-
-
-
-
-# ── UPSCALER ──────────────────────────
-
-
-def _maybe_upscale(img, cfg: dict):
-    """Optionally upscale a PIL image using the configured upscaler.
-
-    See config.image_gen.upscaler. Off by default; Lanczos fallback.
-    """
-    upscaler_cfg = cfg.get("upscaler") or {}
-    model_name = (upscaler_cfg.get("model") or "none").lower()
-    if model_name == "none":
-        return img
-
-    target_w = int(upscaler_cfg.get("target_width", 1920))
-    target_h = int(upscaler_cfg.get("target_height", 1080))
-
-    # Try Real-ESRGAN
-    if model_name in ("4x-ultrasharp", "realesrgan", "real-esrgan"):
-        try:
-            import numpy as np
-
-            from basicsr.archs.rrdbnet_arch import RRDBNet
-            from realesrgan import RealESRGANer
-
-            scale = int(upscaler_cfg.get("scale", 4))
-            model_path = upscaler_cfg.get("model_path", "")
-
-            if not model_path:
-                log.warning("[Upscale] model_path not set — falling back to Lanczos")
-                raise ImportError("no model_path")
-
-            upsampler = RealESRGANer(
-                scale=scale,
-                model_path=model_path,
-                model=RRDBNet(
-                    num_in_ch=3,
-                    num_out_ch=3,
-                    num_feat=64,
-                    num_block=23,
-                    num_grow_ch=32,
-                    scale=scale,
-                ),
-                tile=512,
-                tile_pad=10,
-                pre_pad=0,
-                half=True,
-            )
-            img_np = np.array(img)
-            out_np, _ = upsampler.enhance(img_np, outscale=scale)
-            from PIL import Image as _PILImage
-
-            upscaled = _PILImage.fromarray(out_np)
-            resampling = cast(Any, getattr(_PILImage, "Resampling", _PILImage))
-            if upscaled.size != (target_w, target_h):
-                upscaled = upscaled.resize((target_w, target_h), resampling.LANCZOS)
-            log.debug(f"[Upscale] {model_name}: {img.size} → {upscaled.size}")
-            return upscaled
-        except Exception as e:
-            log.warning(f"[Upscale] {model_name} failed ({e}) — falling back to Lanczos")
-
-    # Lanczos fallback
-    try:
-        from PIL import Image as _PILImage
-
-        resampling = cast(Any, getattr(_PILImage, "Resampling", _PILImage))
-        resized = img.resize((target_w, target_h), resampling.LANCZOS)
-        log.debug(f"[Upscale] Lanczos: {img.size} → {resized.size}")
-        return resized
-    except Exception as e:
-        log.warning(f"[Upscale] Lanczos failed ({e}) — returning original")
-        return img
 
 
 # ── DOMINANT CHARACTER RESOLUTION ────────────────────────────
@@ -518,6 +387,8 @@ def _refine_upscale(frames: list[Path], cfg: dict) -> list[Path]:
                     uploaded = client.upload_image(frame, overwrite=True)
                     patcher = WorkflowPatcher(Path(refine_path))
                     wf = patcher.get_workflow()
+                    if wf.get("1", {}).get("class_type") != "LoadImage" or wf.get("11", {}).get("class_type") != "SaveImage":
+                        raise ValueError(f"refine workflow drifted: expected LoadImage/SaveImage nodes 1/11, got {wf.get('1', {}).get('class_type')}/{wf.get('11', {}).get('class_type')}")
                     wf["1"]["inputs"]["image"] = uploaded["name"]
                     wf["11"]["inputs"]["filename_prefix"] = f"{frame.stem}_final"
                     out = client.generate_image(

@@ -13,8 +13,6 @@ from video.image_gen.image_gen import (
     _comfyui,
     _comfyui_seed,
     _face_inspiration_prompt,
-    _maybe_upscale,
-    _prompt_cache_key,
     _record_oom_event,
     _refine_upscale,
     _resolve_dominant_char_at_threshold,
@@ -75,56 +73,6 @@ def test_clear_oom_events():
     assert len(get_oom_report()) == 2
     clear_oom_events()
     assert get_oom_report() == []
-
-
-
-# ── _prompt_cache_key ──────────────────────────────────────
-
-
-def test_prompt_cache_key_returns_8_chars():
-    cfg = {"steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    key = _prompt_cache_key("a hero standing", cfg)
-    assert len(key) == 8
-    assert all(c in "0123456789abcdef" for c in key)
-
-
-def test_prompt_cache_key_includes_master_portrait_hash():
-    """Same prompt + params but different portrait hash should produce different keys."""
-    cfg = {"steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    k1 = _prompt_cache_key("a hero", cfg, master_portrait_hash="abc123")
-    k2 = _prompt_cache_key("a hero", cfg, master_portrait_hash="def456")
-    assert k1 != k2
-
-
-def test_prompt_cache_key_differs_on_model_id():
-    """Different sd_model_path should not collide in cache."""
-    cfg_a = {"sd_model_path": "model-a", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    cfg_b = {"sd_model_path": "model-b", "steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    k1 = _prompt_cache_key("hero", cfg_a)
-    k2 = _prompt_cache_key("hero", cfg_b)
-    assert k1 != k2
-
-
-def test_prompt_cache_key_uses_defaults():
-    """When cfg omits steps/width/etc., defaults are consistent."""
-    cfg = {}
-    # Two identical calls must produce identical keys
-    assert _prompt_cache_key("x", cfg) == _prompt_cache_key("x", cfg)
-
-
-def test_prompt_cache_key_throttled_steps_included():
-    """A throttled image must not be served as a full-quality cache hit."""
-    cfg = {"steps": 4, "width": 1024, "height": 1024, "guidance_scale": 3.5}
-    k_full = _prompt_cache_key("p", cfg, throttled_steps=4)
-    k_throttled = _prompt_cache_key("p", cfg, throttled_steps=2)
-    assert k_full != k_throttled
-
-
-def test_prompt_cache_key_handles_list_prompt():
-    cfg = {}
-    k1 = _prompt_cache_key(["a", "b"], cfg)
-    k2 = _prompt_cache_key("a;b", cfg)
-    assert k1 == k2
 
 
 def test_stable_character_reference_persists_to_project_store(tmp_path: Path, monkeypatch):
@@ -325,26 +273,6 @@ def test_generate_images_wraps_misc_prompt_and_rejects_unknown_backend(tmp_path:
 
     with pytest.raises(ValueError, match="Unsupported image backend"):
         generate_images(["p"], tmp_path, {"image_gen": {"backend": "nope"}})
-
-
-def test_maybe_upscale_lanczos_and_failure_fallback():
-    img = MagicMock()
-    img.size = (10, 10)
-    resized = MagicMock()
-    resized.size = (20, 20)
-    img.resize.return_value = resized
-
-    assert _maybe_upscale(img, {"upscaler": {"target_width": 20, "target_height": 20}}) is img
-    assert _maybe_upscale(
-        img,
-        {"upscaler": {"model": "lanczos", "target_width": 20, "target_height": 20}},
-    ) is resized
-
-    img.resize.side_effect = RuntimeError("resize failed")
-    assert _maybe_upscale(
-        img,
-        {"upscaler": {"model": "lanczos", "target_width": 20, "target_height": 20}},
-    ) is img
 
 
 def test_refine_upscale_returns_originals_on_setup_failure():

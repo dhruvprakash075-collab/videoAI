@@ -20,10 +20,12 @@ api_key = os.environ["OPENAI_API_KEY"]  # Raises KeyError if missing
 
 ## Security Scanning
 
-- Use **bandit** for static security analysis:
+- Static scanning is optional — bandit is NOT installed in this repo and is
+  not part of any CI workflow. If you run it, install it first:
   ```bash
-  bandit -r .
+  pip install bandit && bandit -r .
   ```
+  Otherwise rely on the manual dangerous-patterns list below.
 
 ## Dangerous Patterns to Avoid
 

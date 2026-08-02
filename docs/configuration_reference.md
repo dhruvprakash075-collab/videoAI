@@ -19,12 +19,6 @@
 | `ollama.breaker_fails` | `3` | Consecutive failures before breaker opens |
 | `ollama.breaker_cooldown_s` | `30` | Breaker cooldown in seconds |
 
-## Language
-
-| Key | Current value | Meaning |
-| --- | --- | --- |
-| `language` | `hi` | Top-level language code (overrides `tts.lang`) |
-
 ## TTS
 
 Current default:
@@ -41,7 +35,7 @@ Supported engines are normalized in `audio/audio_proxy.py`. The checked-in confi
 ```yaml
 tts:
   indicf5:
-    root: D:\IndicF5
+    root: external/IndicF5
     python: C:\Video.AI\venv\Scripts\python.exe
     ref_audio: character_voices/narration_ref_9s_mono24k_ref8s_mono.wav
     ref_text_file: character_voices/narration_ref_9s_mono24k.txt
@@ -119,7 +113,7 @@ image_gen:
     python: external/ComfyUI/.venv/Scripts/python.exe
     auto_start: true
     open_browser: false
-    workflow_path: config/comfyui/workflows/manga_identity_pose_api.json
+    workflow_path: config/comfyui/workflows/manga_ipadapter_style_api.json
     checkpoint: meinamix_meinaV11.safetensors
     width: 768
     height: 512

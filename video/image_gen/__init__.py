@@ -5,7 +5,6 @@ Submodules:
     comfyui_runtime: ComfyUI process lifecycle (start/stop/health/prewarm)
     comfyui_workflow: JSON workflow construction (KSampler, LoRA, IP-Adapter, etc.)
     image_gen: High-level generate_images() orchestrating the above
-    ip_adapter: IP-Adapter face/identity conditioning helpers
     panel_compositor: Manga panel layout + speech bubble compositing (optional)
 
 Config (under config["image_gen"]["comfyui"]):

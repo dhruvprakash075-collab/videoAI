@@ -9,7 +9,7 @@ This repo is verified with backend tests, Ruff, and mypy (CI) / BasedPyright (lo
 ```
 
 Current local result after the static hardening work:
-`2060 passed, 5 skipped`.
+`1942 passed, 5 skipped`.
 
 To run individual test files:
 

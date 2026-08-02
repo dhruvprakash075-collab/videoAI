@@ -34,14 +34,8 @@ def _mock_side_effecting_preflight_checks():
 
 
 class TestPreflightCheck:
-    def test_status_is_ok(self):
-        c = PreflightCheck(name="x", status="ok", message="fine")
-        assert c.is_ok is True
-        assert c.is_fail is False
-
     def test_status_is_fail(self):
         c = PreflightCheck(name="x", status="fail", message="broken")
-        assert c.is_ok is False
         assert c.is_fail is True
 
 

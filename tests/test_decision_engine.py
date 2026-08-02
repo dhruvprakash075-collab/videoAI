@@ -52,9 +52,9 @@ def test_writer_adjusts_director():
 def test_user_lock_beats_writer_and_director():
     vision = {"segment_count": 8, "words_per_segment": 150}
     writer = {"segment_count": 10, "words_per_segment": 200}
-    user = {"words_per_segment": 90}
+    user = {"words_per_segment": 110}
     rec = build_decision_record(FakeDirector(), vision, writer, user, {}, BASE_CONFIG)
-    assert rec.words_per_segment.value == 90
+    assert rec.words_per_segment.value == 110
     assert rec.words_per_segment.provenance == "user"
     assert rec.words_per_segment.locked is True
 

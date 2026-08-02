@@ -76,8 +76,25 @@ impl CheckResult {
     }
 }
 
+fn resolve_repo_root() -> Result<PathBuf> {
+    // Walk up from CWD until we find the repo marker (bootstrap_pipeline.py),
+    // so `cargo run --bin videoai-worker -- doctor` works from rust/worker too.
+    let mut dir = std::env::current_dir().context("failed to resolve repository root")?;
+    loop {
+        if dir.join("bootstrap_pipeline.py").is_file() {
+            return Ok(dir);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    Err(anyhow::anyhow!(
+        "could not locate repo root (no bootstrap_pipeline.py in CWD or any parent); run doctor from the repo root"
+    ))
+}
+
 pub fn run_doctor(db_path: PathBuf, json: bool, strict: bool) -> Result<()> {
-    let repo_root = std::env::current_dir().context("failed to resolve repository root")?;
+    let repo_root = resolve_repo_root()?;
     let results = collect_doctor_results(&repo_root, &db_path);
 
     if json {
