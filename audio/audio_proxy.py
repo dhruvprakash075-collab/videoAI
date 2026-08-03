@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,33 @@ def _get_config() -> dict:
             _config_cache = {}
             _config_loader_id = loader_id
     return _config_cache
+
+
+# Windows intermittently fails child python spawns with rc=0xC0000142
+# (STATUS_DLL_INIT_FAILED) in short windows (~minutes), independent of this
+# codebase. Retry after the window closes.
+_DLL_INIT_FAILED_RC = 0xC0000142
+
+
+def _run_worker(cmd, **kwargs):
+    """subprocess.run with retry on the transient Windows DLL-init spawn failure.
+
+    ponytail: 2 retries at 3s/10s covers the observed ~minute transient window;
+    a longer outage still surfaces as the worker's normal error path.
+    """
+    result = None
+    for attempt, delay in enumerate((0, 3, 10)):
+        if attempt:
+            log.warning(
+                "[audio_proxy] worker spawn rc=0xC0000142 on attempt %d — retrying in %ds",
+                attempt,
+                delay,
+            )
+            time.sleep(delay)
+        result = subprocess.run(cmd, **kwargs)
+        if result.returncode != _DLL_INIT_FAILED_RC:
+            return result
+    return result
 
 
 # TTS engine normalization whitelist.
@@ -153,7 +181,7 @@ def _call_indicf5_worker(
             f"--cfg-strength={cfg_strength}",
         ]
         log.info("[IndicF5] Calling one-shot worker...")
-        result = subprocess.run(
+        result = _run_worker(
             cmd,
             capture_output=True,
             text=True,
@@ -437,7 +465,7 @@ def _call_supertonic_worker(
         if max_chunk_length is not None:
             cmd.append(f"--max-chunk-length={max_chunk_length}")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
+        result = _run_worker(cmd, capture_output=True, text=True, encoding="utf-8", timeout=600)
         if result.returncode == 0 and result.stdout.strip():
             for line in reversed(result.stdout.strip().split("\n")):
                 line = line.strip()
@@ -756,7 +784,7 @@ def _call_omnivoice_oneshot(
         log.info("Calling omnivoice_worker (one-shot)...")
         _oneshot_env = dict(os.environ)
         _oneshot_env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-        result = subprocess.run(
+        result = _run_worker(
             cmd, capture_output=True, text=True, encoding="utf-8", timeout=600, env=_oneshot_env
         )
 

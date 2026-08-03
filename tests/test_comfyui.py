@@ -615,7 +615,7 @@ class TestWorkflowPatcher:
 
     def test_manga_workflows_valid_graph(self):
         workflow_dir = Path("config/comfyui/workflows")
-        for name in ("manga_colored_api.json", "manga_identity_pose_api.json", "manga_ipadapter_style_api.json", "manga_refine_upscale_api.json"):
+        for name in ("manga_colored_api.json", "manga_identity_pose_api.json", "manga_ipadapter_style_api.json", "manga_refine_upscale_api.json", "manga_face_detail_api.json", "manga_upscale_api.json"):
             workflow = json.loads((workflow_dir / name).read_text())
             assert workflow
             for node_id, node in workflow.items():

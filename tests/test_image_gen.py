@@ -14,7 +14,7 @@ from video.image_gen.image_gen import (
     _comfyui_seed,
     _face_inspiration_prompt,
     _record_oom_event,
-    _refine_upscale,
+    _refine_passes,
     _resolve_dominant_char_at_threshold,
     _stable_character_reference,
     clear_oom_events,
@@ -275,29 +275,93 @@ def test_generate_images_wraps_misc_prompt_and_rejects_unknown_backend(tmp_path:
         generate_images(["p"], tmp_path, {"image_gen": {"backend": "nope"}})
 
 
-def test_refine_upscale_returns_originals_on_setup_failure():
-    """When runtime init crashes, _refine_upscale returns original frames unchanged."""
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"comfyui": {"face_detail": True}},
+        {"comfyui": {"upscale": True}},
+        {"comfyui": {"face_detail": True, "upscale": True}},
+        {"comfyui": {"refine_upscale": True}},
+        {"comfyui": {"refine_upscale": True, "face_detail": False, "upscale": False}},
+    ],
+)
+def test_refine_passes_returns_originals_on_setup_failure(cfg):
+    """When runtime init crashes, _refine_passes returns original frames unchanged."""
     frames = [Path("frame1.png"), Path("frame2.png")]
-    cfg = {"comfyui": {"refine_upscale": True, "refine_workflow_path": "workflow.json"}}
+    cfg["comfyui"].setdefault("face_detail_workflow_path", "workflow.json")
 
     with patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", side_effect=RuntimeError("comfy down")):
-        result = _refine_upscale(frames, cfg)
+        result = _refine_passes(frames, cfg)
     assert result == frames
 
 
-def test_refine_upscale_returns_originals_when_comfyui_not_running():
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"comfyui": {"face_detail": True}},
+        {"comfyui": {"upscale": True}},
+        {"comfyui": {"face_detail": True, "upscale": True}},
+        {"comfyui": {"refine_upscale": True}},
+        {"comfyui": {"refine_upscale": True, "face_detail": False, "upscale": False}},
+    ],
+)
+def test_refine_passes_returns_originals_when_comfyui_not_running(cfg):
     """When ComfyUI is not running, original frames are returned."""
     frames = [Path("f1.png")]
-    cfg = {"comfyui": {"refine_upscale": True}}
+    cfg["comfyui"].setdefault("face_detail_workflow_path", "workflow.json")
 
     runtime = MagicMock()
     runtime.ensure_running.return_value = False
     with patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime):
-        result = _refine_upscale(frames, cfg)
+        result = _refine_passes(frames, cfg)
     assert result == frames
 
 
-def test_refine_upscale_returns_originals_when_feature_disabled():
-    """When refine_upscale is False, original frames are returned."""
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"comfyui": {"face_detail": False}},
+        {"comfyui": {"upscale": False}},
+        {"comfyui": {"face_detail": False, "upscale": False}},
+        {"comfyui": {"refine_upscale": False}},
+    ],
+)
+def test_refine_passes_returns_originals_when_feature_disabled(cfg):
+    """When no refine pass is enabled, original frames are returned."""
     frames = [Path("f1.png")]
-    assert _refine_upscale(frames, {"comfyui": {"refine_upscale": False}}) == frames
+    assert _refine_passes(frames, cfg) == frames
+
+
+def test_refine_passes_chains_face_detail_then_upscale(tmp_path: Path):
+    """Both passes run per frame, upscale receiving the face-detail output."""
+    frames = [tmp_path / "f1.png"]
+    cfg = {"comfyui": {"face_detail": True, "upscale": True}}
+
+    runtime = MagicMock()
+    runtime.ensure_running.return_value = True
+    runtime.base_url = "http://127.0.0.1:8188"
+    client = MagicMock()
+    client.upload_image.side_effect = [{"name": "f1.png"}, {"name": "f1_final.png"}]
+    client.generate_image.side_effect = [
+        [tmp_path / "f1_final.png"],
+        [tmp_path / "f1_final_final.png"],
+    ]
+    patcher = MagicMock()
+    patcher.get_workflow.side_effect = [
+        {"1": {"class_type": "LoadImage", "inputs": {}}, "11": {"class_type": "SaveImage", "inputs": {}}},
+        {"1": {"class_type": "LoadImage", "inputs": {}}, "11": {"class_type": "SaveImage", "inputs": {}}},
+    ]
+
+    with (
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime),
+        patch("video.image_gen.comfyui_client.ComfyUIClient", return_value=client),
+        patch("video.image_gen.comfyui_workflow.WorkflowPatcher", return_value=patcher),
+    ):
+        result = _refine_passes(frames, cfg)
+
+    assert result == [tmp_path / "f1_final_final.png"]
+    assert client.generate_image.call_count == 2
+    wf1 = client.generate_image.call_args_list[0].args[0]
+    wf2 = client.generate_image.call_args_list[1].args[0]
+    assert wf1["1"]["inputs"]["image"] == "f1.png"
+    assert wf2["1"]["inputs"]["image"] == "f1_final.png"

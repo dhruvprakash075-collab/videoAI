@@ -338,11 +338,23 @@ class ComfyUIConfig(BaseModel):
     reference_seed_mode: Literal["prompt_hash", "round_robin"] = "prompt_hash"
     refine_upscale: bool = False
     refine_workflow_path: str = "config/comfyui/workflows/manga_refine_upscale_api.json"
+    face_detail: bool = False
+    face_detail_workflow_path: str = "config/comfyui/workflows/manga_face_detail_api.json"
+    upscale: bool = False
+    upscale_workflow_path: str = "config/comfyui/workflows/manga_upscale_api.json"
     timeout_seconds: int = 300
     poll_seconds: float = 1.0
     auto_start_timeout: int = 60
     unload_after_batch: bool = True
     reuse_ports: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def apply_refine_alias(self):
+        # back-compat: refine_upscale: true with new keys unset => both passes on
+        if self.refine_upscale and not self.face_detail and not self.upscale:
+            self.face_detail = True
+            self.upscale = True
+        return self
 
 
 class UpscalerConfig(BaseModel):

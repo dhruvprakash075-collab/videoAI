@@ -1,0 +1,10 @@
+{
+  "1": { "inputs": { "image": "scene_01.png", "upload": "image" }, "class_type": "LoadImage", "_meta": { "title": "Generated Frame" } },
+  "2": { "inputs": { "ckpt_name": "meinamix_meinaV11.safetensors" }, "class_type": "CheckpointLoaderSimple", "_meta": { "title": "Load Checkpoint" } },
+  "3": { "inputs": { "vae_name": "vae-ft-mse-840000-ema-pruned.safetensors" }, "class_type": "VAELoader", "_meta": { "title": "Color VAE" } },
+  "4": { "inputs": { "text": "manhwa-artstyle, bold clean ink outlines, detailed face, clean sharp eyes, cel shading", "clip": ["2", 1] }, "class_type": "CLIPTextEncode", "_meta": { "title": "Detailer Positive" } },
+  "5": { "inputs": { "text": "blurry, deformed, extra eyes, muddy colors, sketchy lines, 3d, photo", "clip": ["2", 1] }, "class_type": "CLIPTextEncode", "_meta": { "title": "Detailer Negative" } },
+  "9": { "inputs": { "model_name": "4x-UltraSharp.pth" }, "class_type": "UpscaleModelLoader", "_meta": { "title": "Load Upscale Model" } },
+  "10": { "inputs": { "upscale_by": 2.5, "seed": 42, "steps": 12, "cfg": 6.0, "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 0.2, "mode_type": "Linear", "tile_width": 512, "tile_height": 512, "mask_blur": 8, "tile_padding": 32, "seam_fix_mode": "Half Tile", "seam_fix_denoise": 0.2, "seam_fix_width": 64, "seam_fix_mask_blur": 8, "seam_fix_padding": 16, "force_uniform_tiles": true, "tiled_decode": true, "batch_size": 1, "image": ["1", 0], "model": ["2", 0], "positive": ["4", 0], "negative": ["5", 0], "vae": ["3", 0], "upscale_model": ["9", 0] }, "class_type": "UltimateSDUpscale", "_meta": { "title": "Ultimate SD Upscale (tiled)" } },
+  "11": { "inputs": { "filename_prefix": "scene_01_final", "images": ["10", 0] }, "class_type": "SaveImage", "_meta": { "title": "Save Final" } }
+}

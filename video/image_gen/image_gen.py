@@ -320,7 +320,7 @@ def _comfyui(
             pbar.update(1)
 
     log.info(f"ComfyUI: {len(images)} images generated")
-    images = _refine_upscale(images, cfg)
+    images = _refine_passes(images, cfg)
     panel_cfg = cfg.get("panel_composite", {}) or {}
     if panel_cfg.get("enabled"):
         from video.image_gen.panel_compositor import compose_panel_pages
@@ -349,18 +349,20 @@ def _comfyui(
     return images
 
 
-def _refine_upscale(frames: list[Path], cfg: dict) -> list[Path]:
-    """Standalone FaceDetailer + tiled-upscale pass, one frame at a time."""
+def _refine_passes(frames: list[Path], cfg: dict) -> list[Path]:
+    """Run enabled refine passes (face detail, then upscale), one frame at a time."""
     comfy_cfg = cfg.get("comfyui", {}) or {}
-    if not comfy_cfg.get("refine_upscale", False):
-        return frames
-
-    refine_path = comfy_cfg.get(
-        "refine_workflow_path",
-        "config/comfyui/workflows/manga_refine_upscale_api.json",
-    )
-    if not Path(refine_path).is_file():
-        log.warning("[refine] workflow missing: %s; skipping refine pass", refine_path)
+    # ponytail: schema converts legacy refine_upscale -> both passes; fall back
+    # here too so raw dicts (tests, older callers) keep working unvalidated.
+    legacy = comfy_cfg.get("refine_upscale", False)
+    passes = [
+        (comfy_cfg.get("face_detail", legacy), "FaceDetailer",
+         comfy_cfg.get("face_detail_workflow_path", "config/comfyui/workflows/manga_face_detail_api.json")),
+        (comfy_cfg.get("upscale", legacy), "Upscale",
+         comfy_cfg.get("upscale_workflow_path", "config/comfyui/workflows/manga_upscale_api.json")),
+    ]
+    enabled = [(name, path) for on, name, path in passes if on]
+    if not enabled:
         return frames
 
     from video.image_gen.comfyui_client import ComfyUIClient
@@ -380,32 +382,35 @@ def _refine_upscale(frames: list[Path], cfg: dict) -> list[Path]:
             log.debug("[refine] free_memory failed (non-fatal): %s", e)
 
         final_frames: list[Path] = []
-        with tqdm(total=len(frames), desc=" Refine+Upscale", leave=False) as pbar:
+        with tqdm(total=len(frames), desc=" Refine passes", leave=False) as pbar:
             for i, frame in enumerate(frames):
                 frame = Path(frame)
-                try:
-                    uploaded = client.upload_image(frame, overwrite=True)
-                    patcher = WorkflowPatcher(Path(refine_path))
-                    wf = patcher.get_workflow()
-                    if wf.get("1", {}).get("class_type") != "LoadImage" or wf.get("11", {}).get("class_type") != "SaveImage":
-                        raise ValueError(f"refine workflow drifted: expected LoadImage/SaveImage nodes 1/11, got {wf.get('1', {}).get('class_type')}/{wf.get('11', {}).get('class_type')}")
-                    wf["1"]["inputs"]["image"] = uploaded["name"]
-                    wf["11"]["inputs"]["filename_prefix"] = f"{frame.stem}_final"
-                    out = client.generate_image(
-                        wf,
-                        frame.parent,
-                        filename_prefix=f"{frame.stem}_final",
-                        poll_interval=comfy_cfg.get("poll_seconds", 1.0),
-                        timeout=comfy_cfg.get("timeout_seconds", 300),
-                    )
-                    final_frames.append(out[0] if out else frame)
-                except Exception as e:
-                    log.warning("[refine] frame %d (%s) failed: %s; keeping original", i, frame, e)
-                    final_frames.append(frame)
+                current = frame
+                for pass_name, pass_path in enabled:
+                    try:
+                        uploaded = client.upload_image(current, overwrite=True)
+                        patcher = WorkflowPatcher(Path(pass_path))
+                        wf = patcher.get_workflow()
+                        if wf.get("1", {}).get("class_type") != "LoadImage" or wf.get("11", {}).get("class_type") != "SaveImage":
+                            raise ValueError(f"{pass_name} workflow drifted: expected LoadImage/SaveImage nodes 1/11, got {wf.get('1', {}).get('class_type')}/{wf.get('11', {}).get('class_type')}")
+                        wf["1"]["inputs"]["image"] = uploaded["name"]
+                        wf["11"]["inputs"]["filename_prefix"] = f"{current.stem}_final"
+                        out = client.generate_image(
+                            wf,
+                            current.parent,
+                            filename_prefix=f"{current.stem}_final",
+                            poll_interval=comfy_cfg.get("poll_seconds", 1.0),
+                            timeout=comfy_cfg.get("timeout_seconds", 300),
+                        )
+                        if out:
+                            current = out[0]
+                    except Exception as e:
+                        log.warning("[refine] frame %d (%s) %s pass failed: %s; keeping previous", i, frame, pass_name, e)
+                final_frames.append(current)
                 pbar.update(1)
 
-        log.info("[refine] Completed FaceDetailer + upscale on %d frames", len(final_frames))
+        log.info("[refine] Completed refine passes on %d frames", len(final_frames))
         return final_frames
     except Exception as e:
-        log.warning("[refine] refine/upscale pass failed: %s; returning original frames", e)
+        log.warning("[refine] refine pass failed: %s; returning original frames", e)
         return frames

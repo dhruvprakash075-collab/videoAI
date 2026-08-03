@@ -7,12 +7,7 @@ import logging
 import re
 from typing import Any
 
-from agents.hinglish_glossary import (
-    hinglish_ratio,
-    protect_hinglish,
-    restore_hinglish,
-    transliterate_latin_runs,
-)
+from agents.hinglish_glossary import transliterate_latin_runs
 from agents.ui_state import _devanagari_ratio
 
 log = logging.getLogger(__name__)
@@ -28,35 +23,24 @@ class TranslationMixin:
     def translate_to_devanagari(
         self, english_script: str, segment_plan: dict, context: str = ""
     ) -> str | None:
-        """Translate English narration to MODERN spoken Hindi (Devanagari),
-        with ~25-30% common English words kept as Hinglish (English written in
-        Devanagari, e.g. problem -> प्रॉब्लम) via a static glossary.
+        """Translate English narration to MODERN spoken Hindi (Devanagari).
 
         sarvam-translate is a pure translation model -- it translates EVERYTHING
-        in the user message. So we send ONLY the (token-protected) English script
-        as user content and keep all steering in the system message.
+        in the user message. So we send ONLY the raw English script as user
+        content and keep all steering in the system message.
 
-        Pipeline: protect glossary words as @@N@@ tokens -> translate -> restore
-        tokens to their Devanagari spellings. Tokens survive sarvam untouched
-        (verified by diagnostic). Returns Devanagari Hindi, or English on failure.
+        ponytail: the old @@N@@ glossary-token protection (protect_hinglish)
+        was removed because sarvam-translate degenerates on placeholder tokens:
+        it transliterates English word-for-word into Devanagari ("night ke dead
+        mein") instead of translating, and the result passes the script-ratio
+        guard. The model already keeps common loanwords (लाइटहाउस) naturally,
+        and transliterate_latin_runs below catches any residual Latin runs.
+        Returns Devanagari Hindi, or English on failure.
         """
-        mood = segment_plan.get("mood", "mysterious")
 
         instruction = (
             "Translate to natural spoken Hindi in Devanagari only. "
-            "Keep tokens like @@0@@ unchanged. Output only the translation:"
-        )
-
-        _deva_cfg = ((getattr(self, "llm_config", None) or {}).get("tts", {}) or {}).get("devanagari", {})
-        _hinglish_target = float(_deva_cfg.get("hinglish_ratio", 0.40))
-
-        # Protect glossary words BEFORE translation so they return as
-        # English-in-Devanagari (Hinglish) rather than literary Hindi.
-        protected, token_map = protect_hinglish(english_script, target_ratio=_hinglish_target)
-        log.info(
-            f"[DIRECTOR] Translating segment to Devanagari "
-            f"(mood={mood}, {len(english_script)} chars, "
-            f"{len(token_map)} Hinglish words ~{hinglish_ratio(english_script, token_map):.0%})..."
+            "Output only the translation:"
         )
 
         def _looks_like_english_echo(text: str) -> bool:
@@ -77,7 +61,11 @@ class TranslationMixin:
             return sum(word in common_english for word in words) / len(words) >= 0.35
 
         def _translate_once(instruction_text: str) -> str:
-            prompt = f"{instruction_text}\n\nText to translate:\n{protected}" if instruction_text else protected
+            prompt = (
+                f"{instruction_text}\n\nText to translate:\n{english_script}"
+                if instruction_text
+                else english_script
+            )
             raw = self._call_ollama_chat(
                 prompt, model_type="translator", system_msg=""
             )
@@ -85,10 +73,9 @@ class TranslationMixin:
                 return ""
             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
             raw = re.sub(r"<\|.*?\|>", "", raw).strip()
-            restored = restore_hinglish(raw, token_map)
-            if sum(1 for c in restored if "\u0900" <= c <= "\u097f") < 10 and _looks_like_english_echo(restored):
-                return restored
-            return transliterate_latin_runs(restored)
+            if sum(1 for c in raw if "\u0900" <= c <= "\u097f") < 10 and _looks_like_english_echo(raw):
+                return raw
+            return transliterate_latin_runs(raw)
 
         try:
             translated = _translate_once(instruction)
@@ -146,8 +133,7 @@ class TranslationMixin:
                 _stricter_instruction = instruction + (
                     " The previous attempt left English (Latin) letters in the output. "
                     "Transliterate EVERY remaining English word phonetically into "
-                    "Devanagari, but STILL keep the @@N@@ tokens exactly as-is. "
-                    "Output ONLY Devanagari and the tokens."
+                    "Devanagari. Output ONLY Devanagari."
                 )
                 try:
                     _candidate = _translate_once(_stricter_instruction)

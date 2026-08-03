@@ -17,7 +17,7 @@ visual:
   environment_frame_ratio: 0.4
 tts:
   lang: hi
-  engine: supertonic
+  engine: indicf5
   indicf5:
     root: external\IndicF5
     python: C:\Video.AI\venv\Scripts\python.exe
@@ -184,7 +184,9 @@ image_gen:
     reference_seed_mode: prompt_hash
     # Refine+upscale (FaceDetailer) pass — ~85s per image; set false to skip
     # it entirely for fast one-shot runs.
-    refine_upscale: true
+    refine_upscale: false
+    face_detail: true
+    upscale: true
     refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
     poll_seconds: 1.0
