@@ -56,3 +56,18 @@
 - Full suite - 1937 passed, 5 skipped (excl. node tests) + 71 node tests passed
 - `ruff check .` - clean
 - Committed + pushed to github-origin main (18245df6e)
+
+## Session: 2026-08-05 (real-instance smoke) - storyboard end-to-end
+
+### What was done (commit 8ab64e957)
+- Real smoke driver (temp, not committed) ran the actual storyboard path against live Ollama + ComfyUI:
+  - Run 1 (generate, 212s): hermes-director produced 6-panel plan -> 6 real ComfyUI panel images (manga ipadapter workflow + refine) -> 2 composed 1920x1080 sheet pages -> approval gate -> persisted to StoryStore (status=approved, 6 panels, both pages listed)
+  - Wiring verified: approved_sheet + image_gen.comfyui.storyboard_sheet + per-segment shot_metadata all set
+  - Run 2 (reuse, 0.0s): returned stored record, same sheet - no regeneration
+- Smoke found a REAL bug: "Sheet composition failed ('str' object has no attribute 'is_file')" - run_storyboard passes raw config strings for layout_file while image_gen wraps in Path(); `_layout_rects`/`_read_layout_counts` crashed. Fixed at the shared function: `Path(layout_file)` coercion in both helpers (guards all callers). Regression test `test_compose_accepts_str_layout_file_values`.
+- Ollama flakiness note: cold-load of hermes-director killed connections (WinError 10054); fixed by clean restart of `ollama serve` + warm-up generate. Small model unaffected.
+
+### Verification
+- Real storyboard sheet: studio_outputs/A_robot_learns_to_garden/storyboard/sheet/storyboard_{01,02}.png (1.5MB each, 1920x1080, varied content confirmed via PIL)
+- StoryStore record: studio_projects/_one_time/A_robot_learns_to_garden/story.json
+- Full suite: 1938 passed, 5 skipped; ruff clean; pushed 8ab64e957
