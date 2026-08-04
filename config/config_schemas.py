@@ -449,6 +449,7 @@ class AlignmentConfig(BaseModel):
     model: str = "base"
     device: str = "cpu"
     compute_type: str = "int8"
+    trim_tails: bool = False
 
 
 class CriticConfig(BaseModel):

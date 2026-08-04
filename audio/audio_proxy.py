@@ -1053,6 +1053,7 @@ def tts_generate(
                             # always the true (Devanagari) words, not whisper's.
                             language=align_cfg.get("language") or lang,
                             reference_text=text,
+                            trim_tails=align_cfg.get("trim_tails", False),
                         )
                         if aligned and Path(aligned).exists():
                             word_timestamps = Path(aligned)

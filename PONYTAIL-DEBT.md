@@ -38,7 +38,7 @@ any touch of the enclosing code.
 | video/image_gen/panel_compositor.py:82 | Manga-panel overlap threshold 1.5% (was 3%) | Roboflow annotation calibration | Labeler/model change |
 | video/image_gen/panel_compositor.py:93 | Overlap threshold 5% (was 2%) | Same | Labeler/model change |
 | video/renderer/assembler.py:15 | Module-level state container (isolated for tests) | Global state per process | Multi-instance assembly |
-| external/IndicF5/run_indic.py `_tail_trim` (gitignored, session log only) | Fixed-ratio budget cut, `pad=0.90` (was 1.05) to excise F5's tail-stretch "गई" head | Rarely clips a final syllable ("है") when the duration model overruns the budget; pad >0.92 reintroduces the filler | Word-aligned cut via the worker's whisper `words.json` timestamps |
+| external/IndicF5/run_indic.py `_tail_trim` (gitignored, session log only) | Fixed-ratio budget cut, `pad=0.90` (was 1.05) to excise F5's tail-stretch "गई" head | Rarely clips a final syllable ("है") when the duration model overruns the budget; pad >0.92 reintroduces the filler | DONE 2026-08-04: word-aligned trim shipped in `audio/tts_alignment.py` (`align_audio(trim_tails=True)` — whisper-small word timings + true-text DP alignment, cuts drawl-shaped unaligned edge runs) |
 
 ## Tests
 

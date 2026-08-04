@@ -46,6 +46,12 @@ tts:
   voice_samples_dir: character_voices
   voice_profile:
     sentence_gap_ms: 200
+  alignment:
+    enabled: true
+    model: small
+    device: cpu
+    compute_type: int8
+    trim_tails: true
   devanagari:
     max_latin_ratio: 0.1
     max_retranslate_retries: 2

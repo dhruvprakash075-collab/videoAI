@@ -11,6 +11,8 @@ from contextlib import suppress
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from video.renderer import assembler
 
 
@@ -82,6 +84,142 @@ def test_align_audio_passes_language_to_transcribe(tmp_path):
         align_audio(wav, model_name="base", language="hi")
 
     assert fake_model.transcribe.call_args.kwargs["language"] == "hi"
+
+
+def _fake_words(segments):
+    """Build a transcribe-return value from per-segment word dicts."""
+    segs = []
+    for seg_words in segments:
+        seg = MagicMock()
+        seg.words = [
+            MagicMock(word=w["word"], start=w["start"], end=w["end"]) for w in seg_words
+        ]
+        segs.append(seg)
+    return ([*segs], None)
+
+
+def _make_wav(path, seconds=3.0, sr=16000):
+    import numpy as np
+    import soundfile as sf
+
+    t = np.linspace(0, seconds, int(seconds * sr), endpoint=False)
+    sf.write(str(path), 0.1 * np.sin(2 * np.pi * 440 * t), sr)
+
+
+def _wav_duration(path):
+    import soundfile as sf
+
+    info = sf.info(str(path))
+    return info.frames / info.samplerate
+
+
+def test_align_audio_trim_tails_cuts_head_drawl_and_remaps(tmp_path):
+    """A गई drawl at a segment head is cut from the WAV and word times shift."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "seg.wav"
+    _make_wav(wav, seconds=2.0)
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = _fake_words([
+        [  # seg 1: real text
+            {"word": "लेकिन", "start": 0.0, "end": 0.5},
+            {"word": "दुनिया", "start": 0.5, "end": 1.0},
+        ],
+        [  # seg 2: drawl head, then real word
+            {"word": "गई", "start": 1.2, "end": 1.5},
+            {"word": "को", "start": 1.5, "end": 1.8},
+        ],
+    ])
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        out = align_audio(
+            wav, model_name="small", language="hi", trim_tails=True,
+            reference_text="लेकिन दुनिया को",
+        )
+
+    words = json.loads(out.read_text(encoding="utf-8"))
+    assert [w["word"] for w in words] == ["लेकिन", "दुनिया", "को"]
+    assert words[2]["start"] == pytest.approx(1.5 - 0.3)  # 1.5 - (1.5-1.2) dropped
+    assert words[2]["end"] == pytest.approx(1.8 - 0.3)
+    assert _wav_duration(wav) == pytest.approx(2.0 - 0.3, abs=0.05)
+
+
+def test_align_audio_trim_tails_keeps_drawl_matching_reference(tmp_path):
+    """A real गई (in the reference text, aligned at dist 0) must NOT be cut."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "seg.wav"
+    _make_wav(wav, seconds=2.0)
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = _fake_words([
+        [
+            {"word": "ज़हरा", "start": 0.0, "end": 0.5},
+            {"word": "गई", "start": 0.5, "end": 1.0},
+            {"word": "अजहर", "start": 1.0, "end": 1.5},
+        ],
+    ])
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        out = align_audio(
+            wav, model_name="small", language="hi", trim_tails=True,
+            reference_text="ज़हरा गई अजहर",
+        )
+
+    words = json.loads(out.read_text(encoding="utf-8"))
+    assert len(words) == 3  # nothing cut
+    assert _wav_duration(wav) == pytest.approx(2.0, abs=0.05)
+
+
+def test_align_audio_trim_tails_keeps_mid_segment_drawl(tmp_path):
+    """Drawl mid-segment (not at an edge run) is kept — only edge runs cut."""
+    from audio.tts_alignment import _trim_ranges
+
+    words = [
+        {"word": "लेकिन", "start": 0.0, "end": 0.5},
+        {"word": "गगगग", "start": 0.5, "end": 0.8},
+        {"word": "दुनिया", "start": 0.8, "end": 1.3},
+    ]
+    assert _trim_ranges(words, [(0, 3)], {}) == []
+
+
+def test_align_audio_trim_tails_skips_without_reference_text(tmp_path):
+    """Without the true text there is nothing to align against -> no trim."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "seg.wav"
+    _make_wav(wav, seconds=2.0)
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = _fake_words([
+        [{"word": "गई", "start": 0.0, "end": 0.5}, {"word": "को", "start": 0.5, "end": 1.0}],
+    ])
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        align_audio(wav, model_name="small", language="hi", trim_tails=True)
+
+    assert _wav_duration(wav) == pytest.approx(2.0, abs=0.05)
+
+
+def test_align_audio_trim_tails_skips_for_base_model(tmp_path):
+    """base/tiny models mask drawls as real words -> trim must not fire."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "seg.wav"
+    _make_wav(wav, seconds=2.0)
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = _fake_words([
+        [{"word": "गई", "start": 0.0, "end": 0.5}, {"word": "को", "start": 0.5, "end": 1.0}],
+    ])
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        out = align_audio(
+            wav, model_name="base", language="hi", trim_tails=True,
+            reference_text="को",
+        )
+
+    assert _wav_duration(wav) == pytest.approx(2.0, abs=0.05)
+    # labels still substituted; no drawl-specific pruning happened
+    words = json.loads(out.read_text(encoding="utf-8"))
+    assert [w["word"] for w in words] == ["को", "को"]
 
 
 def test_align_audio_returns_none_if_wav_missing(tmp_path):
