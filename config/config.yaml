@@ -276,5 +276,4 @@ storyboard:
   aspect: "16:9"
   approval_retries: 2
   reuse_existing: true
-  reference_usage: none
   inject_shot_metadata: true

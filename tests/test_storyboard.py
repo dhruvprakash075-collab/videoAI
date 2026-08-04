@@ -30,16 +30,20 @@ class _FakeLlm:
     def __init__(self, response: str):
         self.response = response
         self.calls = 0
+        self.prompts = []
 
     def _call_ollama(self, prompt, format_json=False, seed=None):
         self.calls += 1
+        self.prompts.append(prompt)
         return self.response
 
 
 class _FakeDirector:
     def __init__(self, llm_response: str, consult_choices=None):
         self.llm = _FakeLlm(llm_response)
-        self._prompts = {"storyboard_plan": "template {outline} {characters} {style} {panel_count}"}
+        self._prompts = {
+            "storyboard_plan": "Produce exactly {panel_count} panels. {outline} {characters} {style}"
+        }
         self._consult_choices = list(consult_choices or ["Approve"])
         self.consult_calls = 0
 
@@ -64,7 +68,6 @@ def _config(tmp_root, **overrides):
             "aspect": "16:9",
             "approval_retries": 1,
             "reuse_existing": True,
-            "reference_usage": "none",
             "inject_shot_metadata": True,
         },
         "visual": {"style": "anime"},
@@ -318,3 +321,45 @@ def test_attach_shot_metadata_no_panels(tmp_root):
     outline = [{"title": "A"}]
     attach_shot_metadata(outline, [])
     assert "shot_metadata" not in outline[0]
+
+
+def test_panel_count_dynamic_from_outline(tmp_root, monkeypatch):
+    """Panel count derives from the outline (sum of num_images) when present."""
+    _patch_generation(monkeypatch, tmp_root)
+    director = _FakeDirector(_llm_json())
+    outline = [
+        {"seg": 1, "title": "A", "num_images": 3},
+        {"seg": 2, "title": "B", "num_images": 2},
+    ]
+    result = sb.run_storyboard(
+        director, outline, _config(tmp_root), "topic", cli_flags={}, root=tmp_root
+    )
+    assert result["status"] == "approved"
+    assert "exactly 5 panels" in director.llm.prompts[0]
+    assert len(result["panels"]) == 5
+
+
+def test_panel_count_dynamic_capped(tmp_root, monkeypatch):
+    """Derived panel count is capped at 12."""
+    _patch_generation(monkeypatch, tmp_root)
+    director = _FakeDirector(_llm_json())
+    outline = [
+        {"seg": 1, "title": "A", "num_images": 8},
+        {"seg": 2, "title": "B", "num_images": 8},
+    ]
+    sb.run_storyboard(
+        director, outline, _config(tmp_root), "topic", cli_flags={}, root=tmp_root
+    )
+    assert "exactly 12 panels" in director.llm.prompts[0]
+
+
+def test_panel_count_falls_back_to_config(tmp_root, monkeypatch):
+    """Without num_images in the outline, the config panel_count applies."""
+    _patch_generation(monkeypatch, tmp_root)
+    director = _FakeDirector(_llm_json())
+    outline = [{"seg": 1, "title": "A"}, {"seg": 2, "title": "B"}]
+    result = sb.run_storyboard(
+        director, outline, _config(tmp_root), "topic", cli_flags={}, root=tmp_root
+    )
+    assert "exactly 2 panels" in director.llm.prompts[0]
+    assert len(result["panels"]) == 2

@@ -459,7 +459,6 @@ class StoryboardConfig(BaseModel):
     aspect: str = "16:9"
     approval_retries: int = 2
     reuse_existing: bool = True
-    reference_usage: Literal["none", "direct"] = "none"
     inject_shot_metadata: bool = True
 
 

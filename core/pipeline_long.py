@@ -551,12 +551,11 @@ def run_long_pipeline(
             from core.storyboard import attach_shot_metadata
 
             attach_shot_metadata(outline, storyboard.get("panels") or [])
-            # Style-reference feedback: when enabled, the approved sheet becomes
-            # the ComfyUI reference image for scene generation.
-            if (
-                config.get("storyboard", {}).get("reference_usage") == "direct"
-                and storyboard.get("sheet_path")
-            ):
+            # Style-reference feedback: the approved sheet (fresh or reused
+            # from a previous run) becomes the ComfyUI reference image for
+            # scene generation — after the first run the stored artifact IS
+            # the reference.
+            if storyboard.get("sheet_path"):
                 config.setdefault("image_gen", {}).setdefault("comfyui", {})[
                     "storyboard_sheet"
                 ] = storyboard.get("sheet_path")

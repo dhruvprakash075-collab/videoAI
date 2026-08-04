@@ -169,6 +169,21 @@ def _page_aspect_from_config(aspect: str, width: int = 1920, height: int = 1080)
     return width / height
 
 
+def _dynamic_panel_count(outline: list, fallback: int, cap: int = 12) -> int:
+    """Storyboard scale follows the outline: one panel per planned scene image.
+
+    ponytail: capped at 12 (~3 sheet pages) so the approval sheet stays
+    reviewable; upgrade path = config field for the cap if a story ever needs
+    more.
+    """
+    derived = sum(
+        int(seg.get("num_images") or 0) for seg in outline if isinstance(seg, dict)
+    )
+    if derived:
+        return max(1, min(derived, cap))
+    return fallback
+
+
 def run_storyboard(
     director_agent,
     outline: list[dict],
@@ -187,7 +202,7 @@ def run_storyboard(
         return None
 
     sb = config.get("storyboard", {}) or {}
-    panel_count = max(1, int(sb.get("panel_count", 6)))
+    panel_count = _dynamic_panel_count(outline, int(sb.get("panel_count", 6)))
     retries = max(0, int(sb.get("approval_retries", 2)))
 
     from memory.project_store import StoryStore
