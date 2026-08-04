@@ -158,17 +158,6 @@ def _assemble_storyboard_prompts(panels: list[dict], config: dict) -> list[str]:
     return prompts
 
 
-def _page_aspect_from_config(aspect: str, width: int = 1920, height: int = 1080) -> float:
-    """Derive compositor page_aspect from the storyboard aspect string."""
-    if aspect and ":" in aspect:
-        try:
-            w, h = aspect.split(":", 1)
-            return float(w) / float(h)
-        except ValueError:
-            pass
-    return width / height
-
-
 def _dynamic_panel_count(outline: list, fallback: int, cap: int = 12) -> int:
     """Storyboard scale follows the outline: one panel per planned scene image.
 
@@ -223,11 +212,14 @@ def run_storyboard(
             )
 
     attempt = 0
+    feedback = ""
     while True:
         attempt += 1
         log.info(f"[STORYBOARD] Planning attempt {attempt}/{retries + 1}")
 
         prompt = _build_llm_prompt(director_agent, outline, config, panel_count)
+        if feedback:
+            prompt += f"\n\nUSER FEEDBACK (address it in the revised plan): {feedback}"
         llm_text = director_agent.llm._call_ollama(prompt, format_json=True)
         if not llm_text:
             log.warning("[STORYBOARD] LLM returned empty — skipping storyboard")
@@ -265,7 +257,11 @@ def run_storyboard(
             fallback_layout_file = _pc.get("fallback_layout_file", "config/panel_layouts.json")
         else:
             width, height = 1920, 1080
-            page_aspect = _page_aspect_from_config(sb.get("aspect", "16:9"), width, height)
+            # ponytail: fixed 16:9 fallback sheet (landscape approval sheet).
+            # The old `aspect` config knob was dead while panel_composite is
+            # enabled (geometry mirrors image_gen._panel_sizes), so it was
+            # removed rather than kept as a lie.
+            page_aspect = 16 / 9
             layout_file = fallback_layout_file = None
         try:
             pages = compose_panel_pages(
@@ -308,7 +304,22 @@ def run_storyboard(
         if attempt > retries:
             log.warning("[STORYBOARD] Regenerate limit reached — auto-approving last sheet")
             return _persist(story_store, prompt, panels, sheet_path, pages)
-        log.info("[STORYBOARD] Regenerating with same inputs (user requested)")
+        # Loop back with feedback: ask what should change so the next attempt
+        # is informed, not a blind re-roll. Unattended modes return the default
+        # "Proceed as planned." — filter it out and keep prior feedback.
+        _fb = director_agent.consult_user(
+            "What should change in the storyboard plan?", allow_custom=True
+        )
+        if (
+            isinstance(_fb, str)
+            and _fb.strip()
+            and _fb.strip() not in ("Proceed as planned.", "Proceed with default settings.")
+        ):
+            feedback = _fb.strip()
+        log.info(
+            "[STORYBOARD] Regenerating"
+            + (f" with feedback: {feedback}" if feedback else " with same inputs")
+        )
 
 
 def _primary_sheet_page(
@@ -351,6 +362,26 @@ def attach_shot_metadata(outline: list[dict], panels: list[dict]) -> None:
             parts.append(f"{float(p['duration_sec']):.1f}s")
         if parts:
             seg["shot_metadata"] = ", ".join(parts)
+
+
+def wire_storyboard(config: dict, outline: list[dict], storyboard: dict | None) -> None:
+    """Merge an approved storyboard record into config + outline; no-op on None.
+
+    Idempotent. Sets config.storyboard.approved_sheet/panels, rides the
+    per-panel camera/duration hints onto the outline segments (the per-segment
+    plan dicts), and wires the sheet as the ComfyUI style reference for scene
+    generation — after the first run the stored artifact IS the reference.
+    """
+    if not storyboard:
+        return
+    sb_cfg = config.setdefault("storyboard", {})
+    sb_cfg["approved_sheet"] = storyboard.get("sheet_path")
+    sb_cfg["panels"] = storyboard.get("panels", [])
+    attach_shot_metadata(outline, storyboard.get("panels") or [])
+    if storyboard.get("sheet_path"):
+        config.setdefault("image_gen", {}).setdefault("comfyui", {})[
+            "storyboard_sheet"
+        ] = storyboard.get("sheet_path")
 
 
 def _persist(

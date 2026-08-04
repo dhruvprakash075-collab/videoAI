@@ -456,7 +456,6 @@ class StoryboardConfig(BaseModel):
     model_config = {"extra": "forbid"}
     enabled: bool = True
     panel_count: int = 6
-    aspect: str = "16:9"
     approval_retries: int = 2
     reuse_existing: bool = True
     inject_shot_metadata: bool = True

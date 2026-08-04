@@ -534,34 +534,25 @@ def run_long_pipeline(
         log.info("=" * 60)
 
     # ── Storyboard (pre-generation approval gate) ──
-    try:
-        from core.storyboard import run_storyboard
+    # A dry run must stay dry: the gate does real LLM calls, real image
+    # generation, sheet composition, and persists an approved record that a
+    # later real run would silently reuse.
+    if not (dry_run or fast_dry_run):
+        try:
+            from core.storyboard import run_storyboard, wire_storyboard
 
-        storyboard = run_storyboard(
-            director_agent=director_agent,
-            outline=outline,
-            config=config,
-            topic=topic,
-            project_name=project_name,
-            cli_flags=_cli_flags,
-        )
-        if storyboard:
-            config.setdefault("storyboard", {})["approved_sheet"] = storyboard.get("sheet_path")
-            config.setdefault("storyboard", {})["panels"] = storyboard.get("panels", [])
-            from core.storyboard import attach_shot_metadata
-
-            attach_shot_metadata(outline, storyboard.get("panels") or [])
-            # Style-reference feedback: the approved sheet (fresh or reused
-            # from a previous run) becomes the ComfyUI reference image for
-            # scene generation — after the first run the stored artifact IS
-            # the reference.
-            if storyboard.get("sheet_path"):
-                config.setdefault("image_gen", {}).setdefault("comfyui", {})[
-                    "storyboard_sheet"
-                ] = storyboard.get("sheet_path")
-    except Exception as exc:
-        # Storyboard is an advisory gate — never let it abort the pipeline.
-        log.error(f"[PIPELINE] Storyboard gate NOT applied ({exc}) — pipeline continues")
+            storyboard = run_storyboard(
+                director_agent=director_agent,
+                outline=outline,
+                config=config,
+                topic=topic,
+                project_name=project_name,
+                cli_flags=_cli_flags,
+            )
+            wire_storyboard(config, outline, storyboard)
+        except Exception as exc:
+            # Storyboard is an advisory gate — never let it abort the pipeline.
+            log.error(f"[PIPELINE] Storyboard gate NOT applied ({exc}) — pipeline continues")
 
     # ── Build process_segment closure (once, inside the executor block) ──
     _cfg_workers = config.get("performance", {}).get("max_workers", 1)

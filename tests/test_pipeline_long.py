@@ -192,6 +192,54 @@ def test_fast_dry_run_calls_preflight_in_dry_mode(tmp_path):
     assert mock_preflight.call_args.kwargs["dry_run"] is True
 
 
+def test_storyboard_gate_skipped_on_dry_run(tmp_path, monkeypatch):
+    """Dry runs stay dry: the storyboard gate (real LLM + ComfyUI + persist)
+    must NOT fire on fast_dry_run, or the dry run would generate a real sheet
+    and persist an approved record the real run silently reuses."""
+    from core import storyboard as _sb
+    from core.pipeline_long import run_long_pipeline
+
+    calls = []
+
+    def _fake_run_storyboard(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(_sb, "run_storyboard", _fake_run_storyboard)
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+    }
+    outline = [
+        {
+            "seg": 1, "title": "Intro", "num_images": 2,
+            "target_word_count": 130, "segment_duration": 60.0,
+            "char_presence": [{"protagonist": 1.0}],
+        }
+    ]
+    mocks = [
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.main.create_director"),
+        patch("core.main.create_writer"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("core.pipeline_long.plan_outline", return_value=outline),
+        patch("core.pipeline_long.log_vram_usage"),
+        patch("core.runtime.ollama.start_ollama_server"),
+        patch("core.runtime.ollama.stop_ollama_server"),
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+    ]
+    with contextlib.ExitStack() as stack:
+        for m in mocks:
+            stack.enter_context(m)
+        with patch("utils.load_config", return_value=cfg):
+            run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True)
+
+    assert calls == []
+
+
 # ── run_long_pipeline tests ──────────────────────────────────────────────────
 from unittest.mock import MagicMock
 

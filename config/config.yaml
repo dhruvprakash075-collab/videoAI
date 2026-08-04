@@ -273,7 +273,6 @@ source:
 storyboard:
   enabled: true
   panel_count: 6
-  aspect: "16:9"
   approval_retries: 2
   reuse_existing: true
   inject_shot_metadata: true

@@ -39,12 +39,13 @@ class _FakeLlm:
 
 
 class _FakeDirector:
-    def __init__(self, llm_response: str, consult_choices=None):
+    def __init__(self, llm_response: str, consult_choices=None, feedback_choices=None):
         self.llm = _FakeLlm(llm_response)
         self._prompts = {
             "storyboard_plan": "Produce exactly {panel_count} panels. {outline} {characters} {style}"
         }
         self._consult_choices = list(consult_choices or ["Approve"])
+        self._feedback_choices = list(feedback_choices or [])
         self.consult_calls = 0
 
     def _prompt(self, key, **kwargs):
@@ -57,6 +58,9 @@ class _FakeDirector:
 
     def consult_user(self, question, options=None, allow_custom=True):
         self.consult_calls += 1
+        if options is None:
+            # Feedback question (no options offered) — free-text reply.
+            return self._feedback_choices.pop(0) if self._feedback_choices else ""
         return self._consult_choices.pop(0) if self._consult_choices else "Approve"
 
 
@@ -407,3 +411,58 @@ def test_primary_sheet_is_fullest_page(monkeypatch, tmp_root):
     )
     assert result["sheet_path"].endswith("storyboard_2.png")
     assert len(result["sheet_pages"]) == 2
+
+
+def test_regenerate_uses_feedback(tmp_root, monkeypatch):
+    """User feedback on Regenerate is appended to the next attempt's prompt."""
+    _patch_generation(monkeypatch, tmp_root)
+    director = _FakeDirector(
+        _llm_json(),
+        consult_choices=["Regenerate", "Approve"],
+        feedback_choices=["make panel 3 wider"],
+    )
+    result = sb.run_storyboard(
+        director, _outline(), _config(tmp_root), "topic", cli_flags={}, root=tmp_root
+    )
+    assert result["status"] == "approved"
+    assert director.llm.calls == 2
+    assert "make panel 3 wider" in director.llm.prompts[1]
+
+
+def test_regenerate_unattended_default_feedback_ignored(tmp_root, monkeypatch):
+    """Unattended feedback default ('Proceed as planned.') is not injected."""
+    _patch_generation(monkeypatch, tmp_root)
+    director = _FakeDirector(
+        _llm_json(),
+        consult_choices=["Regenerate", "Approve"],
+        feedback_choices=["Proceed as planned."],
+    )
+    sb.run_storyboard(director, _outline(), _config(tmp_root), "topic", cli_flags={}, root=tmp_root)
+    assert "USER FEEDBACK" not in director.llm.prompts[1]
+
+
+def test_wire_storyboard_merges_config_and_outline():
+    """wire_storyboard wires config (sheet + panels + comfyui reference) and
+    rides shot metadata onto the outline segments."""
+    cfg = _config(Path())
+    outline = _outline()
+    record = {
+        "status": "approved",
+        "sheet_path": "studio_outputs/topic/storyboard/sheet/storyboard_01.png",
+        "panels": [{"camera": "whip pan", "duration_sec": 4.5}],
+    }
+    sb.wire_storyboard(cfg, outline, record)
+    assert cfg["storyboard"]["approved_sheet"] == record["sheet_path"]
+    assert cfg["storyboard"]["panels"] == record["panels"]
+    assert cfg["image_gen"]["comfyui"]["storyboard_sheet"] == record["sheet_path"]
+    assert outline[0]["shot_metadata"] == "whip pan, 4.5s"
+
+
+def test_wire_storyboard_none_noop():
+    """None (gate skipped) leaves config + outline untouched."""
+    cfg = _config(Path())
+    outline = _outline()
+    sb.wire_storyboard(cfg, outline, None)
+    assert "approved_sheet" not in cfg["storyboard"]
+    assert "image_gen" not in cfg
+    assert all("shot_metadata" not in seg for seg in outline)
