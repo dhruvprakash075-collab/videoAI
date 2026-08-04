@@ -106,6 +106,15 @@ def test_stable_character_reference_disabled_for_style_inspiration(tmp_path: Pat
     assert _stable_character_reference(cfg, "hero", "proj") is None
 
 
+def test_stable_character_reference_sheet_beats_reference_usage_gate(tmp_path: Path):
+    """The wired storyboard sheet is the reference regardless of reference_usage."""
+    sheet = tmp_path / "sheet.png"
+    sheet.write_bytes(b"s")
+    cfg = {"storyboard_sheet": str(sheet), "reference_usage": "style_inspiration"}
+
+    assert _stable_character_reference(cfg, "hero", "proj") == sheet
+
+
 def test_face_inspiration_prompt_uses_prompt_bank(tmp_path: Path):
     bank = tmp_path / "bank.json"
     bank.write_text('["big eyes", "clean linework", "cel shading"]', encoding="utf-8")

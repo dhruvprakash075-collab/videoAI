@@ -70,9 +70,9 @@ def _build_llm_prompt(
         + "\n\nCHARACTERS:\n" + ("\n".join(chars_text) or "No characters defined.")
         + f"\n\nVISUAL STYLE:\n{style}\n\n"
         f"Produce exactly {panel_count} panels as a JSON object: "
-        '{{"panels": [{{"beat": "...", "shot_size": "wide|medium|close-up", '
+        '{"panels": [{"beat": "...", "shot_size": "wide|medium|close-up", '
         '"camera": "...", "action": "...", "environment": "...", '
-        '"dialogue": "...", "duration_sec": number}}]}}. '
+        '"dialogue": "...", "duration_sec": number}]}. '
         "Alternate wide, medium, close-up. Output ONLY valid JSON."
     )
 
@@ -259,8 +259,10 @@ def run_storyboard(
             width = int(_pc.get("width", 1920))
             height = int(_pc.get("height", 1080))
             page_aspect = float(_pc.get("page_aspect", 1.414))
-            layout_file = _pc.get("layout_file")
-            fallback_layout_file = _pc.get("fallback_layout_file")
+            # Same defaults as image_gen._panel_sizes — mirror exactly or the
+            # dataset-walk geometry drifts between generation and composition.
+            layout_file = _pc.get("layout_file", "config/panel_layouts.json")
+            fallback_layout_file = _pc.get("fallback_layout_file", "config/panel_layouts.json")
         else:
             width, height = 1920, 1080
             page_aspect = _page_aspect_from_config(sb.get("aspect", "16:9"), width, height)
@@ -283,14 +285,16 @@ def run_storyboard(
         if not pages:
             log.warning("[STORYBOARD] No sheet pages produced — skipping storyboard")
             return None
-        sheet_path = pages[0]
+        sheet_path = _primary_sheet_page(pages, len(panel_paths), layout_file, fallback_layout_file)
         if len(pages) > 1:
-            # ponytail: the primary sheet is page 1; later pages stay on disk
-            # and are listed in the record (never dropped) but not merged —
-            # merging would break the single-sheet contract.
+            # ponytail: the primary sheet is the fullest page (approval target
+            # shows the majority of beats); later pages stay on disk and are
+            # listed in the record (never dropped) but not merged — merging
+            # would break the single-sheet contract.
             log.info(
                 f"[STORYBOARD] Sheet spans {len(pages)} pages — "
-                f"primary {pages[0].name}; extras: {[p.name for p in pages[1:]]}"
+                f"primary {sheet_path.name}; extras: "
+                f"{[p.name for p in pages if p != sheet_path]}"
             )
 
         # Approval gate. Any non-"regenerate" reply (Approve, "Proceed as
@@ -305,6 +309,24 @@ def run_storyboard(
             log.warning("[STORYBOARD] Regenerate limit reached — auto-approving last sheet")
             return _persist(story_store, prompt, panels, sheet_path, pages)
         log.info("[STORYBOARD] Regenerating with same inputs (user requested)")
+
+
+def _primary_sheet_page(
+    pages: list[Path], n_images: int, layout_file, fallback_layout_file
+) -> Path:
+    """Pick the approval sheet: the page carrying the most panels.
+
+    The dataset walk can lead with a 1-panel splash layout (roboflow order);
+    the primary sheet must show the majority of the story's beats.
+    ponytail: falls back to pages[0] if the count plan ever disagrees with the
+    returned pages (should not happen — same plan_page_counts chain).
+    """
+    from video.image_gen.panel_compositor import plan_page_counts
+
+    counts = plan_page_counts(n_images, layout_file, fallback_layout_file)
+    if len(counts) != len(pages) or not counts:
+        return pages[0]
+    return pages[counts.index(max(counts))]
 
 
 def attach_shot_metadata(outline: list[dict], panels: list[dict]) -> None:

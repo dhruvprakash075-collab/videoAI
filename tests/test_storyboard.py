@@ -363,3 +363,47 @@ def test_panel_count_falls_back_to_config(tmp_root, monkeypatch):
     )
     assert "exactly 2 panels" in director.llm.prompts[0]
     assert len(result["panels"]) == 2
+
+
+def test_fallback_prompt_single_braces(tmp_root):
+    """The self-contained fallback prompt shows single-brace JSON, not {{...}}."""
+    class _NoTemplateDirector:
+        llm = _FakeLlm(_llm_json())
+        def _prompt(self, key, **kwargs):
+            return ""
+
+    prompt = sb._build_llm_prompt(_NoTemplateDirector(), _outline(), _config(tmp_root), 2)
+    assert '{"panels": [{"beat"' in prompt
+    assert "{{" not in prompt
+
+
+def test_primary_sheet_is_fullest_page(monkeypatch, tmp_root):
+    """The approval sheet is the page with the most panels, not page 1."""
+    _patch_generation(monkeypatch, tmp_root)
+
+    def _fake_counts(n_images, layout_file=None, fallback_layout_file=None, default_panels=5):
+        return [1, 5]
+
+    monkeypatch.setattr("video.image_gen.panel_compositor.plan_page_counts", _fake_counts)
+
+    def _fake_compose_pages(
+        image_paths, output_dir, *, width=1920, height=1080, margin=48, gutter=24,
+        border=6, prefix="manga_page", layout_file=None, fallback_layout_file=None,
+        page_aspect=1.414, page_blur=True,
+    ):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        p1 = output_dir / f"{prefix}_1.png"
+        p2 = output_dir / f"{prefix}_2.png"
+        p1.write_bytes(b"p1")
+        p2.write_bytes(b"p2")
+        return [p1, p2]
+
+    monkeypatch.setattr("video.image_gen.panel_compositor.compose_panel_pages", _fake_compose_pages)
+
+    director = _FakeDirector(_llm_json())
+    outline = [{"seg": 1, "title": "A", "num_images": 3}, {"seg": 2, "title": "B", "num_images": 3}]
+    result = sb.run_storyboard(
+        director, outline, _config(tmp_root), "topic", cli_flags={}, root=tmp_root
+    )
+    assert result["sheet_path"].endswith("storyboard_2.png")
+    assert len(result["sheet_pages"]) == 2
