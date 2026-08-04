@@ -42,3 +42,17 @@
 | Error | Attempt | Resolution |
 |-------|---------|------------|
 | (none yet) | - | - |
+
+## Session: 2026-08-05 - hardening pass
+
+### What was done (4 fixes, commit 18245df6e)
+- **MAJOR dry-run bug**: storyboard hook now gated `if not (dry_run or fast_dry_run)` - dry runs did real LLM calls + real ComfyUI generations, composed the sheet, PERSISTED an approved record that the real run silently reused (finalize_dry_run exits AFTER the hook). Regression test: `test_storyboard_gate_skipped_on_dry_run`.
+- **Hook wiring extracted + tested**: new `wire_storyboard(config, outline, storyboard)` in storyboard.py (config approved_sheet/panels + storyboard_sheet + outline shot_metadata, idempotent no-op on None); 2 direct unit tests (merge + noop).
+- **Regenerate now uses feedback**: on Regenerate, asks "What should change in the storyboard plan?" (allow_custom=True); non-default replies appended as `USER FEEDBACK (address it in the revised plan): ...` to the next attempt's prompt; unattended defaults ("Proceed as planned."/"Proceed with default settings.") filtered; prior feedback persists across retries.
+- **Dead config removed**: `storyboard.aspect` deleted from StoryboardConfig + config.yaml (was only read when panel_composite disabled - a lie); fallback branch now fixed 16:9 constant, `_page_aspect_from_config` deleted.
+
+### Verification
+- `pytest tests/test_storyboard.py tests/test_pipeline_long.py tests/test_config.py` - 78 passed
+- Full suite - 1937 passed, 5 skipped (excl. node tests) + 71 node tests passed
+- `ruff check .` - clean
+- Committed + pushed to github-origin main (18245df6e)
