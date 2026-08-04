@@ -2,7 +2,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from video.image_gen.panel_compositor import _layout_rects, _valid_rects, compose_panel_pages
+from video.image_gen.panel_compositor import (
+    _layout_rects,
+    _valid_rects,
+    compose_panel_pages,
+    page_canvas_size,
+    plan_page_rects,
+)
 
 
 def test_compose_panel_pages_uses_distinct_images(tmp_path: Path):
@@ -12,7 +18,7 @@ def test_compose_panel_pages_uses_distinct_images(tmp_path: Path):
         Image.new("RGB", (64, 64), color).save(path)
         srcs.append(path)
 
-    pages = compose_panel_pages(srcs, tmp_path, width=400, height=200, margin=20, gutter=20, border=4)
+    pages = compose_panel_pages(srcs, tmp_path, width=400, height=200, margin=20, gutter=20, border=4, page_aspect=0)
 
     assert len(pages) == 1
     out = Image.open(pages[0]).convert("RGB")
@@ -30,7 +36,7 @@ def test_compose_panel_pages_uses_layout_file(tmp_path: Path):
         Image.new("RGB", (64, 64), color).save(path)
         srcs.append(path)
 
-    pages = compose_panel_pages(srcs, tmp_path, width=400, height=200, border=4, layout_file=layout_file)
+    pages = compose_panel_pages(srcs, tmp_path, width=400, height=200, border=4, layout_file=layout_file, page_aspect=0)
 
     out = Image.open(pages[0]).convert("RGB")
     assert out.getpixel((40, 20)) == (0, 0, 0)
@@ -44,7 +50,7 @@ def test_compose_panel_pages_uses_fallback_layout_file(tmp_path: Path):
     src = tmp_path / "src.png"
     Image.new("RGB", (64, 64), "red").save(src)
 
-    pages = compose_panel_pages([src], tmp_path, width=100, height=100, border=2, layout_file=tmp_path / "missing.json", fallback_layout_file=fallback)
+    pages = compose_panel_pages([src], tmp_path, width=100, height=100, border=2, layout_file=tmp_path / "missing.json", fallback_layout_file=fallback, page_aspect=0)
 
     out = Image.open(pages[0]).convert("RGB")
     assert out.getpixel((20, 20)) == (0, 0, 0)
@@ -65,42 +71,118 @@ def test_compose_panel_pages_skips_overlapping_dataset_layout(tmp_path: Path):
         Image.new("RGB", (64, 64), color).save(path)
         srcs.append(path)
 
-    pages = compose_panel_pages(srcs, tmp_path, width=100, height=100, border=2, layout_file=layout_file)
+    pages = compose_panel_pages(srcs, tmp_path, width=100, height=100, border=2, layout_file=layout_file, page_aspect=0)
 
     out = Image.open(pages[0]).convert("RGB")
     assert out.getpixel((20, 50)) == (255, 0, 0)
     assert out.getpixel((70, 50)) == (0, 0, 255)
 
 
-def test_compose_panel_pages_preserves_full_shot_in_wide_panel(tmp_path: Path):
+def test_compose_panel_pages_fills_wide_panel_with_center_crop(tmp_path: Path):
+    """A portrait source in a wide panel is center-cropped to fill — no
+    letterbox, no blurred fill bars (the old contain+blur behavior)."""
     src = tmp_path / "portrait.png"
     img = Image.new("RGB", (100, 200), "green")
-    for y in range(20):
-        for x in range(40, 60):
+    for y in range(200):
+        for x in range(45, 55):
             img.putpixel((x, y), (255, 0, 0))
-    for y in range(180, 200):
-        for x in range(40, 60):
-            img.putpixel((x, y), (0, 0, 255))
     img.save(src)
 
-    pages = compose_panel_pages([src], tmp_path, width=400, height=120, margin=10, border=2)
+    pages = compose_panel_pages([src], tmp_path, width=400, height=120, margin=10, border=2, page_aspect=0)
 
     out = Image.open(pages[0]).convert("RGB")
-    assert out.getpixel((200, 10)) == (0, 0, 0)
-    assert out.getpixel((200, 18))[0] > 200
-    assert out.getpixel((200, 102))[2] > 200
+    assert out.getpixel((10, 10)) == (0, 0, 0)
+    # fit scale = 380/100 = 3.8 -> stripe (src x 45-55) lands at target x 171-209
+    assert out.getpixel((190, 60)) == (255, 0, 0)
+    # PIL named color 'green' is #008000
+    assert out.getpixel((50, 60)) == (0, 128, 0)
 
 
-def test_layout_selection_prefers_panels_that_fit_landscape_shots(tmp_path: Path):
+def test_compose_panel_pages_a4_centered_on_blurred_bg(tmp_path: Path):
+    """A4 page centered on the frame; leftover screen is a blurred, darkened
+    copy of the page — not white, not black."""
+    srcs = []
+    for i, color in enumerate(["red", "blue"], start=1):
+        path = tmp_path / f"src_{i}.png"
+        Image.new("RGB", (64, 64), color).save(path)
+        srcs.append(path)
+
+    pages = compose_panel_pages(srcs, tmp_path, width=400, height=200, margin=20, gutter=20, border=4)
+
+    out = Image.open(pages[0]).convert("RGB")
+    page_w, page_h = page_canvas_size(400, 200, 20, 1.414)
+    assert (page_w, page_h) == (113, 160)
+    left, top = (400 - page_w) // 2, (200 - page_h) // 2
+    # panel 1 (fixed 2-panel grid) is red, panel 2 blue
+    assert out.getpixel((left + 30, top + 80)) == (255, 0, 0)
+    assert out.getpixel((left + 80, top + 80)) == (0, 0, 255)
+    # page margin is white
+    assert out.getpixel((left + 8, top + page_h - 8)) == (255, 255, 255)
+    # leftover screen left of the page: blurred dark copy, not white/black
+    bg = out.getpixel((left - 10, top + 80))
+    assert bg not in ((255, 255, 255), (0, 0, 0))
+
+
+def test_page_canvas_size_full_bleed_when_aspect_zero():
+    assert page_canvas_size(1920, 1080, 48, 0) == (1920, 1080)
+    assert page_canvas_size(1920, 1080, 48, 1.414) == (696, 984)
+
+
+def test_layout_selection_rotates_through_valid_layouts(tmp_path: Path):
+    """Page index must rotate through the dataset — not always pick the same layout."""
     layout_file = tmp_path / "layouts.json"
     layout_file.write_text(
-        '[{"name":"wide_strips","panels":[[0,0,1,0.1],[0,0.2,1,0.3],[0,0.4,1,0.5],[0,0.6,1,0.7]]},'
-        '{"name":"landscape","panels":[[0,0,0.5,0.333],[0.5,0,1,0.333],[0,0.333,0.5,0.666],[0.5,0.333,1,0.666]]}]'
+        '[{"name":"grid2x2","panels":[[0,0,0.5,0.5],[0.5,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]},'
+        '{"name":"four_rows","panels":[[0,0,1,0.25],[0,0.25,1,0.5],[0,0.5,1,0.75],[0,0.75,1,1]]}]'
     )
 
-    rects = _layout_rects(layout_file, 4, 400, 400, 0)
+    first = _layout_rects(layout_file, 4, 400, 400, 0)
+    second = _layout_rects(layout_file, 4, 400, 400, 1)
 
-    assert rects[0] == (0, 0, 200, 133)
+    assert first[0] == (0, 0, 200, 200)
+    assert second[0] == (0, 0, 400, 100)
+    assert first != second
+
+
+def test_layout_selection_wraps_rotation_and_skips_invalid(tmp_path: Path):
+    """Rotation wraps modulo; layouts failing validity are skipped, not preferred."""
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text(
+        '[{"name":"bad","panels":[[0,0,0.8,0.8],[0.2,0.2,0.9,0.9]]},'
+        '{"name":"good","panels":[[0,0,0.5,0.5],[0.5,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]}]'
+    )
+
+    page0 = _layout_rects(layout_file, 4, 100, 100, 0)
+    page2 = _layout_rects(layout_file, 4, 100, 100, 2)
+
+    assert page0 == page2  # 2 valid layouts → rotation wraps with period 2
+    assert page0[0] == (0, 0, 50, 50)
+
+
+def test_plan_page_rects_chains_layout_then_fallback_then_fixed(tmp_path: Path):
+    """plan_page_rects resolves the same chain compose_panel_pages used to inline."""
+    fallback = tmp_path / "fallback.json"
+    fallback.write_text('[{"name":"one","panels":[[0.2,0.2,0.8,0.8]]}]')
+
+    from_layout = plan_page_rects(
+        1, 100, 100, 0, layout_file=fallback, fallback_layout_file=tmp_path / "nope.json"
+    )
+    assert from_layout == [(20, 20, 80, 80)]
+
+    from_fixed = plan_page_rects(2, 400, 200, 0, margin=20, gutter=20)
+    assert from_fixed == [(20, 20, 190, 180), (210, 20, 380, 180)]
+
+
+def test_plan_page_rects_matches_compose_geometry(tmp_path: Path):
+    """The rects plan_page_rects returns must equal what compose_panel_pages uses."""
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text(
+        '[{"name":"two_rows","panels":[[0.1,0.1,0.9,0.45],[0.1,0.55,0.9,0.9]]}]'
+    )
+
+    planned = plan_page_rects(2, 400, 200, 0, layout_file=layout_file)
+
+    assert planned == [(40, 20, 360, 90), (40, 110, 360, 180)]
 
 
 def test_valid_rects_accepts_small_panel_between_1_5_and_3_percent():

@@ -57,6 +57,14 @@ def test_build_segment_prompt_basic():
     assert "EXACTLY 200 words" in out
 
 
+def test_build_segment_prompt_includes_simple_language_rule():
+    """Writer must use simple everyday English — the translator mirrors its register."""
+    plan = {"seg": 1, "title": "T", "summary": "S", "key_event": "K", "mood": "epic"}
+    out = build_segment_prompt(plan, "ctx", 10, 200)
+    assert "simple everyday words" in out
+    assert "short sentences" in out
+
+
 def test_build_segment_prompt_includes_world_state():
     plan = {"seg": 1, "title": "T", "summary": "S"}
     out = build_segment_prompt(plan, "ctx", 10, 200, world_state_block="WS_BLOCK")

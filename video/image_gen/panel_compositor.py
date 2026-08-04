@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -50,7 +49,6 @@ def _layout_rects(layout_file: Path | None, count: int, width: int, height: int,
     matches = [item for item in layouts if len(item.get("panels", [])) == count]
     if not matches:
         return []
-    candidates = []
     for offset in range(len(matches)):
         panels = matches[(page_index + offset) % len(matches)]["panels"]
         rects = [
@@ -63,15 +61,8 @@ def _layout_rects(layout_file: Path | None, count: int, width: int, height: int,
             for x1, y1, x2, y2 in panels
         ]
         if _valid_rects(rects, width, height):
-            candidates.append(rects)
-    if not candidates:
-        return []
-    return min(candidates, key=_layout_aspect_score)
-
-
-def _layout_aspect_score(rects: list[tuple[int, int, int, int]]) -> float:
-    # ComfyUI's manga workflow creates 768x512 landscape shots (3:2).
-    return sum(abs(math.log(((x2 - x1) / (y2 - y1)) / 1.5)) for x1, y1, x2, y2 in rects)
+            return rects
+    return []
 
 
 def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int) -> bool:
@@ -100,17 +91,51 @@ def _valid_rects(rects: list[tuple[int, int, int, int]], width: int, height: int
 
 
 def _panel_image(img: Image.Image, size: tuple[int, int]) -> Image.Image:
-    source = img.convert("RGB")
-    background = ImageOps.fit(
-        source,
+    """Crop-fill the image into the panel rect — no letterbox, no blurred fill.
+
+    Panel rect aspects (0.5-7.6 in the roboflow dataset) can't be matched by a
+    small bucket set, so contain+blur-fill showed bars everywhere. Center-crop
+    always covers the rect exactly; extreme panels just show a tighter crop.
+    """
+    return ImageOps.fit(
+        img.convert("RGB"),
         size,
         method=Image.Resampling.LANCZOS,
         centering=(0.5, 0.5),
     )
-    background = ImageEnhance.Brightness(background.filter(ImageFilter.GaussianBlur(12))).enhance(0.82)
-    foreground = ImageOps.contain(source, size, method=Image.Resampling.LANCZOS)
-    background.paste(foreground, ((size[0] - foreground.width) // 2, (size[1] - foreground.height) // 2))
-    return background
+
+
+def page_canvas_size(width: int, height: int, margin: int, page_aspect: float) -> tuple[int, int]:
+    """Frame-relative manga page size; ``page_aspect <= 0`` = full-bleed frame."""
+    if page_aspect <= 0:
+        return width, height
+    page_h = max(1, height - 2 * margin)
+    page_w = max(1, round(page_h / page_aspect))
+    return page_w, page_h
+
+
+def plan_page_rects(
+    count: int,
+    width: int,
+    height: int,
+    page_index: int,
+    *,
+    layout_file: Path | None = None,
+    fallback_layout_file: Path | None = None,
+    margin: int = 48,
+    gutter: int = 24,
+) -> list[tuple[int, int, int, int]]:
+    """Resolve one page's panel rects: dataset layout → fallback → fixed grid.
+
+    Shared by compose_panel_pages (drawing) and image_gen (per-panel
+    generation sizes) so both always agree on the geometry.
+    """
+    rects = _layout_rects(layout_file, count, width, height, page_index)
+    if not rects:
+        rects = _layout_rects(fallback_layout_file, count, width, height, page_index)
+    if not rects:
+        rects = _fixed_rects(count, width, height, margin, gutter)
+    return rects
 
 
 def compose_panel_pages(
@@ -125,30 +150,55 @@ def compose_panel_pages(
     prefix: str = "manga_page",
     layout_file: Path | None = None,
     fallback_layout_file: Path | None = None,
+    page_aspect: float = 1.414,
+    page_blur: bool = True,
 ) -> list[Path]:
-    """Paste distinct images into fixed manga panels and draw borders on top."""
+    """Paste distinct images into fixed manga panels and draw borders on top.
+
+    The page is composed at ``page_aspect`` (A4 portrait by default) and
+    centered on the full-frame canvas; the leftover screen is filled with a
+    blurred zoomed copy of the page. ``page_aspect <= 0`` restores the legacy
+    full-bleed frame.
+    """
     paths = [Path(p) for p in image_paths]
     if not paths:
         return []
 
     output_dir.mkdir(parents=True, exist_ok=True)
     pages: list[Path] = []
+    page_w, page_h = page_canvas_size(width, height, margin, page_aspect)
+    full_bleed = (page_w, page_h) == (width, height)
     for page_i in range(0, len(paths), 5):
         chunk = paths[page_i : page_i + 5]
-        canvas = Image.new("RGB", (width, height), "white")
-        draw = ImageDraw.Draw(canvas)
-        rects = _layout_rects(layout_file, len(chunk), width, height, len(pages))
-        if not rects:
-            rects = _layout_rects(fallback_layout_file, len(chunk), width, height, len(pages))
-        if not rects:
-            rects = _fixed_rects(len(chunk), width, height, margin, gutter)
+        page = Image.new("RGB", (page_w, page_h), "white")
+        draw = ImageDraw.Draw(page)
+        rects = plan_page_rects(
+            len(chunk),
+            page_w,
+            page_h,
+            len(pages),
+            layout_file=layout_file,
+            fallback_layout_file=fallback_layout_file,
+            margin=margin,
+            gutter=gutter,
+        )
         for path, rect in zip(chunk, rects, strict=True):
             x1, y1, x2, y2 = rect
             with Image.open(path) as img:
                 fitted = _panel_image(img, (x2 - x1, y2 - y1))
-            canvas.paste(fitted, (x1, y1))
+            page.paste(fitted, (x1, y1))
         for rect in rects:
             draw.rectangle(rect, outline="black", width=border)
+        if full_bleed:
+            page.save(output_dir / f"{prefix}_{len(pages) + 1:02d}.png")
+            pages.append(output_dir / f"{prefix}_{len(pages) + 1:02d}.png")
+            continue
+        canvas = Image.new("RGB", (width, height), "black")
+        if page_blur:
+            bg = ImageOps.fit(page, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+            bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(30))).enhance(0.6)
+            canvas.paste(bg, (0, 0))
+        canvas.paste(page, ((width - page_w) // 2, (height - page_h) // 2))
         out = output_dir / f"{prefix}_{len(pages) + 1:02d}.png"
         canvas.save(out)
         pages.append(out)

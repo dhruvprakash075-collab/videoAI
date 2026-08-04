@@ -10,6 +10,7 @@ Public surface:
 import hashlib
 import json
 import logging
+import math
 import threading
 from pathlib import Path
 from typing import cast
@@ -192,6 +193,62 @@ def _resolve_dominant_char_at_threshold(
 
 # ── COMFYUI ───────────────────────────
 
+# SD1.5-safe latent sizes at ~393k px budget, one per panel aspect family.
+# ponytail: fixed bucket set — extreme panel aspects (>2:1 or <1:2) snap to the
+# nearest bucket; the compositor's blur fill still covers the residual gap.
+_PANEL_SIZE_BUCKETS: tuple[tuple[float, int, int], ...] = (
+    (1.5, 768, 512),
+    (1.857, 832, 448),
+    (1.0, 640, 640),
+    (0.667, 512, 768),
+    (0.538, 448, 832),
+)
+
+
+def _snap_to_bucket(aspect: float) -> tuple[int, int]:
+    """Snap a panel aspect ratio to the nearest generation size bucket."""
+    return min(_PANEL_SIZE_BUCKETS, key=lambda b: abs(math.log(aspect / b[0])))[1:]
+
+
+def _panel_sizes(count: int, cfg: dict) -> list[tuple[int, int]] | None:
+    """Per-prompt generation sizes matching the panel-page layout plan.
+
+    Returns None when panel compositing is disabled (fixed-size legacy path).
+    ponytail: assumes one output image per prompt — if a workflow ever emits
+    multiple images per prompt, page/slot mapping drifts and sizes misalign.
+    """
+    panel_cfg = cfg.get("panel_composite", {}) or {}
+    if not panel_cfg.get("enabled"):
+        return None
+    width = int(panel_cfg.get("width", 1920))
+    height = int(panel_cfg.get("height", 1080))
+    layout_file = Path(panel_cfg.get("layout_file", "config/panel_layouts.json"))
+    fallback_file = Path(panel_cfg.get("fallback_layout_file", "config/panel_layouts.json"))
+
+    from video.image_gen.panel_compositor import page_canvas_size, plan_page_rects
+
+    page_w, page_h = page_canvas_size(
+        width, height, int(panel_cfg.get("margin", 48)), float(panel_cfg.get("page_aspect", 1.414))
+    )
+    sizes: list[tuple[int, int]] = []
+    for i in range(count):
+        page_i, slot = divmod(i, 5)
+        page_count = min(5, count - page_i * 5)
+        rects = plan_page_rects(
+            page_count,
+            page_w,
+            page_h,
+            page_i,
+            layout_file=layout_file,
+            fallback_layout_file=fallback_file,
+        )
+        if slot < len(rects):
+            x1, y1, x2, y2 = rects[slot]
+            sizes.append(_snap_to_bucket((x2 - x1) / max(1, y2 - y1)))
+        else:
+            sizes.append((768, 512))
+    return sizes
+
 
 def _comfyui_seed(cfg: dict, prompt: str, frame_index: int) -> int | None:
     """Resolve a deterministic ComfyUI seed for one frame.
@@ -255,6 +312,7 @@ def _comfyui(
     scheduler = comfy_cfg.get("scheduler", "normal")
     checkpoint = comfy_cfg.get("checkpoint", "")
     neg_prompt = comfy_cfg.get("negative_prompt", "")
+    panel_sizes = _panel_sizes(len(prompts), cfg)
 
     images: list[Path] = []
 
@@ -265,13 +323,17 @@ def _comfyui(
             if inspiration:
                 prompt = f"{prompt}, {inspiration}"
             seed = _comfyui_seed(cfg, prompt, i)
+            if panel_sizes:
+                width_i, height_i = panel_sizes[i]
+            else:
+                width_i, height_i = width, height
             if patcher:
                 patcher.patch_all(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
                     seed=seed,
-                    width=width,
-                    height=height,
+                    width=width_i,
+                    height=height_i,
                     steps=steps,
                     cfg=cfg_scale,
                     sampler_name=sampler,
@@ -298,8 +360,8 @@ def _comfyui(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
                     seed=seed,
-                    width=width,
-                    height=height,
+                    width=width_i,
+                    height=height_i,
                     steps=steps,
                     cfg=cfg_scale,
                     sampler_name=sampler,
@@ -335,6 +397,8 @@ def _comfyui(
             border=int(panel_cfg.get("border", 6)),
             layout_file=Path(panel_cfg.get("layout_file", "config/panel_layouts.json")),
             fallback_layout_file=Path(panel_cfg.get("fallback_layout_file", "config/panel_layouts.json")),
+            page_aspect=float(panel_cfg.get("page_aspect", 1.414)),
+            page_blur=bool(panel_cfg.get("page_blur", True)),
         )
 
     if comfy_cfg.get("unload_after_batch", False):

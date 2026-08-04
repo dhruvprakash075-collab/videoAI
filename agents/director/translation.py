@@ -39,8 +39,11 @@ class TranslationMixin:
         """
 
         instruction = (
-            "Translate to natural spoken Hindi in Devanagari only. "
-            "Output only the translation:"
+            "Translate to simple, everyday spoken Hindi in Devanagari script, the way "
+            "people actually talk. Avoid literary, bookish, or heavy Sanskrit/Urdu words: "
+            "say लेकिन not परन्तु, इसलिए not अतः, कोशिश not प्रयास. Common English words "
+            "stay as natural Devanagari phonetics (फोन, कार, टाइम, गेम). "
+            "Keep names and dramatic punctuation as-is. Output only the translation:"
         )
 
         def _looks_like_english_echo(text: str) -> bool:

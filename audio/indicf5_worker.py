@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import shutil
 import subprocess
 import sys
-import uuid
+import tempfile
 from pathlib import Path
 
 
@@ -34,10 +33,15 @@ def generate(
         raise ValueError("IndicF5 reference text is empty")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    batch = output.parent / f"indicf5_batch_{uuid.uuid4().hex}.txt"
-    try:
-        # ponytail: use IndicF5 batch mode for Unicode/long text; one job keeps the wrapper tiny.
-        batch.write_text(f"{text.replace('|', ' ')}|{output}\n", encoding="utf-8")
+    # ponytail: run the batch from an isolated temp dir so a build that emits a
+    # WAV beside the batch can only ever be rescued from this call's own dir —
+    # globbing the shared output dir silently served stale WAVs from sibling
+    # calls. Upgrade path: patch the runner to honor absolute batch targets.
+    with tempfile.TemporaryDirectory(prefix="indicf5_work_") as work_dir:
+        batch = Path(work_dir) / "batch.txt"
+        # strip() — a trailing newline in the text would split the batch line and
+        # make the runner's rsplit('|', 1) fail ('bad batch line' + empty text).
+        batch.write_text(f"{text.strip().replace('|', ' ')}|{output}\n", encoding="utf-8")
         env = dict(os.environ)
         env.setdefault("PYTHONIOENCODING", "utf-8")
         result = subprocess.run(
@@ -55,19 +59,16 @@ def generate(
             timeout=timeout,
             env=env,
         )
-    finally:
-        with contextlib.suppress(OSError):
-            batch.unlink()
 
-    if result.returncode != 0:
-        msg = (result.stderr or result.stdout or "IndicF5 failed").strip()[:500]
-        return {"status": "error", "message": msg}
-    if not output.exists():
-        # ponytail: some IndicF5 builds ignore absolute batch targets and emit a
-        # WAV beside the batch; take the newest one rather than degrading TTS.
-        newest = max(output.parent.glob("*.wav"), key=lambda p: p.stat().st_mtime, default=None)
-        if newest is not None:
-            shutil.move(str(newest), str(output))
+        if result.returncode != 0:
+            msg = (result.stderr or result.stdout or "IndicF5 failed").strip()[:500]
+            return {"status": "error", "message": msg}
+        if not output.exists():
+            # some IndicF5 builds ignore absolute batch targets and emit a WAV
+            # beside the batch; take the newest one rather than degrading TTS.
+            newest = max(Path(work_dir).glob("*.wav"), key=lambda p: p.stat().st_mtime, default=None)
+            if newest is not None:
+                shutil.move(str(newest), str(output))
     if not output.exists():
         return {"status": "error", "message": "IndicF5 completed but did not create output WAV"}
     return {"status": "success", "wav_path": str(output)}

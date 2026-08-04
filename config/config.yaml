@@ -26,7 +26,7 @@ tts:
     ref_text: >-
       एक रात सोते समय बादशाह अकबर ने यह अजीब सपना देखा कि केवल एक छोड़कर उनके बाकी सभी दांत गिर गए।
     use_pipeline_voice_sample: false
-    speed: 0.85
+    speed: 0.9
     nfe_step: 40
     cfg_strength: 3.5
     timeout_seconds: 900
@@ -47,7 +47,6 @@ tts:
   voice_profile:
     sentence_gap_ms: 200
   devanagari:
-    hinglish_ratio: 0.4
     max_latin_ratio: 0.1
     max_retranslate_retries: 2
 checkpoint:
@@ -64,9 +63,9 @@ video:
   resolution: 1920x1080
   output_path: studio_outputs/final_video.mp4
   encoder: h264_nvenc
-  encoder_preset: p5
-  video_bitrate: 8M
-  encoder_extra: -spatial-aq 1 -temporal-aq 1 -b_ref_mode 1 -bf 3
+  encoder_preset: p4
+  video_bitrate: 16M
+  encoder_extra: -spatial-aq 1 -temporal-aq 1 -b_ref_mode 1 -bf 3 -cq 17
   crossfade_duration: 0.3
   ken_burns: light
   audio_crossfade_ms: 200
@@ -146,6 +145,8 @@ image_gen:
     margin: 48
     gutter: 24
     border: 6
+    page_aspect: 1.414
+    page_blur: true
   face_inspiration:
     enabled: true
     prompt_bank: config/anime_face_inspiration.json
@@ -186,7 +187,7 @@ image_gen:
     # it entirely for fast one-shot runs.
     refine_upscale: false
     face_detail: true
-    upscale: true
+    upscale: false
     refine_workflow_path: config/comfyui/workflows/manga_refine_upscale_api.json
     timeout_seconds: 300
     poll_seconds: 1.0

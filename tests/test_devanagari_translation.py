@@ -131,6 +131,25 @@ def test_no_retranslate_when_clean():
     assert mock_llm.call_count == 1
 
 
+def test_translation_instruction_steers_simple_hinglish():
+    """The live translation prompt must steer simple everyday Hindi
+    (Hinglish-lean: easy words + common English loanwords in Devanagari)."""
+    agent = _make_director()
+    plan = {"mood": "calm", "title": "T", "key_event": "E"}
+    captured = {}
+
+    def fake_call(prompt, **kwargs):
+        captured["prompt"] = prompt
+        return _CLEAN_DEVA
+
+    with patch.object(agent, "_call_ollama_chat", side_effect=fake_call):
+        agent.translate_to_devanagari("Hello world.", plan)
+
+    prompt = captured["prompt"]
+    assert "everyday" in prompt.lower()
+    assert "लेकिन" in prompt  # anti-literary example must be present
+
+
 def test_retranslate_triggers_on_latin_heavy():
     """Latin-heavy first result is repaired locally instead of falling back."""
     agent = _make_director()

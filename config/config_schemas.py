@@ -155,7 +155,6 @@ class OmniVoiceSubConfig(BaseModel):
 
 class DevanagariConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    hinglish_ratio: float = 0.4
     max_latin_ratio: float = 0.1
     max_retranslate_retries: int = 2
 
@@ -376,6 +375,8 @@ class PanelCompositeConfig(BaseModel):
     margin: int = 48
     gutter: int = 24
     border: int = 6
+    page_aspect: float = 1.414
+    page_blur: bool = True
 
 
 class FaceInspirationConfig(BaseModel):

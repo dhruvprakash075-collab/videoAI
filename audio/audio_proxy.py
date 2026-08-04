@@ -155,7 +155,7 @@ def _call_indicf5_worker(
             "उनके बाकी सभी दाँत गिर गए हैं।"
         )
     timeout = int(indic_cfg.get("timeout_seconds", 900))
-    speed = float(indic_cfg.get("speed", 0.85))
+    speed = float(speed_override) if speed_override is not None else float(indic_cfg.get("speed", 0.85))
     nfe_step = int(indic_cfg.get("nfe_step", 40))
     cfg_strength = float(indic_cfg.get("cfg_strength", 3.5))
     out_wav = (output_dir / f"indicf5_{uuid.uuid4().hex[:8]}.wav").resolve()

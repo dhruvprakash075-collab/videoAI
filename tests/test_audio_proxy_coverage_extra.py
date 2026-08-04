@@ -65,6 +65,30 @@ def test_call_indicf5_worker_success_error_exception_and_defaults(tmp_path, monk
     assert "boom" in out["message"]
 
 
+def test_call_indicf5_worker_honors_speed_override(tmp_path, monkeypatch):
+    """speed_override must reach the worker CLI, not be silently dropped."""
+    monkeypatch.chdir(tmp_path)
+    audio_proxy._config_cache.clear()
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        res = MagicMock()
+        res.stdout = '{"status": "success", "wav_path": "x.wav"}\n'
+        res.stderr = ""
+        return res
+
+    with (
+        patch("audio.audio_proxy.load_config", return_value={}),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        out = audio_proxy._call_indicf5_worker(
+            "hello", output_dir=tmp_path / "out", speed_override=1.2
+        )
+    assert out["status"] == "success"
+    assert "--speed=1.2" in captured["cmd"]
+
+
 def test_enqueue_stdout_puts_lines_and_sentinel():
     proc = MagicMock()
     proc.stdout.readline.side_effect = ["a\n", "b\n", ""]

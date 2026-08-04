@@ -13,9 +13,11 @@ from video.image_gen.image_gen import (
     _comfyui,
     _comfyui_seed,
     _face_inspiration_prompt,
+    _panel_sizes,
     _record_oom_event,
     _refine_passes,
     _resolve_dominant_char_at_threshold,
+    _snap_to_bucket,
     _stable_character_reference,
     clear_oom_events,
     generate_images,
@@ -207,8 +209,110 @@ def test_comfyui_passes_locked_seed_into_workflow_patcher(tmp_path: Path):
     assert seen_seeds[0] == seen_seeds[1]
 
 
-# ── _resolve_dominant_char ──────────────────────────────────
+# ── _snap_to_bucket / _panel_sizes ─────────────────────────
 
+
+def test_snap_to_bucket_keeps_landscape_and_portrait():
+    assert _snap_to_bucket(1.5) == (768, 512)
+    assert _snap_to_bucket(1.4) == (768, 512)
+    assert _snap_to_bucket(0.667) == (512, 768)
+    assert _snap_to_bucket(1.0) == (640, 640)
+    assert _snap_to_bucket(3.0) == (832, 448)
+
+
+def test_panel_sizes_disabled_returns_none():
+    assert _panel_sizes(2, {"comfyui": {}}) is None
+    assert _panel_sizes(2, {"panel_composite": {"enabled": False}, "comfyui": {}}) is None
+
+
+def test_panel_sizes_follow_layout_aspects(tmp_path: Path):
+    """Per-panel generation sizes must follow the page layout plan per slot.
+
+    Sizes are planned against the A4 portrait page (page_aspect 1.414), not
+    the 16:9 frame, so generation matches the rects the compositor will use.
+    """
+    layout = tmp_path / "layouts.json"
+    layout.write_text('[{"name":"mixed","panels":[[0,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]}]')
+    cfg = {
+        "panel_composite": {
+            "enabled": True,
+            "width": 400,
+            "height": 400,
+            "layout_file": str(layout),
+        },
+        "comfyui": {},
+    }
+
+    sizes = _panel_sizes(3, cfg)
+
+    # A4 page dims: h=400-96=304, w=304/1.414=215.
+    # rects: (0,0,215,152) aspect 1.414 -> 768x512; two 0.704 panels -> 512x768
+    assert sizes == [(768, 512), (512, 768), (512, 768)]
+
+
+def test_panel_sizes_handles_partial_last_page(tmp_path: Path):
+    """A 6-prompt batch splits into a full 5-panel page + a 1-panel page."""
+    layout = tmp_path / "layouts.json"
+    layout.write_text(
+        '[{"name":"five","panels":[[0,0,1,0.2],[0,0.2,0.5,0.4],[0.5,0.2,1,0.4],[0,0.4,1,0.6],[0,0.6,1,1]]},'
+        '{"name":"one","panels":[[0,0,1,1]]}]'
+    )
+    cfg = {
+        "panel_composite": {
+            "enabled": True,
+            "width": 400,
+            "height": 400,
+            "layout_file": str(layout),
+        },
+        "comfyui": {},
+    }
+
+    sizes = _panel_sizes(6, cfg)
+
+    assert len(sizes) == 6
+    # single full-page panel on the A4 canvas: aspect 215/304 = 0.707 -> 512x768
+    assert sizes[5] == (512, 768)
+
+
+def test_comfyui_passes_panel_sizes_per_prompt(tmp_path: Path):
+    """With panel compositing on, each prompt gets its panel's bucket size."""
+    layout = tmp_path / "layouts.json"
+    layout.write_text('[{"name":"mixed","panels":[[0,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]}]')
+    client = MagicMock()
+    client.generate_image.return_value = [tmp_path / "scene_01.png"]
+    runtime = MagicMock(base_url="http://127.0.0.1:8188")
+    runtime.ensure_running.return_value = True
+    cfg = {
+        "comfyui": {"workflow_path": "workflow.json"},
+        "panel_composite": {
+            "enabled": True,
+            "width": 400,
+            "height": 400,
+            "layout_file": str(layout),
+        },
+    }
+
+    seen = []
+
+    def _capture(**kwargs):
+        seen.append((kwargs.get("width"), kwargs.get("height")))
+        return {}
+
+    fake_patcher = MagicMock()
+    fake_patcher.patch_all.side_effect = _capture
+
+    with (
+        patch("video.image_gen.comfyui_runtime.get_comfyui_runtime", return_value=runtime),
+        patch("video.image_gen.comfyui_client.ComfyUIClient", return_value=client),
+        patch("video.image_gen.comfyui_workflow.WorkflowPatcher", return_value=fake_patcher),
+        patch("video.image_gen.panel_compositor.compose_panel_pages", return_value=[]),
+    ):
+        _comfyui(["p1", "p2", "p3"], tmp_path, cfg)
+
+    assert seen == [(768, 512), (512, 768), (512, 768)]
+
+
+# ── _resolve_dominant_char ──────────────────────────────────
 
 def test_resolve_dominant_char_above_threshold():
     cp = {"marcus": 0.6, "elena": 0.2}

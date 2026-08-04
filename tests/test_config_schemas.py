@@ -103,9 +103,10 @@ def test_tts_schema_rejects_removed_engines_and_subconfigs():
             validate_config({"tts": {"engine": "supertonic", removed_key: {}}})
 
 
-def test_tts_schema_accepts_hinglish_ratio():
-    valid = validate_config({"tts": {"devanagari": {"hinglish_ratio": 0.4}}})
-    assert valid["tts"]["devanagari"]["hinglish_ratio"] == 0.4
+def test_tts_schema_rejects_removed_hinglish_ratio():
+    """hinglish_ratio knob was deleted (dead since protect_hinglish removal)."""
+    with pytest.raises(FatalError, match="Config section 'tts' validation failed"):
+        validate_config({"tts": {"devanagari": {"hinglish_ratio": 0.4}}})
 
 
 def test_visual_schema_accepts_negative_prompt():
