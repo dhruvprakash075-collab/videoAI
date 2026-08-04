@@ -244,5 +244,35 @@ story_compaction: |
   FULL STORY ({word_count} words):
   {content}
   
-  Output the compacted story as plain text. Target approximately {target_words} words.
-  Do NOT include commentary -- output the story text directly.
+   Output the compacted story as plain text. Target approximately {target_words} words.
+   Do NOT include commentary -- output the story text directly.
+
+# Phase 6: Storyboard plan (pre-production approval sheet)
+storyboard_plan: |
+  You are a storyboard artist for a cinematic video. Given the story outline,
+  characters, and visual style, produce a storyboard plan as JSON.
+
+  STORY OUTLINE:
+  {outline}
+
+  CHARACTERS:
+  {characters}
+
+  VISUAL STYLE:
+  {style}
+
+  Produce exactly {panel_count} panels as a JSON object:
+  {{"panels": [
+    {{"beat": "narrative beat", "shot_size": "wide|medium|close-up",
+      "camera": "camera move", "action": "what happens", "environment": "setting",
+      "dialogue": "spoken line or empty string", "duration_sec": number}}
+  ]}}
+
+  Rules:
+  - Alternate shot sizes: wide, medium, close-up, wide, medium, close-up.
+  - Each panel MUST use the character visual descriptions above verbatim
+    enough for image generation (hair, eyes, clothing, build).
+  - camera: choose from "slow dolly-in", "whip pan", "dutch angle", "hero shot",
+    "tracking shot", "wide crane", "shallow focus close-up".
+  - Keep the visual style consistent across all panels.
+  Output ONLY valid JSON. No commentary.

@@ -287,6 +287,16 @@ def _build_parser():
         help="A6: auto-accept all Director consultations without prompting (for unattended runs)",
     )
     parser.add_argument(
+        "--no-storyboard",
+        action="store_true",
+        help="Skip the pre-production storyboard sheet generation + approval gate",
+    )
+    parser.add_argument(
+        "--force-storyboard",
+        action="store_true",
+        help="Regenerate the storyboard even if an approved one exists in memory",
+    )
+    parser.add_argument(
         "--topics-file",
         dest="topics_file",
         default=None,
@@ -427,6 +437,8 @@ def _run_batch(args, run_long_pipeline, topics, source_chunks):
                 images_per_segment=args.images_per_segment,
                 segment_count=args.segment_count,
                 source_chunks=source_chunks,
+                no_storyboard=getattr(args, "no_storyboard", False),
+                force_storyboard=getattr(args, "force_storyboard", False),
             )
             _bwall = round(_btime.time() - _bt_start, 1)
             try:
@@ -482,6 +494,8 @@ def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks
             images_per_segment=args.images_per_segment,
             segment_count=args.segment_count,
             source_chunks=source_chunks,
+            no_storyboard=getattr(args, "no_storyboard", False),
+            force_storyboard=getattr(args, "force_storyboard", False),
         )
 
         print("PIPELINE COMPLETE")

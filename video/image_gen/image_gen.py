@@ -99,6 +99,12 @@ def _face_inspiration_prompt(cfg: dict, prompt: str, index: int) -> str:
 def _stable_character_reference(comfy_cfg: dict, char_key: str, project_id: str | None) -> Path | None:
     if comfy_cfg.get("reference_usage", "style_inspiration") != "direct":
         return None
+    # Storyboard sheet override: when the approved sheet is wired in by the
+    # pipeline hook, it outranks the per-character master portrait so the whole
+    # scene set shares the same approved visual reference.
+    _sheet = comfy_cfg.get("storyboard_sheet")
+    if _sheet and Path(_sheet).is_file():
+        return Path(_sheet)
     if not char_key or not project_id:
         return None
     try:

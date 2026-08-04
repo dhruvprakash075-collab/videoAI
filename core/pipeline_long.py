@@ -151,9 +151,16 @@ def request_cancel() -> None:
 # ── Extracted pipeline helpers ───────────────────────────────────────────
 
 
-def _assemble_cli_flags(duration_min, words_per_segment, images_per_segment, segment_count) -> dict:
+def _assemble_cli_flags(
+    duration_min, words_per_segment, images_per_segment, segment_count,
+    no_storyboard=False, force_storyboard=False,
+) -> dict:
     """Assemble CLI structural locks — only explicitly-set non-bool numeric flags."""
     _cli_flags: dict[str, Any] = {}
+    if no_storyboard:
+        _cli_flags["no_storyboard"] = True
+    if force_storyboard:
+        _cli_flags["force_storyboard"] = True
     if (
         duration_min is not None
         and isinstance(duration_min, (int, float))
@@ -321,6 +328,8 @@ def run_long_pipeline(
     images_per_segment: int | None = None,
     segment_count: int | None = None,
     source_chunks: list | None = None,
+    no_storyboard: bool = False,
+    force_storyboard: bool = False,
 ) -> dict:
     """Main pipeline: story outline → script → TTS → images → video.
 
@@ -350,7 +359,8 @@ def run_long_pipeline(
 
     # ── Assemble CLI structural locks (only include explicitly-set flags) ──
     _cli_flags = _assemble_cli_flags(
-        duration_min, words_per_segment, images_per_segment, segment_count
+        duration_min, words_per_segment, images_per_segment, segment_count,
+        no_storyboard=no_storyboard, force_storyboard=force_storyboard,
     )
 
     # ── Pre-Production ──
@@ -522,6 +532,37 @@ def run_long_pipeline(
             f"Estimated render: {format_time_hms(n_segs * 3.5 * 60) if not dry_run else '0s'}"
         )
         log.info("=" * 60)
+
+    # ── Storyboard (pre-generation approval gate) ──
+    try:
+        from core.storyboard import run_storyboard
+
+        storyboard = run_storyboard(
+            director_agent=director_agent,
+            outline=outline,
+            config=config,
+            topic=topic,
+            project_name=project_name,
+            cli_flags=_cli_flags,
+        )
+        if storyboard:
+            config.setdefault("storyboard", {})["approved_sheet"] = storyboard.get("sheet_path")
+            config.setdefault("storyboard", {})["panels"] = storyboard.get("panels", [])
+            from core.storyboard import attach_shot_metadata
+
+            attach_shot_metadata(outline, storyboard.get("panels") or [])
+            # Style-reference feedback: when enabled, the approved sheet becomes
+            # the ComfyUI reference image for scene generation.
+            if (
+                config.get("storyboard", {}).get("reference_usage") == "direct"
+                and storyboard.get("sheet_path")
+            ):
+                config.setdefault("image_gen", {}).setdefault("comfyui", {})[
+                    "storyboard_sheet"
+                ] = storyboard.get("sheet_path")
+    except Exception as exc:
+        # Storyboard is an advisory gate — never let it abort the pipeline.
+        log.error(f"[PIPELINE] Storyboard gate NOT applied ({exc}) — pipeline continues")
 
     # ── Build process_segment closure (once, inside the executor block) ──
     _cfg_workers = config.get("performance", {}).get("max_workers", 1)

@@ -452,6 +452,17 @@ class AlignmentConfig(BaseModel):
     trim_tails: bool = False
 
 
+class StoryboardConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = True
+    panel_count: int = 6
+    aspect: str = "16:9"
+    approval_retries: int = 2
+    reuse_existing: bool = True
+    reference_usage: Literal["none", "direct"] = "none"
+    inject_shot_metadata: bool = True
+
+
 class CriticConfig(BaseModel):
     model_config = {"extra": "forbid"}
     enabled: bool = True
@@ -579,6 +590,7 @@ SECTION_MODELS: dict[str, type[BaseModel]] = {
     "narrator": NarratorConfig,
     "cache": CacheConfig,
     "audio_fx": AudioFxConfig,
+    "storyboard": StoryboardConfig,
 }
 
 

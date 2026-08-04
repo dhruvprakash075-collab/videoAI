@@ -582,6 +582,19 @@ class StoryStore:
         with self._lock:
             return dict(self._data.get("memory_items", {}))
 
+    # Storyboard
+
+    def save_storyboard(self, storyboard: dict) -> None:
+        """Persist the approved storyboard (sheet path, panels, prompt) for this story."""
+        with self._lock:
+            self._data["storyboard"] = storyboard
+            self._save_story()
+
+    def get_storyboard(self) -> dict | None:
+        """Return the stored storyboard record, or None if not yet created."""
+        with self._lock:
+            return self._data.get("storyboard")
+
     # Continuity audit
 
     def check_continuity(

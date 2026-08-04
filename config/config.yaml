@@ -270,3 +270,11 @@ source:
   max_words: 50000
   url_timeout_s: 30
   user_agent: VideoAI/6.0
+storyboard:
+  enabled: true
+  panel_count: 6
+  aspect: "16:9"
+  approval_retries: 2
+  reuse_existing: true
+  reference_usage: none
+  inject_shot_metadata: true

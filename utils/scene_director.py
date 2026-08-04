@@ -119,6 +119,16 @@ def enrich_prompts(
     mood = _detect_mood(script)
     camera = _CAMERA_MOVES.get(mood, "cinematic shot, professional lighting")
 
+    # Storyboard shot-metadata injection: when the approved storyboard provides
+    # per-panel camera/duration hints, overlay them onto the mood-derived move.
+    # ponytail: only appends when inject_shot_metadata is on; never overrides
+    # the mood camera entirely (keeps existing behavior when disabled).
+    _shot_meta = None
+    if plan and config.get("storyboard", {}).get("inject_shot_metadata", True):
+        _shot_meta = plan.get("shot_metadata")
+    if _shot_meta:
+        camera = f"{camera}, {_shot_meta}"
+
     # Get visual style from config
     style = config.get("visual", {}).get("style") or "Gothic Horror"
     # The Director overlay may set style as a dict {tone:..., elements:[...]} instead of a string.
