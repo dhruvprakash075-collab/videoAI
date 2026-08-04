@@ -43,7 +43,10 @@ def _fixed_rects(count: int, width: int, height: int, margin: int, gutter: int) 
 
 
 def _layout_rects(layout_file: Path | None, count: int, width: int, height: int, page_index: int) -> list[tuple[int, int, int, int]]:
-    if not layout_file or not layout_file.is_file():
+    if not layout_file:
+        return []
+    layout_file = Path(layout_file)
+    if not layout_file.is_file():
         return []
     layouts = json.loads(layout_file.read_text(encoding="utf-8"))
     matches = [item for item in layouts if len(item.get("panels", [])) == count]
@@ -140,7 +143,10 @@ def plan_page_rects(
 
 def _read_layout_counts(layout_file: Path | None) -> list[int] | None:
     """Panel count per dataset layout, or None when unreadable/absent."""
-    if not layout_file or not layout_file.is_file():
+    if not layout_file:
+        return None
+    layout_file = Path(layout_file)
+    if not layout_file.is_file():
         return None
     try:
         layouts = json.loads(layout_file.read_text(encoding="utf-8"))

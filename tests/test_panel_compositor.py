@@ -117,6 +117,21 @@ def test_compose_panel_pages_uses_fallback_layout_file(tmp_path: Path):
     assert out.getpixel((50, 50)) == (255, 0, 0)
 
 
+def test_compose_accepts_str_layout_file_values(tmp_path: Path):
+    """String layout_file values (raw config strings, as run_storyboard passes)
+    must not crash on .is_file() — regression from the storyboard smoke run."""
+    missing = str(tmp_path / "missing.json")
+    fallback = str(tmp_path / "fallback.json")
+    (tmp_path / "fallback.json").write_text('[{"name":"one","panels":[[0.2,0.2,0.8,0.8]]}]')
+    src = tmp_path / "src.png"
+    Image.new("RGB", (64, 64), "red").save(src)
+
+    pages = compose_panel_pages([src], tmp_path / "sheet", width=100, height=100, border=2, layout_file=missing, fallback_layout_file=fallback, page_aspect=0)
+
+    assert len(pages) == 1
+    assert pages[0].is_file()
+
+
 def test_compose_panel_pages_skips_overlapping_dataset_layout(tmp_path: Path):
     layout_file = tmp_path / "layouts.json"
     layout_file.write_text(
