@@ -138,6 +138,53 @@ def plan_page_rects(
     return rects
 
 
+def _read_layout_counts(layout_file: Path | None) -> list[int] | None:
+    """Panel count per dataset layout, or None when unreadable/absent."""
+    if not layout_file or not layout_file.is_file():
+        return None
+    try:
+        layouts = json.loads(layout_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    counts = [len(item.get("panels", [])) for item in layouts if item.get("panels")]
+    return counts or None
+
+
+def plan_page_counts(
+    n_images: int,
+    layout_file: Path | None = None,
+    fallback_layout_file: Path | None = None,
+    default_panels: int = 5,
+) -> list[int]:
+    """Panel count per page, mirroring plan_page_rects' dataset chain.
+
+    Pages walk the layout dataset in order (each page takes the next
+    layout's panel count, cycling); the final page takes the first count
+    <= remaining, else the remainder itself (the fixed grid covers it).
+    Without a dataset the legacy uniform ``default_panels`` grid applies.
+    """
+    seq = _read_layout_counts(layout_file) or _read_layout_counts(fallback_layout_file)
+    if not seq:
+        seq = [default_panels]
+    counts: list[int] = []
+    remaining = n_images
+    i = 0
+    while remaining > 0:
+        c = seq[i % len(seq)]
+        if c > remaining:
+            for j in range(len(seq)):
+                c2 = seq[(i + j) % len(seq)]
+                if c2 <= remaining:
+                    c = c2
+                    break
+            else:
+                c = remaining
+        counts.append(c)
+        remaining -= c
+        i += 1
+    return counts
+
+
 def compose_panel_pages(
     image_paths: Iterable[Path],
     output_dir: Path,
@@ -168,8 +215,10 @@ def compose_panel_pages(
     pages: list[Path] = []
     page_w, page_h = page_canvas_size(width, height, margin, page_aspect)
     full_bleed = (page_w, page_h) == (width, height)
-    for page_i in range(0, len(paths), 5):
-        chunk = paths[page_i : page_i + 5]
+    offset = 0
+    for page_count in plan_page_counts(len(paths), layout_file, fallback_layout_file):
+        chunk = paths[offset : offset + page_count]
+        offset += page_count
         page = Image.new("RGB", (page_w, page_h), "white")
         draw = ImageDraw.Draw(page)
         rects = plan_page_rects(

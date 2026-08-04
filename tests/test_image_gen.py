@@ -274,6 +274,40 @@ def test_panel_sizes_handles_partial_last_page(tmp_path: Path):
     assert sizes[5] == (512, 768)
 
 
+def test_panel_sizes_mirror_dynamic_page_counts(tmp_path: Path):
+    """Generation sizes must follow the dataset-order page walk, not a fixed 5.
+
+    Each page's sizes must equal the rects the compositor will use for that
+    page (plan_page_rects at the same count + page index).
+    """
+    from video.image_gen.panel_compositor import page_canvas_size, plan_page_counts, plan_page_rects
+
+    layout = tmp_path / "layouts.json"
+    layout.write_text(
+        '[{"name":"four","panels":[[0,0,0.5,0.5],[0.5,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]},'
+        '{"name":"two","panels":[[0,0,1,0.5],[0,0.5,1,1]]}]'
+    )
+    cfg = {
+        "panel_composite": {
+            "enabled": True,
+            "width": 400,
+            "height": 400,
+            "layout_file": str(layout),
+        },
+        "comfyui": {},
+    }
+
+    assert plan_page_counts(6, layout) == [4, 2]
+    sizes = _panel_sizes(6, cfg)
+    assert len(sizes) == 6
+    page_w, page_h = page_canvas_size(400, 400, 48, 1.414)
+    expected: list[tuple[int, int]] = []
+    for page_i, page_count in enumerate([4, 2]):
+        for x1, y1, x2, y2 in plan_page_rects(page_count, page_w, page_h, page_i, layout_file=layout):
+            expected.append(_snap_to_bucket((x2 - x1) / max(1, y2 - y1)))
+    assert sizes == expected
+
+
 def test_comfyui_passes_panel_sizes_per_prompt(tmp_path: Path):
     """With panel compositing on, each prompt gets its panel's bucket size."""
     layout = tmp_path / "layouts.json"

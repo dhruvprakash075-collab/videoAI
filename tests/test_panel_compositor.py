@@ -7,8 +7,68 @@ from video.image_gen.panel_compositor import (
     _valid_rects,
     compose_panel_pages,
     page_canvas_size,
+    plan_page_counts,
     plan_page_rects,
 )
+
+
+def test_plan_page_counts_walks_dataset_in_order(tmp_path: Path):
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text(
+        '[{"name":"a","panels":[[0,0,0.5,0.5],[0.5,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]},'
+        '{"name":"b","panels":[[0,0,1,0.5],[0,0.5,1,1],[0,0,1,1]]}]'
+    )
+    assert plan_page_counts(10, layout_file) == [4, 3, 3]
+
+
+def test_plan_page_counts_cycles_and_fits_last_page(tmp_path: Path):
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text(
+        '[{"name":"a","panels":[[0,0,1,0.5],[0,0.5,1,1],[0,0,1,1]]},'
+        '{"name":"b","panels":[[0,0,1,1],[0,0,1,1]]}]'
+    )
+    # cycle back to a 3-panel page, then fit the 1 leftover in a 2-panel slot
+    assert plan_page_counts(5, layout_file) == [3, 2]
+
+
+def test_plan_page_counts_remainder_when_no_layout_fits(tmp_path: Path):
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text('[{"name":"a","panels":[[0,0,1,0.5],[0,0.5,1,1],[0,0,1,1]]}]')
+    # only 3-panel layouts exist; 7 images → 3+3+1 via the fixed grid
+    assert plan_page_counts(7, layout_file) == [3, 3, 1]
+
+
+def test_plan_page_counts_defaults_to_five_panels():
+    assert plan_page_counts(7, None) == [5, 2]
+    assert plan_page_counts(10, None) == [5, 5]
+
+
+def test_compose_panel_pages_mixed_counts_per_page(tmp_path: Path):
+    """Pages take the next dataset layout's panel count — not a fixed 5."""
+    layout_file = tmp_path / "layouts.json"
+    layout_file.write_text(
+        '[{"name":"four","panels":[[0,0,0.5,0.5],[0.5,0,1,0.5],[0,0.5,0.5,1],[0.5,0.5,1,1]]},'
+        '{"name":"two","panels":[[0,0,1,0.5],[0,0.5,1,1]]}]'
+    )
+    srcs = []
+    for i, color in enumerate(["red", "blue", "green", "yellow", "black", "white"], start=1):
+        path = tmp_path / f"src_{i}.png"
+        Image.new("RGB", (64, 64), color).save(path)
+        srcs.append(path)
+
+    pages = compose_panel_pages(
+        srcs, tmp_path, width=400, height=200, border=4, layout_file=layout_file, page_aspect=0
+    )
+
+    assert len(pages) == 2
+    page1 = Image.open(pages[0]).convert("RGB")
+    page2 = Image.open(pages[1]).convert("RGB")
+    # page 1 = 4-panel grid: red in top-left panel, yellow in bottom-right
+    assert page1.getpixel((50, 50)) == (255, 0, 0)
+    assert page1.getpixel((350, 150)) == (255, 255, 0)
+    # page 2 = 2-panel layout: black top, white bottom
+    assert page2.getpixel((200, 50)) == (0, 0, 0)
+    assert page2.getpixel((200, 150)) == (255, 255, 255)
 
 
 def test_compose_panel_pages_uses_distinct_images(tmp_path: Path):

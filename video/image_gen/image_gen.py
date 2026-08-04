@@ -225,15 +225,13 @@ def _panel_sizes(count: int, cfg: dict) -> list[tuple[int, int]] | None:
     layout_file = Path(panel_cfg.get("layout_file", "config/panel_layouts.json"))
     fallback_file = Path(panel_cfg.get("fallback_layout_file", "config/panel_layouts.json"))
 
-    from video.image_gen.panel_compositor import page_canvas_size, plan_page_rects
+    from video.image_gen.panel_compositor import page_canvas_size, plan_page_counts, plan_page_rects
 
     page_w, page_h = page_canvas_size(
         width, height, int(panel_cfg.get("margin", 48)), float(panel_cfg.get("page_aspect", 1.414))
     )
     sizes: list[tuple[int, int]] = []
-    for i in range(count):
-        page_i, slot = divmod(i, 5)
-        page_count = min(5, count - page_i * 5)
+    for page_i, page_count in enumerate(plan_page_counts(count, layout_file, fallback_file)):
         rects = plan_page_rects(
             page_count,
             page_w,
@@ -242,11 +240,12 @@ def _panel_sizes(count: int, cfg: dict) -> list[tuple[int, int]] | None:
             layout_file=layout_file,
             fallback_layout_file=fallback_file,
         )
-        if slot < len(rects):
-            x1, y1, x2, y2 = rects[slot]
-            sizes.append(_snap_to_bucket((x2 - x1) / max(1, y2 - y1)))
-        else:
-            sizes.append((768, 512))
+        for slot in range(page_count):
+            if slot < len(rects):
+                x1, y1, x2, y2 = rects[slot]
+                sizes.append(_snap_to_bucket((x2 - x1) / max(1, y2 - y1)))
+            else:
+                sizes.append((768, 512))
     return sizes
 
 
