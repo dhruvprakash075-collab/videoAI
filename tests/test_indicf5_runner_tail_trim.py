@@ -4,6 +4,9 @@ run_indic.py imports torch/f5_tts at module level (not installed on CI), so
 the module is loaded via importlib with lightweight stubs; only the pure
 trim logic is exercised. numpy is stubbed too — the trim works on any
 sequence supporting len()/slicing.
+
+external/IndicF5/ is gitignored (local-only runtime deps), so this test
+skips on CI where run_indic.py does not exist.
 """
 
 import importlib.util
@@ -11,11 +14,13 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _load_run_indic() -> types.ModuleType:
     path = Path(__file__).resolve().parents[1] / "external" / "IndicF5" / "run_indic.py"
     if not path.exists():
-        raise FileNotFoundError(f"run_indic.py not found: {path}")
+        pytest.skip(f"run_indic.py not found (gitignored external dep): {path}")
     for name in (
         "numpy",
         "soundfile",
