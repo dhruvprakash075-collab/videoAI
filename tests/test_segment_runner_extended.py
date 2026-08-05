@@ -2,7 +2,6 @@
 
 import sys
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -47,8 +46,6 @@ def mock_dependencies(tmp_path):
         "dry_run": True,
         "preview_mode": False,
         "words_per_seg": 50,
-        "seg_min": 2,
-        "shared_prompt_executor": MagicMock(),
         "global_scheduler": mock_sched,
         "_crewai_lock": threading.RLock(),
         "crewai_lock": threading.RLock(),
@@ -56,7 +53,6 @@ def mock_dependencies(tmp_path):
         "completed_segs_lock": threading.Lock(),
         "mp4s": mp4s,
         "mp4s_lock": threading.Lock(),
-        "run_start_ts": time.time(),
     }
 
 

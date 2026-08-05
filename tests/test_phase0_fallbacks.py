@@ -122,8 +122,6 @@ def test_translate_node_falls_back_on_crash():
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -131,7 +129,6 @@ def test_translate_node_falls_back_on_crash():
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=0.0,
         source_chunks=[
             SegmentChunk(
                 index=1,

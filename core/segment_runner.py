@@ -21,7 +21,6 @@ path; _process_segment_with_budget() wraps it in a retry budget.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import threading
@@ -244,8 +243,6 @@ def make_process_segment(
     fast_dry_run: bool = False,
     preview_mode: bool,
     words_per_seg: int,
-    seg_min: int,
-    shared_prompt_executor,
     global_scheduler,
     _crewai_lock,
     crewai_lock: threading.RLock,
@@ -253,7 +250,6 @@ def make_process_segment(
     completed_segs_lock: threading.Lock,
     mp4s: list[Path | None],
     mp4s_lock: threading.Lock,
-    run_start_ts: float,
     source_chunks: list | None = None,
     project_name: str | None = None,
 ):
@@ -273,9 +269,6 @@ def make_process_segment(
     except ImportError:
         generate_images = None
         log.warning("image_gen not installed — using black-frame videos")
-
-    with contextlib.suppress(ImportError):
-        pass
 
     # Shared PermanentMemoryLog: StoryMemory (mem) has no memory_items, so the
     # memory-context injection and project-backed asset reviews were reading a

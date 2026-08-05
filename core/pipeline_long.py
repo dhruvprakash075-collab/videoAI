@@ -595,8 +595,6 @@ def run_long_pipeline(
             fast_dry_run=fast_dry_run,
             preview_mode=preview_mode,
             words_per_seg=words_per_seg,
-            seg_min=seg_min,
-            shared_prompt_executor=_shared_prompt_executor,
             global_scheduler=global_scheduler,
             _crewai_lock=_crewai_lock,
             crewai_lock=_crewai_lock,
@@ -604,7 +602,6 @@ def run_long_pipeline(
             completed_segs_lock=completed_segs_lock,
             mp4s=mp4s,
             mp4s_lock=mp4s_lock,
-            run_start_ts=_run_start,
             source_chunks=source_chunks,
             project_name=project_name,
         )

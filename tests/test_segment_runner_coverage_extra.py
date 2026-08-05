@@ -5,7 +5,6 @@ from core import segment_runner
 
 def _process_kwargs(tmp_path, **overrides):
     import threading
-    import time
 
     scheduler = MagicMock()
     scheduler.active_heavy_count = 0
@@ -36,8 +35,6 @@ def _process_kwargs(tmp_path, **overrides):
         "fast_dry_run": False,
         "preview_mode": False,
         "words_per_seg": 50,
-        "seg_min": 1,
-        "shared_prompt_executor": MagicMock(),
         "global_scheduler": scheduler,
         "_crewai_lock": threading.RLock(),
         "crewai_lock": threading.RLock(),
@@ -45,7 +42,6 @@ def _process_kwargs(tmp_path, **overrides):
         "completed_segs_lock": threading.Lock(),
         "mp4s": [None],
         "mp4s_lock": threading.Lock(),
-        "run_start_ts": time.time(),
         "source_chunks": None,
     }
     base.update(overrides)

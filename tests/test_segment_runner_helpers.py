@@ -505,8 +505,6 @@ def test_make_process_segment_creates_closure(tmp_path):
         fast_dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=global_scheduler,  # Use real scheduler
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -514,7 +512,6 @@ def test_make_process_segment_creates_closure(tmp_path):
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
     )
     assert callable(process_seg)
 
@@ -548,8 +545,6 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=global_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -557,7 +552,6 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
         source_chunks=[
             SegmentChunk(index=1, text="verbatim source text", source_chapter="Chapter 1")
         ],
@@ -597,8 +591,6 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=global_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -606,7 +598,6 @@ def test_process_segment_no_source_chunk_dry_run(tmp_path):
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
     )
 
     with (
@@ -771,8 +762,6 @@ def test_process_segment_aborted_early(tmp_path):
             dry_run=True,
             preview_mode=False,
             words_per_seg=100,
-            seg_min=2,
-            shared_prompt_executor=MagicMock(),
             global_scheduler=global_scheduler,
             _crewai_lock=threading.RLock(),
             crewai_lock=threading.RLock(),
@@ -780,7 +769,6 @@ def test_process_segment_aborted_early(tmp_path):
             completed_segs_lock=threading.Lock(),
             mp4s=mp4s,
             mp4s_lock=threading.Lock(),
-            run_start_ts=time.time(),
         )
         process_seg(1)
         assert counter[0] == 0
@@ -816,8 +804,6 @@ def test_process_segment_no_ctx_mgr(tmp_path):
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=global_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -825,7 +811,6 @@ def test_process_segment_no_ctx_mgr(tmp_path):
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
     )
     with (
         patch("crewai.Crew"),
@@ -867,8 +852,6 @@ def test_process_segment_exception_handling_resume(tmp_path):
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
-        seg_min=2,
-        shared_prompt_executor=MagicMock(),
         global_scheduler=global_scheduler,
         _crewai_lock=threading.RLock(),
         crewai_lock=threading.RLock(),
@@ -876,7 +859,6 @@ def test_process_segment_exception_handling_resume(tmp_path):
         completed_segs_lock=threading.Lock(),
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
-        run_start_ts=time.time(),
     )
     process_seg(1)
     assert counter[0] == 1  # completes (finishes cleanup even on failure)

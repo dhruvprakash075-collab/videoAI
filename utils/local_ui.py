@@ -11,11 +11,17 @@ import logging
 import os
 import re
 import shutil
+import sys
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+# ── Bootstrap: repo root on sys.path so `python utils/local_ui.py` works ──
+# insert(0), not append: script mode puts utils/ first, which would shadow the
+# utils package with utils/utils.py as a bare module.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
