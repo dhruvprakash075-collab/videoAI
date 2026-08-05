@@ -297,6 +297,13 @@ def _build_parser():
         help="Regenerate the storyboard even if an approved one exists in memory",
     )
     parser.add_argument(
+        "--force-vision",
+        action="store_true",
+        dest="force_vision",
+        help="Bypass the cached vision doc so the Director re-analyzes (e.g. so a "
+        "--duration change reaches the LLM on re-runs)",
+    )
+    parser.add_argument(
         "--topics-file",
         dest="topics_file",
         default=None,
@@ -447,6 +454,7 @@ def _run_batch(args, run_long_pipeline, topics, source_chunks):
                 source_chunks=source_chunks,
                 no_storyboard=getattr(args, "no_storyboard", False),
                 force_storyboard=getattr(args, "force_storyboard", False),
+                force_refresh=getattr(args, "force_vision", False),
                 skip_preflight=getattr(args, "skip_preflight", False),
             )
             _bwall = round(_btime.time() - _bt_start, 1)
@@ -505,6 +513,7 @@ def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks
             source_chunks=source_chunks,
             no_storyboard=getattr(args, "no_storyboard", False),
             force_storyboard=getattr(args, "force_storyboard", False),
+            force_refresh=getattr(args, "force_vision", False),
             skip_preflight=getattr(args, "skip_preflight", False),
         )
 

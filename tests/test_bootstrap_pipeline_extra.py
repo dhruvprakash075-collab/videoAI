@@ -1,5 +1,5 @@
 from argparse import Namespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -64,6 +64,21 @@ def test_parser_accepts_core_flags():
     assert args.words_per_segment == 120
     assert args.images_per_segment == 3
     assert args.segment_count == 4
+
+
+def test_parser_accepts_force_vision_flag():
+    args = bp._build_parser().parse_args(["--topic", "t", "--force-vision"])
+    assert args.force_vision is True
+    assert bp._build_parser().parse_args(["--topic", "t"]).force_vision is False
+
+
+def test_run_single_forwards_force_vision_as_force_refresh():
+    """--force-vision must reach run_long_pipeline as force_refresh=True."""
+    from bootstrap_pipeline import _run_single
+
+    mock_run = MagicMock()
+    _run_single(_args(force_vision=True), mock_run, "t", None, None)
+    assert mock_run.call_args.kwargs.get("force_refresh") is True
 
 
 def test_resolve_input_file_auto_topic_source_and_missing_input(tmp_path):

@@ -258,6 +258,30 @@ def test_skip_preflight_skips_run_preflight_checks(tmp_path):
     mock_preflight.assert_not_called()
 
 
+def test_force_refresh_reaches_run_pre_production(tmp_path):
+    """--force-vision must bypass the cached vision doc: run_pre_production
+    receives force_refresh=True so the Director re-analyzes on re-runs."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+        "performance": {"staged_loop": False, "max_workers": 1},
+    }
+    with (
+        patch("utils.load_config", return_value=cfg),
+        patch("utils.setup_run_logging"),
+        patch("core.pipeline_long.run_pre_production", return_value={}) as mock_pre_prod,
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("core.pipeline_long.run_preflight_checks"),
+    ):
+        run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True, force_refresh=True)
+
+    mock_pre_prod.assert_called_once()
+    assert mock_pre_prod.call_args.kwargs.get("force_refresh") is True
+
+
 def test_storyboard_gate_skipped_on_dry_run(tmp_path, monkeypatch):
     """Dry runs stay dry: the storyboard gate (real LLM + ComfyUI + persist)
     must NOT fire on fast_dry_run, or the dry run would generate a real sheet

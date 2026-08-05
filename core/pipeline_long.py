@@ -336,6 +336,7 @@ def run_long_pipeline(
     source_chunks: list | None = None,
     no_storyboard: bool = False,
     force_storyboard: bool = False,
+    force_refresh: bool = False,
     skip_preflight: bool = False,
 ) -> dict:
     """Main pipeline: story outline → script → TTS → images → video.
@@ -379,6 +380,7 @@ def run_long_pipeline(
         project_name=project_name,
         cli_flags=_cli_flags,
         run_mode="project" if project_name else "one_time",
+        force_refresh=force_refresh,
     )
     config = _deep_merge(config, config_overlay if isinstance(config_overlay, dict) else {})
 
