@@ -622,3 +622,17 @@ def _detect_mood(script: str) -> str:
     best_mood = max(scores, key=lambda k: scores[k])
     log.debug(f"Detected mood: {best_mood} (score: {scores[best_mood]})")
     return best_mood
+
+
+def _enforce_visual_style_lock(config_overlay: dict, config: dict) -> dict:
+    """Operator-locked visual style beats Director proposals.
+
+    The operator's configured visual.style (config) always wins over the
+    Director's per-run proposal (overlay), so resume/debug overlays cannot
+    reintroduce style drift. Only the style key is pinned; character and
+    lighting decisions stay Director-driven.
+    """
+    locked = config.get("visual", {}).get("style")
+    if locked and isinstance(config_overlay, dict):
+        config_overlay.setdefault("visual", {})["style"] = locked
+    return config_overlay

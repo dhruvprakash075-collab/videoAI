@@ -252,6 +252,9 @@ def test_translate_node_bloated_translation_falls_back(mock_dependencies):
         process_seg(1)
 
         assert mock_dependencies["director_agent_instance"].translate_to_devanagari.called
+        assert mock_dependencies["completed_segs_counter_holder"][0] == 1, (
+            "bloated translation must fall back to English TTS, not kill the segment"
+        )
 
 
 def test_tts_node_resume_cache(mock_dependencies):

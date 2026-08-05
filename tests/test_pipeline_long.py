@@ -2,13 +2,12 @@
 
 import contextlib
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.pipeline_long import (
-    _director_set_abort,
-    request_cancel,
     run_long_pipeline_async,
 )
 
@@ -21,27 +20,6 @@ def _reset_abort():
     set_director_abort(False)
     yield
     set_director_abort(False)
-
-
-# ── _director_set_abort / request_cancel ─────────────────────────────────────
-
-
-def test_director_set_abort_true():
-    with patch("core.pipeline_long.set_director_abort") as sd:
-        _director_set_abort(True)
-        sd.assert_called_once_with(True)
-
-
-def test_director_set_abort_default_true():
-    with patch("core.pipeline_long.set_director_abort") as sd:
-        _director_set_abort()
-        sd.assert_called_once_with(True)
-
-
-def test_request_cancel_sets_abort():
-    with patch("core.pipeline_long.set_director_abort") as sd:
-        request_cancel()
-        sd.assert_called_once_with(True)
 
 
 # ── run_long_pipeline_async ──────────────────────────────────────────────────
@@ -192,6 +170,94 @@ def test_fast_dry_run_calls_preflight_in_dry_mode(tmp_path):
     assert mock_preflight.call_args.kwargs["dry_run"] is True
 
 
+def test_duration_flag_beats_stale_decision_record(tmp_path):
+    """--duration must survive a stale/persisted DecisionRecord: the record's
+    duration is the Director's advisory recommendation, never a CLI override —
+    previously _resolve_decision_record clobbered the user's --duration."""
+    from core.pipeline_long import run_long_pipeline
+
+    class _Duration:
+        value = 6
+        locked = False
+        provenance = "director"
+
+    class _Rec:
+        segment_count = SimpleNamespace(value=1, locked=False, provenance="director")
+        words_per_segment = SimpleNamespace(value=100, locked=False, provenance="director")
+        images_per_segment = SimpleNamespace(locked=False)
+        total_duration_min = _Duration()
+
+    blackboard = MagicMock()
+    blackboard.read_decision.return_value = _Rec()
+    captured = {}
+
+    def _fake_mps(**kwargs):
+        captured["config"] = kwargs["config"]
+        return (lambda *a, **k: None,) * 6
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "script": {"default_images_per_segment": 2},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+        "audio": {},
+        "performance": {"staged_loop": False, "max_workers": 1},
+    }
+    mocks = [
+        patch("core.pipeline_long.run_preflight_checks"),
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("core.main.create_director"),
+        patch("core.main.create_writer"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("core.pipeline_long.plan_outline", return_value=[{"seg": 1, "title": "Intro", "summary": "S", "num_images": 2, "target_word_count": 130, "segment_duration": 60.0, "char_presence": [{"protagonist": 1.0}]}]),
+        patch("core.pipeline_long.log_vram_usage"),
+        patch("core.runtime.ollama.start_ollama_server"),
+        patch("core.runtime.ollama.stop_ollama_server"),
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("utils.load_config", return_value=cfg),
+        patch("memory.blackboard.get_blackboard", return_value=blackboard),
+        patch("core.pipeline_long.make_process_segment", side_effect=_fake_mps),
+    ]
+    with contextlib.ExitStack() as stack:
+        for m in mocks:
+            stack.enter_context(m)
+        run_long_pipeline(topic="t", resume=True, dry_run=True, fast_dry_run=True, duration_min=1)
+
+    assert captured["config"]["video"]["total_duration_min"] == 1
+
+    captured.clear()
+    with contextlib.ExitStack() as stack:
+        for m in mocks:
+            stack.enter_context(m)
+        run_long_pipeline(topic="t", resume=True, dry_run=True, fast_dry_run=True)
+
+    assert captured["config"]["video"]["total_duration_min"] == 6
+
+
+def test_skip_preflight_skips_run_preflight_checks(tmp_path):
+    """--skip-preflight must also skip the in-pipeline preflight, not just the
+    bootstrap gate — previously a missing ffmpeg still hard-failed the run."""
+    from core.pipeline_long import run_long_pipeline
+
+    cfg = {
+        "video": {"total_duration_min": 1, "segment_duration_min": 1},
+        "memory": {"memory_file": str(tmp_path / "story_memory.json")},
+        "checkpoint": {"dir": str(tmp_path / "checkpoints")},
+        "performance": {"staged_loop": False, "max_workers": 1},
+    }
+    with (
+        patch("utils.load_config", return_value=cfg),
+        patch("utils.setup_run_logging"),
+        patch("core.pipeline_long.run_pre_production", return_value={}),
+        patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("core.pipeline_long.run_preflight_checks", side_effect=RuntimeError("stop")) as mock_preflight,
+    ):
+        run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True, skip_preflight=True)
+
+    mock_preflight.assert_not_called()
+
+
 def test_storyboard_gate_skipped_on_dry_run(tmp_path, monkeypatch):
     """Dry runs stay dry: the storyboard gate (real LLM + ComfyUI + persist)
     must NOT fire on fast_dry_run, or the dry run would generate a real sheet
@@ -241,7 +307,6 @@ def test_storyboard_gate_skipped_on_dry_run(tmp_path, monkeypatch):
 
 
 # ── run_long_pipeline tests ──────────────────────────────────────────────────
-from unittest.mock import MagicMock
 
 
 def test_run_long_pipeline_dry_run_success(tmp_path):
@@ -1305,23 +1370,20 @@ def test_pipeline_long_module_reload_spec_error():
 
 
 def test_float_safe_ceil_segment_count():
-    """Verify math.ceil is used for float-safe segment count computation."""
-    import math
+    """Verify the production _ceil_segments helper is float-safe."""
+    from core.pipeline_long import _ceil_segments
+
     # 0.5 min total / 2 min per seg = 0.25 → ceil = 1
-    total = 0.5
-    seg_min = 2.0
-    n_segs = max(1, math.ceil(total / seg_min))
-    assert n_segs == 1
+    assert _ceil_segments(0.5, 2.0) == 1
 
     # 5 min total / 2 min per seg = 2.5 → ceil = 3
-    total = 5.0
-    n_segs = max(1, math.ceil(total / seg_min))
-    assert n_segs == 3
+    assert _ceil_segments(5.0, 2.0) == 3
 
     # 2 min total / 2 min per seg = 1.0 → ceil = 1
-    total = 2.0
-    n_segs = max(1, math.ceil(total / seg_min))
-    assert n_segs == 1
+    assert _ceil_segments(2.0, 2.0) == 1
+
+    # Below one segment always yields at least 1
+    assert _ceil_segments(0.1, 2.0) == 1
 
 
 # ── Character-role normalization regression tests ────────────────────────────

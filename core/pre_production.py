@@ -406,9 +406,9 @@ def run_pre_production(
     except Exception as _ne:
         log.debug(f"[PRE-PROD] TTS engine normalization skipped: {_ne}")
 
-    # Enforce operator-locked manga style before persisting the overlay used
-    # for resume/debug. Runtime also enforces this after merging, but saving the
-    # pre-lock overlay can reintroduce Director style drift on later resumes.
+    # Enforce operator-locked visual style before persisting the overlay used
+    # for resume/debug — without this, the saved overlay can reintroduce
+    # Director style drift on later resumes.
     try:
         from utils import scene_director
 

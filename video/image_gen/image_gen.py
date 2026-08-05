@@ -359,7 +359,7 @@ def _comfyui(
                 if reference_image is None:
                     reference_image = _reference_image_for(comfy_cfg, prompt, i)
                 if reference_image:
-                    uploaded = client.upload_image(reference_image)
+                    uploaded = client.upload_image(reference_image, overwrite=True)
                     patcher.patch_reference_image(uploaded["name"])
                 workflow = patcher.get_workflow()
             else:

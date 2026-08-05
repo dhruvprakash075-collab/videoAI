@@ -151,6 +151,13 @@ def request_cancel() -> None:
 # ── Extracted pipeline helpers ───────────────────────────────────────────
 
 
+def _ceil_segments(total_min: float, seg_min: float) -> int:
+    """Float-safe segment count: ceil of duration/segment, at least 1."""
+    import math
+
+    return max(1, math.ceil(total_min / seg_min))
+
+
 def _assemble_cli_flags(
     duration_min, words_per_segment, images_per_segment, segment_count,
     no_storyboard=False, force_storyboard=False,
@@ -220,8 +227,7 @@ def _resolve_decision_record(config, topic, total, seg_min):
         )
         return n_segs, words_per_seg, _seg_count_locked, _images_per_segment_locked, _rec.total_duration_min.value
     else:
-        import math as _math
-        n_segs = max(1, _math.ceil(total / seg_min))
+        n_segs = _ceil_segments(total, seg_min)
         words_per_seg = config.get("script", {}).get("words_per_segment", 130)
         _seg_count_locked = False
         _images_per_segment_locked = False
@@ -330,6 +336,7 @@ def run_long_pipeline(
     source_chunks: list | None = None,
     no_storyboard: bool = False,
     force_storyboard: bool = False,
+    skip_preflight: bool = False,
 ) -> dict:
     """Main pipeline: story outline → script → TTS → images → video.
 
@@ -390,7 +397,8 @@ def run_long_pipeline(
         config_overlay.setdefault("tts", {})["engine"] = _normalized_engine
 
     # Preflight + checkpoint + memory seeding
-    run_preflight_checks(config, dry_run=(dry_run or fast_dry_run))
+    if not skip_preflight:
+        run_preflight_checks(config, dry_run=(dry_run or fast_dry_run))
     cp_mgr = build_checkpoint_manager(config)
     _seed_director_memory(topic, config_overlay, config)
 
@@ -424,7 +432,10 @@ def run_long_pipeline(
     n_segs, words_per_seg, _seg_count_locked, _images_per_segment_locked, _rec_total_duration = _resolve_decision_record(
         config, topic, total, seg_min
     )
-    if _rec_total_duration is not None:
+    # The record's duration is the Director's ADVISORY recommendation — an
+    # explicit --duration beats it (CLI > record); without one, the
+    # recommendation may still steer the run.
+    if _rec_total_duration is not None and duration_min is None:
         config.setdefault("video", {})["total_duration_min"] = _rec_total_duration
 
     out_base = Path("studio_outputs") / _safe_filename(topic) / "segments"
@@ -595,6 +606,7 @@ def run_long_pipeline(
             mp4s_lock=mp4s_lock,
             run_start_ts=_run_start,
             source_chunks=source_chunks,
+            project_name=project_name,
         )
         process_segment = _process_seg  # alias for backward compat (non-staged path uses this)
         _process_segment_with_budget = build_retry_wrapper(

@@ -363,3 +363,19 @@ def test_seed_director_memory_dedup(tmp_path):
     assert facts.count("[Director instruction] Keep the pacing tight") == 1
     assert facts.count("[Director] Use wide shots for battles") == 1
     assert facts.count("[Director] Emphasize silence in tense moments") == 1
+
+
+def test_enforce_visual_style_lock():
+    """The operator's visual.style must beat the Director's overlay proposal
+    (previously the lock was a dead call — the function never existed)."""
+    from utils.scene_director import _enforce_visual_style_lock
+
+    overlay = {"visual": {"style": "director proposal"}, "video": {}}
+    out = _enforce_visual_style_lock(overlay, {"visual": {"style": "operator lock"}})
+    assert out["visual"]["style"] == "operator lock"
+    assert out["video"] == {}
+
+    # No configured style → overlay untouched
+    assert _enforce_visual_style_lock({"visual": {"style": "s"}}, {})["visual"]["style"] == "s"
+    # Non-dict overlay → returned as-is
+    assert _enforce_visual_style_lock(None, {"visual": {"style": "x"}}) is None

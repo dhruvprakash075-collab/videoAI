@@ -917,16 +917,24 @@ class TestWriterMaxTokensAutoScale:
     """Auto-scale formula: max(config_value, int(seg_words * 2))."""
 
     def test_uses_config_when_larger(self):
-        config_val = 2048
-        seg_words = 500
-        assert max(config_val, int(seg_words * 2)) == 2048
+        from core.segment_runner import _auto_max_tokens
+
+        config = {"script": {"writer_max_tokens": 2048}}
+        assert _auto_max_tokens(config, 500) == 2048
 
     def test_scales_when_target_exceeds_config(self):
-        config_val = 1024
-        seg_words = 800
-        assert max(config_val, int(seg_words * 2)) == 1600
+        from core.segment_runner import _auto_max_tokens
+
+        config = {"script": {"writer_max_tokens": 1024}}
+        assert _auto_max_tokens(config, 800) == 1600
 
     def test_edge_zero_seg_words(self):
-        config_val = 1024
-        seg_words = 0
-        assert max(config_val, int(seg_words * 2)) == 1024
+        from core.segment_runner import _auto_max_tokens
+
+        config = {"script": {"writer_max_tokens": 1024}}
+        assert _auto_max_tokens(config, 0) == 1024
+
+    def test_default_floor_when_config_missing(self):
+        from core.segment_runner import _auto_max_tokens
+
+        assert _auto_max_tokens({}, 10) == 1024

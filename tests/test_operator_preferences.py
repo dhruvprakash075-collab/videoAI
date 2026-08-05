@@ -1,7 +1,7 @@
 """Tests for the 2026-06-02 operator-preferences sweep:
 
 - visual.num_scenes default 6 → 4
-- script.default_images_per_segment default 6 → 4
+- script.default_images_per_segment default 6 → 2
 - tts.omnivoice.speed default 0.85 → 0.5
 - subtitles.language default → "en" (force English-only subtitle text)
 - narrator.include_character_descriptions default → false (no visual desc in narration)

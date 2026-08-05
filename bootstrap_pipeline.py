@@ -413,6 +413,14 @@ def _resolve_input(args, pf_config):
     return topic_text, content_text, source_chunks
 
 
+def _load_topics_file(path: Path) -> list[str]:
+    """D4: parse a topics file — one topic per line, blanks and # comments ignored."""
+    if not path.exists():
+        raise FileNotFoundError(f"[BATCH] Topics file not found: {path}")
+    _raw_lines = path.read_text(encoding="utf-8").splitlines()
+    return [l.strip() for l in _raw_lines if l.strip() and not l.strip().startswith("#")]
+
+
 def _run_batch(args, run_long_pipeline, topics, source_chunks):
     """Run batch mode with multiple topics sequentially. Returns the report list."""
     import json as _bjson
@@ -439,6 +447,7 @@ def _run_batch(args, run_long_pipeline, topics, source_chunks):
                 source_chunks=source_chunks,
                 no_storyboard=getattr(args, "no_storyboard", False),
                 force_storyboard=getattr(args, "force_storyboard", False),
+                skip_preflight=getattr(args, "skip_preflight", False),
             )
             _bwall = round(_btime.time() - _bt_start, 1)
             try:
@@ -496,6 +505,7 @@ def _run_single(args, run_long_pipeline, topic_text, content_text, source_chunks
             source_chunks=source_chunks,
             no_storyboard=getattr(args, "no_storyboard", False),
             force_storyboard=getattr(args, "force_storyboard", False),
+            skip_preflight=getattr(args, "skip_preflight", False),
         )
 
         print("PIPELINE COMPLETE")
@@ -573,11 +583,11 @@ def run_pipeline_with_args():
 
         if getattr(args, "topics_file", None):
             _topics_path = Path(args.topics_file)
-            if not _topics_path.exists():
-                print(f"[BATCH] Topics file not found: {_topics_path}")
+            try:
+                _topics = _load_topics_file(_topics_path)
+            except FileNotFoundError as _e:
+                print(_e)
                 sys.exit(1)
-            _raw_lines = _topics_path.read_text(encoding="utf-8").splitlines()
-            _topics = [l.strip() for l in _raw_lines if l.strip() and not l.strip().startswith("#")]
             if not _topics:
                 print("[BATCH] No topics found in file (blank lines and # comments are ignored)")
                 sys.exit(1)

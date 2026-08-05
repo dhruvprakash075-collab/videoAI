@@ -102,6 +102,11 @@ def normalize_tts_engine(engine: str) -> str:
         return "indicf5"
 
     normalized = engine.strip().lower()
+    if normalized == "none":
+        # "none" is the video-only sentinel (no TTS at all) — pass it through
+        # instead of defaulting to indicf5, which silently narrated video-only
+        # runs. pipeline's tts_node skips TTS when the engine is "none".
+        return "none"
     if normalized in _INDICF5_ALIASES:
         return "indicf5"
     if normalized in _OMNIVOICE_ALIASES:

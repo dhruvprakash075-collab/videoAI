@@ -41,7 +41,7 @@ from utils.emotion_control import inject_emotion
 log = logging.getLogger(__name__)
 
 # ── moved verbatim to core/runtime/ollama.py ──
-from core.preview import _preview_gate  # noqa: F401
+from core.preview import _preview_gate
 from core.runtime.ollama import (  # noqa: F401
     _ollama_alive,
     evict_ollama_models,
@@ -105,6 +105,12 @@ def _review_important_images(
             raw_prompts, script, config, plan, memory_items=mem_items
         )
         enriched_prompts = enrich_result[0] if isinstance(enrich_result, tuple) else enrich_result
+
+    # enrich_prompts returns a semicolon-joined string (one prompt per frame);
+    # index it as a LIST, not a string — indexing the raw string yielded
+    # single characters into the identity review.
+    if isinstance(enriched_prompts, str):
+        enriched_prompts = [p for p in enriched_prompts.split(";") if p.strip()]
 
     results = []
     for idx, img_path in enumerate(images):
@@ -196,6 +202,29 @@ def _review_important_images(
 # ── Main per-segment processor ─────────────────────────────────
 
 
+def _auto_max_tokens(config: dict, seg_words: int) -> int:
+    """Writer token budget: configured floor, auto-scaled to 2 tokens/word."""
+    return max(
+        config.get("script", {}).get("writer_max_tokens", 1024),
+        int(seg_words * 2),
+    )
+
+
+def _extract_structured_narration(raw_json: str) -> str:
+    """Parse the W2 structured-writer JSON reply and return the narration text.
+
+    Returns "" when the narration key is missing/empty/whitespace. Raises on
+    malformed JSON or non-object payloads — the caller's except clause treats
+    that as a writer failure and falls back to CrewAI.
+    """
+    import json as _json_w
+
+    _parsed = _json_w.loads(raw_json)
+    if not isinstance(_parsed, dict):
+        raise TypeError("structured writer returned a non-object payload")
+    return _parsed.get("narration", "").strip()
+
+
 def make_process_segment(
     *,
     topic: str,
@@ -226,6 +255,7 @@ def make_process_segment(
     mp4s_lock: threading.Lock,
     run_start_ts: float,
     source_chunks: list | None = None,
+    project_name: str | None = None,
 ):
     """Build the per-segment closure. Returns (process_segment, run_scripts_phase,
     run_translations_phase, run_tts_phase, run_images_phase, run_renders_phase).
@@ -246,6 +276,14 @@ def make_process_segment(
 
     with contextlib.suppress(ImportError):
         pass
+
+    # Shared PermanentMemoryLog: StoryMemory (mem) has no memory_items, so the
+    # memory-context injection and project-backed asset reviews were reading a
+    # store that can never contain them. One instance for both reads and the
+    # _project-backed asset review path.
+    from memory.permanent_memory import PermanentMemoryLog
+
+    perma_mem = PermanentMemoryLog(topic, project_name=project_name)
 
     from core.pipeline_graph import SegmentGraphBuilder, SegmentState
 
@@ -326,16 +364,10 @@ def make_process_segment(
                     model=_writer_model,
                     format_json=True,
                     temperature=0.7,
-                    num_predict=max(
-                        config.get("script", {}).get("writer_max_tokens", 1024),
-                        int(seg_words * 2),
-                    ),
+                    num_predict=_auto_max_tokens(config, seg_words),
                 )
                 if _raw_json:
-                    import json as _json_w
-
-                    _parsed = _json_w.loads(_raw_json)
-                    _narration = _parsed.get("narration", "").strip()
+                    _narration = _extract_structured_narration(_raw_json)
                     if _narration:
                         _script_from_structured = _narration
                         log.debug(
@@ -467,12 +499,10 @@ def make_process_segment(
         key = f"{topic}_seg{i:02d}"
 
         if fast_dry_run:
-            cp_mgr.save(key, "script", {"data": script})
-            _drs = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
-            try:
-                world_state.update(_drs, plan, config=config)
-            except Exception as _ws_e:
-                log.warning(f"  Seg {i}: world_state.update (translate, dry-run) failed: {_ws_e}")
+            # ponytail: a dry run must stay dry — stub placeholders must never
+            # reach the real checkpoint (a later resume would narrate them),
+            # and the world state must not learn dry-run content.
+            log.debug(f"  Seg {i}: fast-dry-run stub script ({len(script)} chars)")
             return {"devanagari_script": None, "script_for_tts": script}
 
         # Sanitize BEFORE checkpointing so TTS never sees artifacts
@@ -529,10 +559,15 @@ def make_process_segment(
                 devanagari_script = None
 
         _ws_script = f"[DRY-RUN] {script}" if dry_run or fast_dry_run else script
-        try:
-            world_state.update(_ws_script, plan, config=config)
-        except Exception as _ws_e:
-            log.warning(f"  Seg {i}: world_state.update (translate) failed: {_ws_e}")
+        if not (dry_run or fast_dry_run):
+            try:
+                world_state.update(_ws_script, plan, config=config)
+            except Exception as _ws_e:
+                log.warning(f"  Seg {i}: world_state.update (translate) failed: {_ws_e}")
+        else:
+            # ponytail: dry runs must not mutate the world-state checkpoint —
+            # the [DRY-RUN] marker would leak into a later real run's context.
+            log.debug(f"  Seg {i}: world_state.update skipped (dry-run)")
 
         return {"devanagari_script": devanagari_script, "script_for_tts": script}
 
@@ -559,6 +594,12 @@ def make_process_segment(
 
         if dry_run:
             return {"audio_path": None, "word_timestamps_json": None}
+
+        if tts_cfg.get("engine") == "none":
+            # Video-only mode: no TTS at all. Previously the "none" sentinel was
+            # normalized to indicf5 upstream, so every segment got narrated.
+            log.debug(f"  Seg {i}: TTS skipped (engine 'none')")
+            return {"audio_path": None, "word_timestamps_json": None, "tts_engine": "none"}
 
         from config.config import get_language
 
@@ -639,7 +680,6 @@ def make_process_segment(
         if dry_run or not generate_images:
             return {"images": []}
 
-        _visual_style = config.get("visual", {}).get("style", "")
         from utils.scene_director import enrich_prompts
 
         _memory_items_for_image = _gather_memory_items(mem, state)
@@ -684,6 +724,16 @@ def make_process_segment(
         images = state.get("images", [])
         word_timestamps_json = state.get("word_timestamps_json")
         key = f"{topic}_seg{i:02d}"
+
+        ck = cp_mgr.get(key) if resume else None
+        if ck and "video" in ck and Path(ck["video"]["data"]).exists():
+            # Resume: the segment was rendered in a previous run — skip the
+            # re-render (matches write_script/tts/image nodes' checkpoint
+            # short-circuits) and restore the mp4 into the concat list.
+            _mp4 = Path(ck["video"]["data"])
+            with mp4s_lock:
+                mp4s[i - 1] = _mp4
+            return {"mp4_path": str(_mp4)}
 
         if dry_run:
             mp4_path = out_base / f"segment_{i:02d}.mp4"
@@ -731,6 +781,9 @@ def make_process_segment(
             self.topic = topic
             self.mem = mem
             self.world_state = world_state
+            # Project-backed memory/asset store — carries the _project handle
+            # the asset-review path needs (mem is a StoryMemory and has none).
+            self.perma_mem = perma_mem
 
         def do_write_script(self, state):
             return write_script_node(state)
@@ -752,7 +805,7 @@ def make_process_segment(
             if not images:
                 return {}
             return _review_important_images(
-                mem=self.mem,
+                mem=self.perma_mem,
                 director_agent_instance=self.director_agent_instance,
                 topic=self.topic,
                 plan=state["plan"],
@@ -850,7 +903,10 @@ def make_process_segment(
 
         mem_data = {}
         try:
-            mem_data = mem.read()
+            # Memory items live in PermanentMemoryLog (story.json / project
+            # store), not in StoryMemory's file — read the same store the
+            # memory-review write path uses.
+            mem_data = perma_mem.read()
             all_items = []
             for scope_key in ("project", "story"):
                 items = mem_data.get("memory_items", {}).get(scope_key, [])
@@ -937,14 +993,19 @@ def make_process_segment(
                 state = _build_segment_state(_si)
                 r = write_script_node(state)
                 state.update(r)
-                for _rw in range(_MAX_REWRITES + 1):
-                    r = critic_node(state)
-                    state.update(r)
-                    if state.get("critic_approved", True):
-                        break
-                    r = write_script_node(state)
-                    state.update(r)
-                cp_mgr.save(_key, "script", {"data": state.get("script", "")})
+                # critic.enabled must be honored in staged mode too — the graph
+                # router honors it, the phase loop must not disagree.
+                _critic_enabled = bool(config.get("critic", {}).get("enabled", True))
+                if _critic_enabled:
+                    for _rw in range(_MAX_REWRITES + 1):
+                        r = critic_node(state)
+                        state.update(r)
+                        if state.get("critic_approved", True):
+                            break
+                        r = write_script_node(state)
+                        state.update(r)
+                if not fast_dry_run:
+                    cp_mgr.save(_key, "script", {"data": state.get("script", "")})
 
             _retry_segment_phase(_si, _do)
 
@@ -965,11 +1026,12 @@ def make_process_segment(
                     state["script"] = ck["script"]["data"]
                 result = translate_node(state)
                 state.update(result)
-                cp_mgr.save(_key, "devanagari_script", {
-                    "data": state.get("devanagari_script"),
-                    "script_for_tts": state.get("script_for_tts"),
-                })
-                cp_mgr.save(_key, "world_state_applied", {"done": True})
+                if not fast_dry_run:
+                    cp_mgr.save(_key, "devanagari_script", {
+                        "data": state.get("devanagari_script"),
+                        "script_for_tts": state.get("script_for_tts"),
+                    })
+                    cp_mgr.save(_key, "world_state_applied", {"done": True})
 
             _retry_segment_phase(_si, _do)
 
@@ -1017,7 +1079,8 @@ def make_process_segment(
                 if state.get("images"):
                     _ir = builder.important_image_review_node(state)
                     state.update(_ir)
-                cp_mgr.save(_key, "image_review_done", {"done": True})
+                if not fast_dry_run:
+                    cp_mgr.save(_key, "image_review_done", {"done": True})
 
             _retry_segment_phase(_si, _do)
 
@@ -1029,6 +1092,12 @@ def make_process_segment(
             _key = f"{topic}_seg{_si:02d}"
             ck = cp_mgr.get(_key) if resume else None
             if ck and "video" in ck and Path(ck["video"]["data"]).exists() and ck.get("render_done"):
+                # ponytail: restore the finished segment into mp4s so the final
+                # concat includes segments rendered in a previous run — the
+                # skip must not drop them from the assembled video.
+                with mp4s_lock:
+                    if _si - 1 < len(mp4s):
+                        mp4s[_si - 1] = Path(ck["video"]["data"])
                 continue
 
             def _do(_si, _key=_key):
@@ -1036,13 +1105,21 @@ def make_process_segment(
                 ck = cp_mgr.get(f"{topic}_seg{_si:02d}")
                 if ck and "script" in ck:
                     state["script"] = ck["script"]["data"]
+                if ck and "devanagari_script" in ck:
+                    state["devanagari_script"] = ck["devanagari_script"].get("data")
                 if ck and "audio" in ck:
                     state["audio_path"] = ck["audio"]["data"]
                     state["word_timestamps_json"] = ck["audio"].get("word_timestamps")
                 if ck and "images" in ck:
                     state["images"] = ck["images"]["data"]
                 render_node(state)
-                cp_mgr.save(_key, "render_done", {"done": True})
+                if preview_mode and not dry_run and _si == 1:
+                    # ponytail: the operator-approval pause promised by
+                    # --preview; only the staged (default) path — the graph
+                    # path mirrors it in process_segment.
+                    _preview_gate(mp4s[_si - 1], config)
+                if not fast_dry_run:
+                    cp_mgr.save(_key, "render_done", {"done": True})
                 # ponytail: memory_review also loads Ollama; it's part of same phase as render
                 builder.memory_review_node(state)
                 with completed_segs_lock:
@@ -1067,6 +1144,10 @@ def make_process_segment(
             initial_state = _build_segment_state(i)
             _plan = initial_state.get("plan", {})
             final_state = graph.invoke(initial_state)
+
+            if preview_mode and not dry_run and i == 1:
+                # ponytail: --preview pause; staged path mirrors in run_renders_phase.
+                _preview_gate(mp4s[i - 1] if i - 1 < len(mp4s) else None, config)
 
             from agents.director_agent import UIState as _UIState
 

@@ -143,3 +143,5 @@ def test_translate_node_falls_back_on_crash():
 
     with patch("crewai.Crew"), patch("crewai.Task"):
         process_seg(1)
+
+    assert counter[0] == 1, "translate crash must fall back to English TTS, not kill the segment"

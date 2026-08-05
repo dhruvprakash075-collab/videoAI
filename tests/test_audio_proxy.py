@@ -32,6 +32,14 @@ def test_normalize_tts_engine_non_string_defaults_to_indicf5():
         assert lg.warning.called
 
 
+def test_normalize_tts_engine_none_passthrough():
+    """'none' is the video-only sentinel (no TTS at all) — it must survive
+    normalization instead of defaulting to indicf5, which silently narrated
+    video-only runs."""
+    assert audio_proxy.normalize_tts_engine("none") == "none"
+    assert audio_proxy.normalize_tts_engine("None") == "none"
+
+
 def test_tts_capabilities_keys():
     caps = audio_proxy.tts_capabilities()
     assert set(caps) == {"indicf5", "supertonic", "omnivoice"}

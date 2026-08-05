@@ -206,12 +206,11 @@ def test_make_process_segment_fast_dry_run_and_decision_record(tmp_path):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
-    kwargs["cp_mgr"].save.assert_any_call(
-        "coverage topic_seg01",
-        "script",
-        {"data": "Intro. Summary This is a fast dry-run placeholder."},
-    )
-    kwargs["world_state"].update.assert_called()
+    # Dry runs must stay dry: the stub script must not reach the checkpoint
+    # (a later real resume would narrate the placeholder) nor the world state
+    # (the [DRY-RUN] marker would leak into a real run's context).
+    kwargs["cp_mgr"].save.assert_not_called()
+    kwargs["world_state"].update.assert_not_called()
 
 
 def test_make_process_segment_decision_record_failure_and_source_chunk(tmp_path):
@@ -292,6 +291,9 @@ def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
         patch("torch.cuda.is_available", return_value=True),
         patch("torch.cuda.empty_cache"),
     ):
+        # The identity-review path reads assets off perma_mem._project (mem is
+        # a StoryMemory with no project handle) — point it at the fixture.
+        perm.return_value._project = project
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
@@ -432,12 +434,14 @@ def test_returned_phase_functions_checkpoint_skips_and_render_phase(tmp_path):
     ) = segment_runner.make_process_segment(**kwargs)
 
     run_renders([1])
-    kwargs["cp_mgr"].save.assert_any_call("coverage topic_seg01", "render_done", {"done": True})
+    # Dry run stays dry: no render_done marker either (a stale marker would
+    # make a real resume skip the render of a segment that never rendered).
+    kwargs["cp_mgr"].save.assert_not_called()
     assert kwargs["completed_segs_counter_holder"][0] == 1
 
 
 def test_phase_retry_budget_exhaustion_and_abort(tmp_path):
-    kwargs = _process_kwargs(tmp_path, resume=False, dry_run=True, fast_dry_run=True)
+    kwargs = _process_kwargs(tmp_path, resume=False, dry_run=True)
     kwargs["config"].setdefault("performance", {})["max_segment_retries"] = 0
     kwargs["cp_mgr"].save.side_effect = RuntimeError("save failed")
     (
@@ -449,12 +453,140 @@ def test_phase_retry_budget_exhaustion_and_abort(tmp_path):
         _run_renders,
     ) = segment_runner.make_process_segment(**kwargs)
 
-    with patch("agents.director_agent.UIState.add_degradation") as add:
-        run_scripts([1])
-    add.assert_called_once()
+    score = MagicMock(total=90, issues=[], suggestions=[])
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value='{"narration": "hi"}'),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=score),
+        patch("utils.critic.is_approved", return_value=True),
+    ):
+        with patch("agents.director_agent.UIState.add_degradation") as add:
+            run_scripts([1])
+        add.assert_called_once()
 
     segment_runner.set_director_abort(True)
     try:
         run_scripts([1])
     finally:
         segment_runner.set_director_abort(False)
+
+
+def test_resume_restores_previous_mp4s_into_concat(tmp_path):
+    """Resume must feed already-rendered mp4s back into the concat list —
+    previously the skip dropped finished segments from the final video."""
+    mp4 = tmp_path / "segment_01.mp4"
+    mp4.write_bytes(b"mp4")
+
+    def full_ck(key):
+        if key == "coverage topic_seg01":
+            return {"video": {"data": str(mp4)}, "render_done": {"done": True}}
+        return None
+
+    kwargs = _process_kwargs(tmp_path, resume=True, dry_run=True, fast_dry_run=True)
+    kwargs["cp_mgr"].get.side_effect = full_ck
+    (_, _, _, _, _, run_renders) = segment_runner.make_process_segment(**kwargs)
+
+    run_renders([1])
+    assert kwargs["mp4s"][0] == mp4
+    kwargs["cp_mgr"].save.assert_not_called()
+
+
+def test_render_node_restores_video_checkpoint(tmp_path):
+    """Graph path (non-staged): render_node must short-circuit on a rendered
+    video checkpoint instead of re-rendering, and restore it into mp4s."""
+    mp4 = tmp_path / "segment_01.mp4"
+    mp4.write_bytes(b"mp4")
+
+    def full_ck(key):
+        if key == "coverage topic_seg01":
+            return {"video": {"data": str(mp4)}, "render_done": {"done": True}}
+        return None
+
+    kwargs = _process_kwargs(tmp_path, resume=True, dry_run=True, fast_dry_run=True)
+    kwargs["cp_mgr"].get.side_effect = full_ck
+    process, *_ = segment_runner.make_process_segment(**kwargs)
+
+    process(1)
+    assert kwargs["mp4s"][0] == mp4
+    kwargs["cp_mgr"].save.assert_not_called()
+
+
+def test_tts_engine_none_skips_generation(tmp_path):
+    """Video-only mode (tts.engine == "none") must not call the TTS provider —
+    previously the "none" sentinel was normalized to indicf5 upstream and every
+    segment got narrated."""
+    wav = tmp_path / "voice.wav"
+    wav.write_bytes(b"RIFF")
+    kwargs = _process_kwargs(tmp_path, dry_run=False)
+    kwargs["tts_cfg"] = {"engine": "none", "lang": "en"}
+    kwargs["config"]["tts"] = {"engine": "none", "lang": "en"}
+    score = MagicMock(total=90, issues=[], suggestions=[])
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value='{"narration": "hello world"}'),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=score),
+        patch("utils.critic.is_approved", return_value=True),
+        patch("audio.audio_proxy.tts_generate", return_value={"wav_path": str(wav)}) as tts,
+        patch("utils.get_audio_duration", return_value=20),
+        patch("video.image_gen.image_gen.generate_images", return_value=[]),
+        patch("video.renderer.renderer.render_with_assets", return_value=tmp_path / "out.mp4"),
+        patch("torch.cuda.is_available", return_value=False),
+    ):
+        process, *_ = segment_runner.make_process_segment(**kwargs)
+        process(1)
+
+    tts.assert_not_called()
+
+
+def test_enrich_prompts_semicolon_string_split(tmp_path):
+    """enrich_prompts returns a semicolon-joined string; the identity review
+    must index it as a list of prompts, not single characters."""
+    from PIL import Image
+
+    img = tmp_path / "frame.png"
+    Image.new("RGB", (10, 10), color="red").save(img)
+    director = MagicMock()
+    director.review_important_image.return_value = {"decision": "keep", "reason": "ok"}
+    mem = MagicMock(_project=None)
+    plan = {"char_presence": [{"hero": 1.0}, {"hero": 1.0}]}
+    state = {
+        "i": 1,
+        "plan": plan,
+        "script": "A hero walks through the valley.",
+        "config": {},
+        "images": [str(img), str(img)],
+        "enriched_prompts": "hero walking full body; hero close-up face",
+    }
+    segment_runner._review_important_images(
+        mem=mem, director_agent_instance=director, topic="t", plan=plan,
+        script="A hero walks through the valley.", config={}, state=state,
+    )
+    calls = [c.kwargs.get("prompt", "") for c in director.review_important_image.call_args_list]
+    assert calls
+    assert all(len(str(c)) > 5 for c in calls), "prompt indexed as single characters"
+
+
+def test_preview_gate_fires_after_first_staged_render(tmp_path):
+    """--preview must pause after segment 1's render in the staged path."""
+    wav = tmp_path / "voice.wav"
+    wav.write_bytes(b"RIFF")
+    mp4 = tmp_path / "segment_01.mp4"
+    kwargs = _process_kwargs(tmp_path, resume=False, dry_run=False, preview_mode=True)
+    score = MagicMock(total=90, issues=[], suggestions=[])
+    with (
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value='{"narration": "hello world"}'),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=score),
+        patch("utils.critic.is_approved", return_value=True),
+        patch("audio.audio_proxy.tts_generate", return_value={"wav_path": str(wav)}),
+        patch("utils.get_audio_duration", return_value=20),
+        patch("video.image_gen.image_gen.generate_images", return_value=[]),
+        patch("video.renderer.renderer.render_with_assets", return_value=mp4),
+        patch("core.segment_runner._preview_gate") as gate,
+        patch("torch.cuda.is_available", return_value=False),
+    ):
+        (_, _, _, _, _, run_renders) = segment_runner.make_process_segment(**kwargs)
+        run_renders([1])
+
+    gate.assert_called_once()
+    assert gate.call_args.args[0] == mp4

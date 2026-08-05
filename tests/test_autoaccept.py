@@ -3,9 +3,18 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.director_agent import DirectorAgent, UIState
+
+
+@pytest.fixture(autouse=True)
+def _restore_ui_state_defaults():
+    yield
+    UIState.auto_accept = False
+    UIState.is_ui_mode = False
 
 
 def test_consult_user_returns_default_when_auto_accept():

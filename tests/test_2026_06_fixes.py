@@ -267,16 +267,9 @@ class TestP423FloatDurationFlow:
 
     def test_bootstrap_cli_accepts_float(self):
         """`--duration 2.5` must be parsed as float (was int)."""
-        import argparse
+        from bootstrap_pipeline import _build_parser
 
-        # Replicate the bootstrap_pipeline CLI definition
-        from bootstrap_pipeline import run_pipeline_with_args  # noqa
-
-        # The argparse definition is inside run_pipeline_with_args; easier
-        # to replicate it directly
-        p = argparse.ArgumentParser()
-        p.add_argument("--duration", type=float)
-        args = p.parse_args(["--duration", "2.5"])
+        args = _build_parser().parse_args(["--duration", "2.5"])
         assert args.duration == 2.5
         assert isinstance(args.duration, float)
 

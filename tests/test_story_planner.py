@@ -348,13 +348,16 @@ def test_plan_batch_uses_world_lore_config():
     result = MagicMock()
     result.json_dict = {"segments": [{"seg": 1, "title": "T"}]}
     cfg = {"world_lore": {"description": "A dark world", "rules": ["No magic"]}}
+    task_mock = MagicMock()
     with (
         patch("utils.story_planner.guarded_crewai_kickoff", return_value=result),
         patch("utils.story_planner.Crew", MagicMock()),
-        patch("utils.story_planner.Task", MagicMock()),
+        patch("utils.story_planner.Task", task_mock),
     ):
         plan_story("topic", 1, cfg, agent)
-    # Just verify no exception — world lore should be incorporated into the prompt
+    prompt = task_mock.call_args.kwargs["description"]
+    assert "World Lore: A dark world" in prompt
+    assert "No magic" in prompt
 
 
 def test_plan_batch_uses_plot_threads():
@@ -362,12 +365,17 @@ def test_plan_batch_uses_plot_threads():
     result = MagicMock()
     result.json_dict = {"segments": [{"seg": 1, "title": "T"}]}
     cfg = {"active_plot_threads": ["Find the artifact", "Defeat villain"]}
+    task_mock = MagicMock()
     with (
         patch("utils.story_planner.guarded_crewai_kickoff", return_value=result),
         patch("utils.story_planner.Crew", MagicMock()),
-        patch("utils.story_planner.Task", MagicMock()),
+        patch("utils.story_planner.Task", task_mock),
     ):
         plan_story("topic", 1, cfg, agent)
+    prompt = task_mock.call_args.kwargs["description"]
+    assert "Active Plot Threads to include:" in prompt
+    assert "Find the artifact" in prompt
+    assert "Defeat villain" in prompt
 
 
 # ── plan_story batching ───────────────────────────────────────────────────────

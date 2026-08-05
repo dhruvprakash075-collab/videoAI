@@ -39,13 +39,16 @@ def run_preflight_checks(config: dict, dry_run: bool = False) -> None:
         return ("ok", f"Using system Python: {sys.executable}")
 
     def _check_tts_engine():
-        _KNOWN_TTS_ENGINES = {"indicf5", "supertonic", "omnivoice"}
+        _KNOWN_TTS_ENGINES = {"indicf5", "supertonic", "omnivoice", "none"}
         tts_engine = config.get("tts", {}).get("engine", "indicf5")
         if tts_engine not in _KNOWN_TTS_ENGINES:
             return (
                 "fail",
                 f"Unknown engine '{tts_engine}'. Supported: {', '.join(sorted(_KNOWN_TTS_ENGINES))}",
             )
+        if tts_engine == "none":
+            # Video-only sentinel: no TTS engine required.
+            return ("ok", "TTS disabled (video-only mode)")
         if tts_engine == "indicf5":
             indic_root = Path(config.get("tts", {}).get("indicf5", {}).get("root", "external/IndicF5"))
             if indic_root.exists():

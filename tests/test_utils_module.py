@@ -44,12 +44,6 @@ def test_setup_run_logging_creates_log_file(tmp_path: Path):
 
 
 def test_setup_run_logging_console_handler_added(tmp_path: Path):
-    # Remove existing StreamHandlers to force add
-    [
-        h
-        for h in logging.root.handlers
-        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-    ]
     setup_run_logging(tmp_path)
     after = [
         h
@@ -92,7 +86,7 @@ def test_build_prompts_falls_back_to_default_count(config):
     assert result
 
 
-def test_build_prompts_clamps_to_max(config):
+def test_build_prompts_uses_plan_num_images_without_cap(config):
     """If num_images exceeds the config max, build_prompts uses the plan's num_images (no cap)."""
     plan = {"title": "T", "key_event": "X", "mood": "epic", "num_images": 100}
     result = build_prompts("script", plan, config)
