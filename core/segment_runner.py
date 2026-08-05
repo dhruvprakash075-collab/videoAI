@@ -39,6 +39,24 @@ from utils.emotion_control import inject_emotion
 
 log = logging.getLogger(__name__)
 
+
+def pick_source_chunk(source_chunks: list | None, seg_idx: int) -> Any | None:
+    """Pick the source chunk for a 1-based segment index.
+
+    Returns the chunk at ``seg_idx`` (1-based) or ``None`` on overrun (segment
+    beyond the source's real chunk count) so the writer's LLM fallback takes
+    over instead of silently REPEATING a chunk verbatim. Empty padding chunks
+    from short-source rebalancing are never handed to the writer.
+    """
+    if not source_chunks:
+        return None
+    real = [c for c in source_chunks if c.text and c.text.strip()]
+    if not real:
+        return None
+    if seg_idx - 1 >= len(real):
+        return None
+    return real[seg_idx - 1]
+
 # ── moved verbatim to core/runtime/ollama.py ──
 from core.preview import _preview_gate
 from core.runtime.ollama import (  # noqa: F401
@@ -285,19 +303,25 @@ def make_process_segment(
         plan = state["plan"]
         context = state["context"]
         key = f"{topic}_seg{i:02d}"
+
+        # Source chunks WIN over a stale script checkpoint: a resume of the same
+        # topic key with a different --source must narrate the NEW document, not
+        # whatever a previous (possibly no-source) run scripted. Reusing the old
+        # script while still merging the new chunk's b_roll_hint/key_event would
+        # produce a video that contradicts itself.
+        chunk = state.get("source_chunk")
+        if chunk and chunk.text.strip():
+            log.debug(
+                f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
+            )
+            return {"script": chunk.text}
+
         ck = cp_mgr.get(key) if resume else None
 
         if ck and "script" in ck:
             script = ck["script"]["data"]
             log.debug(f"  Seg {i}: script from checkpoint")
             return {"script": script}
-
-        chunk = state.get("source_chunk")
-        if chunk:
-            log.debug(
-                f"  Seg {i}: source-path short-circuit (chunk={chunk.index}, {len(chunk.text)} chars)"
-            )
-            return {"script": chunk.text}
 
         if fast_dry_run:
             _title = plan.get("title", f"Part {i}")
@@ -425,6 +449,14 @@ def make_process_segment(
         if fast_dry_run:
             return {"critic_approved": True, "critic_feedback": ""}
 
+        # Source-path chunks are verbatim novel text by contract — auto-approve
+        # BEFORE validate_script so short-but-legit chunks aren't rejected and
+        # rewrite-looped. (critic never sees the target; validation would too.)
+        chunk = state.get("source_chunk")
+        if chunk and chunk.text.strip():
+            log.debug(f"  Seg {i}: source-path — critic auto-approves verbatim source")
+            return {"critic_approved": True, "critic_feedback": ""}
+
         from utils import validate_script
 
         if not validate_script(script, config):
@@ -434,10 +466,6 @@ def make_process_segment(
                 "critic_feedback": "Validation failed",
                 "rewrites_attempted": rewrites + 1,
             }
-
-        if state.get("source_chunk"):
-            log.debug(f"  Seg {i}: source-path — critic auto-approves verbatim source")
-            return {"critic_approved": True, "critic_feedback": ""}
 
         # Deterministic word-count gate: the writer must deliver the planned
         # target (plan.target_word_count or words_per_seg — same expression the
@@ -514,7 +542,11 @@ def make_process_segment(
                     "narration_rejected": True,
                 }
 
-        cp_mgr.save(key, "script", {"data": script})
+        # ponytail: plain --dry-run KEEPS real scripts persisted (script-first
+        # workflow: dry-run the scripts, resume real for TTS/images). Only the
+        # fast-dry-run stub and world-state [DRY-RUN] markers must never leak.
+        if not fast_dry_run:
+            cp_mgr.save(key, "script", {"data": script})
 
         devanagari_script = None
         from config.config import get_language
@@ -811,7 +843,9 @@ def make_process_segment(
             return render_node(state)
 
         def do_memory_review(self, state):
-            if fast_dry_run:
+            # ponytail: dry runs must not write memory items — they'd be
+            # injected into a later REAL run's context as if validated.
+            if dry_run:
                 return {"memory_items": []}
 
             script = state.get("script", "")
@@ -946,8 +980,18 @@ def make_process_segment(
             "skip": False,
             "memory_data": mem_data,
         }
-        if source_chunks and 0 <= (seg_idx - 1) < len(source_chunks):
-            state["source_chunk"] = source_chunks[seg_idx - 1]
+        chunk = pick_source_chunk(source_chunks, seg_idx)
+        state["source_chunk"] = chunk
+        if chunk and (chunk.b_roll_hint or chunk.key_event):
+            # Source-path chunks carry their own story beats. Merge them onto a
+            # copy of the outline plan (NEVER the shared outline dict — retries
+            # and other segments must not see the mutation) so build_prompts /
+            # enrich_prompts pick the source event + B-roll cue up via plan.
+            state["plan"] = {
+                **plan,
+                "b_roll_hint": chunk.b_roll_hint or plan.get("b_roll_hint", ""),
+                "key_event": chunk.key_event or plan.get("key_event", ""),
+            }
         return cast(SegmentState, state)
 
     _MAX_REWRITES = config.get("critic", {}).get("max_rewrites", 2)
@@ -974,12 +1018,19 @@ def make_process_segment(
 
     def run_scripts_phase(segment_indices: list[int]) -> None:
         """Phase 1: write_script + critic for all segments in batch."""
+        # ponytail: source runs must not skip on a stale script checkpoint —
+        # write_script_node already prefers the chunk; skipping here would
+        # keep the OLD script (chunk never consulted).
+        _has_source = any(
+            (c is not None and getattr(c, "text", "") and c.text.strip())
+            for c in (source_chunks or [])
+        )
         for _si in segment_indices:
             if _director_aborted():
                 break
             _key = f"{topic}_seg{_si:02d}"
             ck = cp_mgr.get(_key) if resume else None
-            if ck and "script" in ck:
+            if ck and "script" in ck and not _has_source:
                 continue
 
             def _do(_si, _key=_key):
@@ -997,6 +1048,8 @@ def make_process_segment(
                             break
                         r = write_script_node(state)
                         state.update(r)
+                # ponytail: plain --dry-run KEEPS real scripts (script-first resume);
+                # only fast_dry_run stubs are excluded.
                 if not fast_dry_run:
                     cp_mgr.save(_key, "script", {"data": state.get("script", "")})
 
@@ -1024,6 +1077,11 @@ def make_process_segment(
                         "data": state.get("devanagari_script"),
                         "script_for_tts": state.get("script_for_tts"),
                     })
+                # ponytail: world_state_applied must only be recorded when the
+                # world state actually ran — translate_node skips world_state.update
+                # on dry runs, so writing the flag would make a real resume skip
+                # the update forever (silent continuity loss).
+                if not dry_run:
                     cp_mgr.save(_key, "world_state_applied", {"done": True})
 
             _retry_segment_phase(_si, _do)
@@ -1182,9 +1240,12 @@ def make_process_segment(
                 "reason": str(e),
                 "title": _plan_title,
             })
-            if not resume:
-                raise
-            log.info(f"  Skipping segment {i}, will resume from next")
+            # ponytail: always re-raise — the A7 retry budget lives in
+            # build_retry_wrapper (the production path wraps process_segment).
+            # Swallowing here when resume=True made the budget dead code in the
+            # default config (a transient OOM/network failure skipped the
+            # segment on the FIRST attempt, never retried).
+            raise
         finally:
             with completed_segs_lock:
                 completed_segs_counter_holder[0] += 1

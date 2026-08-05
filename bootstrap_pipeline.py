@@ -191,7 +191,16 @@ def _load_and_split_source(source_arg: str, args, pf_config: dict) -> tuple:
     print(f"[SOURCE] Target: {n_segments} segments @ ~{target_words} words/segment")
 
     try:
-        chunks = split_source(source_doc, n_segments, pf_config or {})
+        # ponytail: split_source derives grouping from config.script.words_per_segment;
+        # a CLI --words-per-segment must reach it too (it only fed the n_segments
+        # math before, so grouping disagreed with the locked target).
+        _split_cfg = dict(pf_config or {})
+        if target_words != int((pf_config or {}).get("script", {}).get("words_per_segment", 100)):
+            _split_cfg = {
+                **_split_cfg,
+                "script": {**(pf_config or {}).get("script", {}), "words_per_segment": target_words},
+            }
+        chunks = split_source(source_doc, n_segments, _split_cfg)
     except SourceSplitterError as e:
         print(f"[SOURCE] Split failed: {e}")
         sys.exit(1)
@@ -207,8 +216,8 @@ def _load_and_split_source(source_arg: str, args, pf_config: dict) -> tuple:
     elif len(chunks) != args.segment_count:
         print(
             f"[SOURCE] WARNING: --segment-count={args.segment_count} differs from "
-            f"source chunk count ({len(chunks)}). Per-segment source chunks will cycle; "
-            f"the Director's plan drives n_segs."
+            f"source chunk count ({len(chunks)}). Chunks map 1:1 to segments; "
+            f"segments beyond the last chunk fall back to the LLM writer."
         )
     return chunks, topic_text, source_doc.text
 
@@ -406,6 +415,11 @@ def _resolve_input(args, pf_config):
 
     source_chunks = None
     if getattr(args, "source", None):
+        if args.file:
+            print(
+                "[SOURCE] WARNING: both --file and --source given — --source wins, "
+                "--file content and its topic are discarded"
+            )
         source_chunks, topic_text, content_text = _load_and_split_source(
             args.source, args, pf_config
         )

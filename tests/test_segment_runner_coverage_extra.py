@@ -222,6 +222,53 @@ def test_make_process_segment_decision_record_failure_and_source_chunk(tmp_path)
     )
 
 
+def test_make_process_segment_source_chunks_overrun_falls_to_writer(tmp_path):
+    """n_segs > len(source_chunks): the FIRST chunks map 1:1; overrun segments
+    must NOT repeat the chunk verbatim — they fall through to the LLM writer."""
+    chunk = MagicMock(index=0, text="source text")
+    kwargs = _process_kwargs(
+        tmp_path,
+        source_chunks=[chunk],
+        n_segs=3,
+        mp4s=[None, None, None],
+        dry_run=True,
+    )
+
+    with patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")):
+        process, *_ = segment_runner.make_process_segment(**kwargs)
+        for i in (1, 2, 3):
+            process(i)
+
+    kwargs["cp_mgr"].save.assert_any_call("coverage topic_seg01", "script", {"data": "source text"})
+    for seg in ("seg02", "seg03"):
+        saved = [
+            c.args[2]["data"]
+            for c in kwargs["cp_mgr"].save.call_args_list
+            if c.args[0] == f"coverage topic_{seg}" and c.args[1] == "script"
+        ]
+        assert saved, f"expected {seg} to reach the writer"
+        assert saved[0] != "source text", f"{seg} must not repeat the source chunk"
+
+
+def test_make_process_segment_empty_source_chunk_not_short_circuited(tmp_path):
+    """Empty padded chunks must NOT short-circuit the writer to an empty script."""
+    empty = MagicMock(index=0, text="")
+    kwargs = _process_kwargs(tmp_path, source_chunks=[empty], dry_run=True)
+
+    with patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")):
+        process, *_ = segment_runner.make_process_segment(**kwargs)
+        process(1)
+
+    # No empty-script checkpoint: the LLM writer path (MagicMock result) runs instead.
+    saved = [
+        c.args[2]["data"]
+        for c in kwargs["cp_mgr"].save.call_args_list
+        if c.args[1] == "script"
+    ]
+    assert saved, "expected at least one script checkpoint"
+    assert all(s != "" for s in saved)
+
+
 def test_make_process_segment_non_dry_image_review_and_memory(tmp_path):
     from PIL import Image
 

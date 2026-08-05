@@ -457,6 +457,13 @@ def run_long_pipeline(
     world_state = WorldState(topic=topic, checkpoint_dir=ck_dir)
     if not resume:
         try:
+            # ponytail: --no-resume must mean a clean slate for the WHOLE
+            # topic — clearing only the world state let a crashed "fresh" run
+            # leave segment/meta checkpoints that the next default resume
+            # silently merged (fresh early segments + stale later ones).
+            for _ck_i in range(1, n_segs + 1):
+                cp_mgr.clear(f"{topic}_seg{_ck_i:02d}")
+            cp_mgr.clear(f"{topic}_meta")
             _ws_file = ck_dir / f"world_state_{_safe_filename(topic.lower())}.json"
             if _ws_file.exists():
                 _ws_file.unlink()
@@ -495,7 +502,10 @@ def run_long_pipeline(
 
     # ── Story outline ──
     director_agent = create_director(config)
-    outline = plan_outline(topic, n_segs, config, director_agent, cp_mgr, resume)
+    _src_count = len([c for c in (source_chunks or []) if c.text and c.text.strip()])
+    outline = plan_outline(
+        topic, n_segs, config, director_agent, cp_mgr, resume, source_chunk_count=_src_count or None
+    )
 
     outline, n_segs, mp4s = _adjust_outline_length(outline, n_segs, mp4s, _seg_count_locked)
     log.info(f"│  Total:       ~{format_time_hms(est_total_s):<25}│")

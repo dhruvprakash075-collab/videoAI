@@ -432,14 +432,34 @@ def run_pre_production(
 
 
 def plan_outline(
-    topic: str, n_segs: int, config: dict, director_agent, cp_mgr, resume: bool
+    topic: str,
+    n_segs: int,
+    config: dict,
+    director_agent,
+    cp_mgr,
+    resume: bool,
+    source_chunk_count: int | None = None,
 ) -> list[dict]:
     """Plan the story outline (once, before segments). Loads from checkpoint if available."""
     from utils.story_planner import _default_outline_used, plan_story
 
     ck_meta = cp_mgr.get(f"{topic}_meta") if resume else None
-    if ck_meta and "outline" in ck_meta and ck_meta["outline"].get("data"):
-        outline = ck_meta["outline"]["data"]
+    _cached_outline = (
+        ck_meta["outline"].get("data") if ck_meta and "outline" in ck_meta else None
+    )
+    if _cached_outline and source_chunk_count is not None and len(_cached_outline) != source_chunk_count:
+        # ponytail: an outline checkpoint is n_segs-blind — a resumed --source run
+        # whose document split into a different number of chunks would otherwise
+        # silently truncate (chunks past the cached outline length never narrated).
+        # Cache reuse is only safe when the structure matches the current source.
+        log.warning(
+            f"[OUTLINE] Cached outline ({len(_cached_outline)} segments) differs from "
+            f"current source chunk count ({source_chunk_count}) — re-planning from scratch "
+            f"(ignoring stale cache)."
+        )
+        _cached_outline = None
+    if _cached_outline:
+        outline = _cached_outline
         log.info("[OK] Story outline loaded from checkpoint")
     else:
         log.info("Planning story outline...")

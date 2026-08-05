@@ -14,6 +14,7 @@ from core.segment_runner import (
     evict_ollama_models,
     get_director_abort,
     log_vram_usage,
+    pick_source_chunk,
     set_director_abort,
 )
 
@@ -563,6 +564,37 @@ def test_process_segment_source_chunk_short_circuits(tmp_path):
     assert result is None
 
 
+def test_pick_source_chunk_one_to_one_not_cycling():
+    from utils.source_splitter import SegmentChunk
+
+    chunks = [SegmentChunk(index=0, text="chunk zero"), SegmentChunk(index=1, text="chunk one")]
+    assert pick_source_chunk(chunks, 1).text == "chunk zero"
+    assert pick_source_chunk(chunks, 2).text == "chunk one"
+    assert pick_source_chunk(chunks, 3) is None, "overrun must fall back to LLM writer, not repeat"
+    assert pick_source_chunk(chunks, 4) is None
+
+
+def test_pick_source_chunk_skips_empty_padding():
+    from utils.source_splitter import SegmentChunk
+
+    chunks = [
+        SegmentChunk(index=0, text="real text"),
+        SegmentChunk(index=1, text=""),
+        SegmentChunk(index=2, text="  "),
+    ]
+    assert pick_source_chunk(chunks, 1).text == "real text"
+    assert pick_source_chunk(chunks, 2) is None, "empty padding must not be handed to the writer"
+    assert pick_source_chunk(chunks, 3) is None
+
+
+def test_pick_source_chunk_none_or_all_empty():
+    from utils.source_splitter import SegmentChunk
+
+    assert pick_source_chunk(None, 1) is None
+    assert pick_source_chunk([], 1) is None
+    assert pick_source_chunk([SegmentChunk(index=0, text="")], 1) is None
+
+
 def test_process_segment_no_source_chunk_dry_run(tmp_path):
     """When no source_chunk and dry_run=True, process_seg returns without error."""
     from core.segment_runner import make_process_segment
@@ -825,7 +857,9 @@ def test_process_segment_no_ctx_mgr(tmp_path):
 
 
 def test_process_segment_exception_handling_resume(tmp_path):
-    """If segment fails and resume=True, exception is skipped."""
+    """Segment failure re-raises even with resume=True — the retry budget in
+    build_retry_wrapper (production path) owns skip decisions. Swallowing here
+    used to skip the segment on the FIRST attempt with no retry."""
     from core.segment_runner import make_process_segment
     from utils.concurrency import global_scheduler
 
@@ -848,7 +882,7 @@ def test_process_segment_exception_handling_resume(tmp_path):
         director_agent_instance=MagicMock(),
         writer_agent=MagicMock(),
 
-        resume=True,  # triggers skip rather than raise
+        resume=True,
         dry_run=True,
         preview_mode=False,
         words_per_seg=100,
@@ -860,8 +894,9 @@ def test_process_segment_exception_handling_resume(tmp_path):
         mp4s=mp4s,
         mp4s_lock=threading.Lock(),
     )
-    process_seg(1)
-    assert counter[0] == 1  # completes (finishes cleanup even on failure)
+    with pytest.raises(Exception, match="failed to load ws"):
+        process_seg(1)
+    assert counter[0] == 1  # finally-block cleanup still runs on failure
 
 
 def test_build_retry_wrapper_exhausted():

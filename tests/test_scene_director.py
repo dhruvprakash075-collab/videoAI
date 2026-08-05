@@ -286,6 +286,16 @@ class TestEnrichPrompts:
         # Character description should be stripped (replaced with empty landscape)
         assert "warrior with bow" not in enriched
 
+    def test_b_roll_hint_from_plan_appended_to_prompt(self):
+        cfg = {
+            "visual": {"style": "cinematic"},
+            "characters": {},
+            "image_gen": {"token_budget": {}},
+        }
+        plan = {"b_roll_hint": "candle on a dark desk"}
+        enriched, _ = sd.enrich_prompts("hero room", "calm scene", cfg, plan=plan)
+        assert "candle on a dark desk" in enriched
+
     def test_char_presence_high_weight_includes_character(self):
         cfg = {
             "visual": {"style": "cinematic"},

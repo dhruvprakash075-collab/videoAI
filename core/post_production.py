@@ -252,7 +252,24 @@ def finalize_production(
         final_out = Path(default_out)
     final_out.parent.mkdir(parents=True, exist_ok=True)
 
-    log.info(f"Concatenating {len(mp4s)} segments...")
+    real_mp4s = [p for p in mp4s if p is not None]
+    missing = n_segs - len(real_mp4s)
+    if missing:
+        log.error(
+            f"[ASSEMBLY] {missing} of {n_segs} segments have no rendered video "
+            f"and are MISSING from the final video. Check degradations in the "
+            f"run manifest for which segments failed."
+        )
+        try:
+            from agents.director_agent import UIState as _UIS
+
+            _UIS.add_degradation(
+                0, "assembly_missing_segments", f"{missing} of {n_segs} segments missing"
+            )
+        except Exception as exc:
+            log.debug(f"UIState degradation record skipped: {exc}")
+
+    log.info(f"Concatenating {len(real_mp4s)} segments...")
 
     # Background music (mood-matched)
     music_path = None
@@ -272,7 +289,7 @@ def finalize_production(
 
     try:
         final_video = concatenate_segments(
-            [p for p in mp4s if p is not None],
+            real_mp4s,
             final_out,
             music=music_path,
             config=config,
@@ -361,7 +378,7 @@ def finalize_production(
     _success_result: dict[str, Any] = {
         "status": "success",  # ponytail: QC is advisory; duration mismatch is warning-only, not pipeline error
         "output": str(final_video),
-        "segments": len(mp4s),
+        "segments": len(real_mp4s),  # honest: only what actually rendered (was len(mp4s), over-reporting None slots)
         "duration_s": qc["details"].get("duration_s", 0),
         "quality": qc,
         "thumbnail": _thumbnail_path,

@@ -197,6 +197,37 @@ class TestSplitByChapter:
         assert len(chunks) == 3
         assert chunks[0].source_chapter == "A"
 
+    def test_docx_dict_headings_located_in_text(self):
+        # The real loader emits dict entries ({"style": "Heading 1", "text": ...}),
+        # and DOCX carries no offsets — titles must be located inside the text.
+        source = _doc(
+            text="A Introduction text here. B Details text here. C Closing text here.",
+            source_type="docx",
+            metadata={
+                "headings": [
+                    {"style": "Heading 1", "text": "A"},
+                    {"style": "Heading 1", "text": "B"},
+                    {"style": "Heading 1", "text": "C"},
+                ]
+            },
+        )
+        chunks = _split_by_chapter(source, 3)
+        assert len(chunks) == 3
+        assert [c.source_chapter for c in chunks] == ["A", "B", "C"]
+        assert "Introduction text" in chunks[0].text
+        assert "Details text" in chunks[1].text
+        assert "Closing text" in chunks[2].text
+
+    def test_docx_titles_not_found_falls_back(self):
+        # Titles absent from the text must not crash — split_source falls back.
+        source = _doc(
+            text="Some body without the heading titles.",
+            source_type="docx",
+            metadata={"headings": [{"style": "Heading 1", "text": "Missing A"}]},
+        )
+        chunks = split_source(source, 2, {"source": {"split_strategy": "by_chapter"}})
+        assert len(chunks) == 2
+
 
 # ── _split_by_word_count ────────────────────────────────────────────────────
 

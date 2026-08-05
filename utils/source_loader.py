@@ -279,9 +279,19 @@ def _load_url(url: str, config: dict | None) -> SourceDocument:
         )
 
     raw_html = resp.text
-    if len(raw_html) > max_bytes:
+    # H6b: the post-download re-check must measure BYTES like the declared
+    # Content-Length check — comparing decoded char count against a byte cap
+    # lets a multibyte page (e.g. Devanagari, CJK) blow past the cap.
+    # Prefer the raw response body; fall back to an encode when the transport
+    # didn't expose it (mocks, exotic transports). ponytail: the encode path
+    # measures chars*~1 not true wire bytes, but only fires off-requests (real
+    # responses always carry .content) so the byte guard for production is exact.
+    _body = getattr(resp, "content", None)
+    if not isinstance(_body, bytes):
+        _body = raw_html.encode("utf-8", errors="replace")
+    if len(_body) > max_bytes:
         raise SourceLoaderError(
-            f"URL response too large: {len(raw_html)} chars (cap: {max_bytes})."
+            f"URL response too large: {len(_body)} bytes (cap: {max_bytes})."
         )
     extracted = trafilatura.extract(raw_html, include_comments=False, include_tables=False) or ""
     text = _normalize_text(extracted)

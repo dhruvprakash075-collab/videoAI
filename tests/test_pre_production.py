@@ -207,6 +207,37 @@ def test_plan_outline_resumes_from_checkpoint():
     cp_mgr.save.assert_not_called()
 
 
+def test_plan_outline_rejects_stale_cache_when_source_chunk_count_differs():
+    """A resumed --source run whose document splits into a different number of
+    chunks than the cached outline must NOT reuse the cache — the old outline
+    would silently truncate the run (chunks past its length never narrated)."""
+    topic = "test_topic"
+    director_agent = MagicMock()
+    cp_mgr = MagicMock()
+    cp_mgr.get.return_value = {"outline": {"data": [{"seg": 1}, {"seg": 2}]}}
+    with patch("utils.story_planner.plan_story", return_value=[{"seg": 1}] * 3) as plan_story:
+        outline = plan_outline(
+            topic, 3, {}, director_agent, cp_mgr, resume=True, source_chunk_count=3
+        )
+    assert len(outline) == 3
+    plan_story.assert_called_once()
+
+
+def test_plan_outline_keeps_cache_when_source_chunk_count_matches():
+    """Cache reuse is still fine when the current source splits to the same
+    number of chunks as the cached outline."""
+    topic = "test_topic"
+    director_agent = MagicMock()
+    cp_mgr = MagicMock()
+    cp_mgr.get.return_value = {"outline": {"data": [{"seg": 1}, {"seg": 2}]}}
+    with patch("utils.story_planner.plan_story", return_value=[{"seg": 1}] * 2) as plan_story:
+        outline = plan_outline(
+            topic, 2, {}, director_agent, cp_mgr, resume=True, source_chunk_count=2
+        )
+    assert outline == [{"seg": 1}, {"seg": 2}]
+    plan_story.assert_not_called()
+
+
 def test_plan_outline_calls_plan_story_when_no_resume():
     """When resume is False, always call plan_story."""
     with patch("utils.story_planner.plan_story", return_value=[{"seg": 1}]) as plan_story:

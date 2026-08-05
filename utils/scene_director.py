@@ -129,6 +129,14 @@ def enrich_prompts(
     if _shot_meta:
         camera = f"{camera}, {_shot_meta}"
 
+    # Source-path B-roll cue (from a SegmentChunk's b_roll_hint) appended to the
+    # camera move so webtoon/anime frames show the source's visual hint, not just
+    # the mood-derived camera. ponytail: only relevant when source chunks exist;
+    # harmless no-op otherwise (empty string).
+    _b_roll_hint = (plan or {}).get("b_roll_hint", "") if isinstance(plan, dict) else ""
+    if _b_roll_hint:
+        camera = f"{camera}, {_b_roll_hint}"
+
     # Get visual style from config
     style = config.get("visual", {}).get("style") or "Gothic Horror"
     # The Director overlay may set style as a dict {tone:..., elements:[...]} instead of a string.

@@ -54,12 +54,17 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.file:
-        file_path = Path(args.file)
-        full_content = file_path.read_text(encoding="utf-8").strip()
-        topic_text = file_path.stem.replace("_", " ").replace("-", " ")
+        try:
+            from utils.source_loader import SourceLoaderError, load_source
+
+            doc = load_source(args.file, config=None)
+            full_content = doc.text
+        except SourceLoaderError as e:
+            parser.error(str(e))
+        topic_text = Path(args.file).stem.replace("_", " ").replace("-", " ")
         content_text = full_content
         print(
-            f"[FILE] Loaded: {file_path.name} ({len(content_text)} chars, ~{len(content_text.split())} words)"
+            f"[FILE] Loaded: {Path(args.file).name} ({len(content_text)} chars, ~{len(content_text.split())} words)"
         )
     else:
         topic_text = args.topic

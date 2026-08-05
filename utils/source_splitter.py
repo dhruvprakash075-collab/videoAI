@@ -93,12 +93,15 @@ def _split_by_chapter(source, n: int) -> list[SegmentChunk]:
         raw = source.metadata.get("headings", [])
         headings = []
         for entry in raw:
-            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            if isinstance(entry, dict):
+                style, title = str(entry.get("style", "")), str(entry.get("text", ""))
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                style, title = str(entry[0]), str(entry[1])
+            else:
                 continue
-            style, title = entry[0], entry[1]
-            level = 1 if "1" in str(style) else (2 if "2" in str(style) else 0)
+            level = 1 if "1" in style else (2 if "2" in style else 0)
             if level and title:
-                headings.append((level, str(title)))
+                headings.append((level, title))
     else:
         return []
 
@@ -113,16 +116,20 @@ def _split_by_chapter(source, n: int) -> list[SegmentChunk]:
             boundaries.append((m.start(), m.end(), m.group(2)))
 
     if not boundaries and source.source_type == "docx":
+        # DOCX: headings carry no source offsets — locate each title's first
+        # occurrence in the joined paragraph text and slice there. Headings
+        # themselves are metadata, not narration, so they're excluded.
         body_start = 0
         for i, (_level, title) in enumerate(headings):
-            start = body_start
-            end = (
-                len(text)
-                if i == len(headings) - 1
-                else boundaries[i + 1][0]
-                if i + 1 < len(boundaries)
-                else len(text)
-            )
+            _found = text.find(title, body_start)
+            # section body starts AFTER the heading line (heading is metadata)
+            start = _found + len(title) if _found != -1 else body_start
+            _next_title = headings[i + 1][1] if i + 1 < len(headings) else None
+            end = len(text)
+            if _next_title:
+                _nxt = text.find(_next_title, start)
+                if _nxt != -1:
+                    end = _nxt
             section_text = text[start:end].strip()
             if section_text:
                 sections.append((title, section_text))

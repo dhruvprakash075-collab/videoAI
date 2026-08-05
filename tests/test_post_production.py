@@ -606,6 +606,36 @@ class TestFinalizeProduction:
 
         assert "chapters" in result
 
+    def test_missing_segments_are_loud_and_counted_honestly(self, tmp_path, monkeypatch):
+        """None mp4 slots must NOT silently vanish: log error + degradation,
+        and result['segments'] must report only what actually rendered."""
+        monkeypatch.chdir(tmp_path)
+        cfg = _minimal_config()
+        seg1 = tmp_path / "seg1.mp4"
+        seg1.write_bytes(b"x")
+        mp4s = [seg1, None]  # segment 2 failed to render
+        fake_final = tmp_path / "final.mp4"
+        fake_final.write_bytes(b"x")
+
+        with (
+            patch("core.segment_runner.log_vram_usage"),
+            patch(
+                "utils.quality_check.check_video",
+                return_value={"passed": True, "issues": [], "details": {"duration_s": 60.0}},
+            ),
+            patch("video.renderer.assembler.concatenate_segments", return_value=fake_final) as concat,
+            patch("core.post_production.get_video_duration", return_value=30.0),
+            patch("core.post_production._write_chapters", return_value=["0:00 Part 1"]),
+            patch("agents.director_agent.UIState.add_degradation") as add,
+        ):
+            result = pp.finalize_production("T", cfg, _outline(2), 2, mp4s, 5.0)
+
+        # concatenate_segments gets ONLY the rendered segment; result count is honest.
+        assert concat.call_args.args[0] == [seg1]
+        assert result["segments"] == 1
+        # The drop is loud, not silent — a degradation is recorded.
+        add.assert_called_once_with(0, "assembly_missing_segments", "1 of 2 segments missing")
+
     def test_youtube_upload_triggered_when_enabled(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         cfg = _minimal_config(

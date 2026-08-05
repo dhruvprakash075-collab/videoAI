@@ -193,6 +193,25 @@ class TestSegmentCountDerivation:
             )
         args = mock_split.call_args.args
         assert args[1] == 4
+        cfg = mock_split.call_args.args[2]
+        assert cfg["script"]["words_per_segment"] == 50, (
+            "CLI --words-per-segment must reach split_source grouping, "
+            "not just the n_segments math"
+        )
+
+    def test_words_per_segment_passthrough_when_no_cli_override(self, tmp_path):
+        f = tmp_path / "doc.md"
+        f.write_text("x", encoding="utf-8")
+        doc = _doc("body", source_type="md", word_count=200)
+        with (
+            patch("utils.source_loader.load_source", return_value=doc),
+            patch("utils.source_splitter.split_source", return_value=_chunks(4)) as mock_split,
+        ):
+            _load_and_split_source(
+                str(f), _args(), {"script": {"words_per_segment": 100}}
+            )
+        cfg = mock_split.call_args.args[2]
+        assert cfg["script"]["words_per_segment"] == 100
 
     def test_short_source_minimum_one_chunk(self, tmp_path):
         f = tmp_path / "doc.md"
