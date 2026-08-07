@@ -459,6 +459,10 @@ class StoryboardConfig(BaseModel):
     approval_retries: int = 2
     reuse_existing: bool = True
     inject_shot_metadata: bool = True
+    # Reference-sheet generation: style override (empty = visual.style) and the
+    # character keys to build 4-view sheets for on approval (default protagonist).
+    style: str = ""
+    character_sheet_chars: list[str] = Field(default_factory=lambda: ["protagonist"])
 
 
 class CriticConfig(BaseModel):

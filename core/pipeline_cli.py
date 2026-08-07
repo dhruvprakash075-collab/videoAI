@@ -42,6 +42,16 @@ def main() -> None:
     )
     parser.add_argument("--no-resume", action="store_true", help="Start fresh (ignore checkpoints)")
     parser.add_argument(
+        "--no-storyboard",
+        action="store_true",
+        help="Skip the pre-production storyboard sheet generation + approval gate",
+    )
+    parser.add_argument(
+        "--force-storyboard",
+        action="store_true",
+        help="Regenerate the storyboard even if an approved one exists in memory",
+    )
+    parser.add_argument(
         "--project",
         default=None,
         help="Name of the project series to load from projects/ directory",
@@ -85,6 +95,8 @@ def main() -> None:
             duration_min=args.duration,
             series_mode=args.series,
             content_text=content_text,
+            no_storyboard=args.no_storyboard,
+            force_storyboard=args.force_storyboard,
         )
 
         print("PIPELINE COMPLETE")

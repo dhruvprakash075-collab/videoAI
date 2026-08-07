@@ -279,8 +279,8 @@ class TestUrlLoader:
             patch.dict("sys.modules", {"trafilatura": self._mock_traf(big_text)}),
         ):
             doc = load_source("https://example.com/big")
-        assert doc.word_count > 50000
-        assert any("soft cap" in r.message for r in caplog.records)
+        assert doc.word_count <= 50000
+        assert any("exceeds cap" in r.message for r in caplog.records)
 
 
 # ── PDF loader (with mocked pypdf) ─────────────────────────────────
@@ -424,8 +424,19 @@ class TestDispatcher:
         p = _write(tmp_path / "big.txt", big)
         with caplog.at_level(logging.WARNING):
             doc = load_source(p)
-        assert doc.word_count > 50000
-        assert any("soft cap" in r.message for r in caplog.records)
+        assert doc.word_count <= 50000
+        assert any("exceeds cap" in r.message for r in caplog.records)
+
+    def test_oversize_truncates_at_sentence_boundary(self, tmp_path, caplog):
+        import logging
+
+        body = ("One short sentence. " * 100) + "Tail sentence that must be dropped. "
+        p = _write(tmp_path / "big.txt", body)
+        with caplog.at_level(logging.WARNING):
+            doc = load_source(p, config={"source": {"max_words": 5}})
+        assert doc.word_count <= 5
+        assert "Tail sentence" not in doc.text
+        assert "One short sentence" in doc.text
 
     def test_allowed_extensions_from_config(self, tmp_path):
         cfg = {"source": {"allowed_extensions": [".txt"], "max_words": 50000}}

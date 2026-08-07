@@ -131,7 +131,7 @@ def _patch_generation(monkeypatch, tmp_root):
     def _fake_compose(
         image_paths, output_dir, *, width=1920, height=1080, margin=48, gutter=24,
         border=6, prefix="manga_page", layout_file=None, fallback_layout_file=None,
-        page_aspect=1.414, page_blur=True,
+        page_aspect=1.414, page_blur=True, labels=None,
     ):
         output_dir.mkdir(parents=True, exist_ok=True)
         sheet = output_dir / f"{prefix}_1.png"
@@ -393,7 +393,7 @@ def test_primary_sheet_is_fullest_page(monkeypatch, tmp_root):
     def _fake_compose_pages(
         image_paths, output_dir, *, width=1920, height=1080, margin=48, gutter=24,
         border=6, prefix="manga_page", layout_file=None, fallback_layout_file=None,
-        page_aspect=1.414, page_blur=True,
+        page_aspect=1.414, page_blur=True, labels=None,
     ):
         output_dir.mkdir(parents=True, exist_ok=True)
         p1 = output_dir / f"{prefix}_1.png"
@@ -442,8 +442,9 @@ def test_regenerate_unattended_default_feedback_ignored(tmp_root, monkeypatch):
 
 
 def test_wire_storyboard_merges_config_and_outline():
-    """wire_storyboard wires config (sheet + panels + comfyui reference) and
-    rides shot metadata onto the outline segments."""
+    """wire_storyboard wires config (sheet + panels) and rides shot metadata
+    onto the outline segments — the storyboard_sheet style-reference override
+    was removed (Option A decouple: character reference sheets replace it)."""
     cfg = _config(Path())
     outline = _outline()
     record = {
@@ -454,7 +455,7 @@ def test_wire_storyboard_merges_config_and_outline():
     sb.wire_storyboard(cfg, outline, record)
     assert cfg["storyboard"]["approved_sheet"] == record["sheet_path"]
     assert cfg["storyboard"]["panels"] == record["panels"]
-    assert cfg["image_gen"]["comfyui"]["storyboard_sheet"] == record["sheet_path"]
+    assert "image_gen" not in cfg or "storyboard_sheet" not in cfg.get("image_gen", {}).get("comfyui", {})
     assert outline[0]["shot_metadata"] == "whip pan, 4.5s"
 
 
@@ -466,3 +467,87 @@ def test_wire_storyboard_none_noop():
     assert "approved_sheet" not in cfg["storyboard"]
     assert "image_gen" not in cfg
     assert all("shot_metadata" not in seg for seg in outline)
+
+
+def test_scoped_config_disables_panel_composite():
+    """Storyboard generations must NOT double-compose (option A decouple)."""
+    cfg = {
+        "image_gen": {"panel_composite": {"enabled": True, "width": 1920}},
+        "visual": {"style": "anime"},
+    }
+    scoped = sb._scoped_config(cfg)
+    assert scoped["image_gen"]["panel_composite"]["enabled"] is False
+    # half-measures must not happen: the width must still matter, just not composite
+    assert scoped["image_gen"]["panel_composite"]["width"] == 1920
+    assert scoped is not cfg
+
+
+def test_storyboard_passes_labels_to_compose(tmp_root, monkeypatch):
+    """Panel labels ('N · shot-size') ride into compose_panel_pages."""
+    _patch_generation(monkeypatch, tmp_root)
+    seen = {}
+
+    def _spy_compose(
+        image_paths, output_dir, *, width=1920, height=1080, margin=48, gutter=24,
+        border=6, prefix="manga_page", layout_file=None, fallback_layout_file=None,
+        page_aspect=1.414, page_blur=True, labels=None,
+    ):
+        seen["labels"] = labels
+        output_dir.mkdir(parents=True, exist_ok=True)
+        sheet = output_dir / f"{prefix}_1.png"
+        sheet.write_bytes(b"sheet")
+        return [sheet]
+
+    monkeypatch.setattr("video.image_gen.panel_compositor.compose_panel_pages", _spy_compose)
+    director = _FakeDirector(_llm_json())
+    sb.run_storyboard(director, _outline(), _config(tmp_root), "topic", cli_flags={}, root=tmp_root)
+    assert seen["labels"] == ["1 · wide", "2 · close-up"]
+
+
+def test_char_sheet_generation_on_approval(tmp_root, monkeypatch):
+    """Approval builds character reference sheets + wires master portrait + assets."""
+    from memory.project_store import ProjectStore
+
+    store = ProjectStore("smoke_project", root=tmp_root)
+    store.log_character("Hero", "young hero, black hair")
+    _patch_generation(monkeypatch, tmp_root)
+    record_sheets = {}
+
+    def _fake_compose_character_sheet(front, back, portrait, side, output_path, char_name="", width=1024, height=1024):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"sheet")
+        record_sheets["front"] = str(front)
+        record_sheets["portrait"] = str(portrait)
+        return output_path
+
+    monkeypatch.setattr(
+        "video.image_gen.panel_compositor.compose_character_sheet", _fake_compose_character_sheet
+    )
+    cfg = _config(tmp_root, character_sheet_chars=["hero"])
+    director = _FakeDirector(_llm_json())
+    result = sb.run_storyboard(
+        director, _outline(), cfg, "topic", project_name="smoke_project", cli_flags={}, root=tmp_root
+    )
+    assert result["status"] == "approved"
+    # character_sheet_chars=['hero'] and config has 'hero' → sheet generated
+    assert "hero" in result["character_sheets"]
+    assert result["character_sheets"]["hero"]["sheet"]
+    # master portrait + character assets written to ProjectStore
+    fresh = ProjectStore("smoke_project", root=tmp_root)
+    assert fresh.get_master_portrait_path("hero") == record_sheets["portrait"]
+    assets = fresh.get_character_assets("hero")
+    assert assets["full_body_reference_path"] == record_sheets["front"]
+    assert assets["approved_at"]
+    assert assets["character_sheet_path"]
+
+
+def test_char_sheet_skips_unknown_char(tmp_root, monkeypatch):
+    """character_sheet_chars keys without a config entry skip silently."""
+    _patch_generation(monkeypatch, tmp_root)
+    cfg = _config(tmp_root, character_sheet_chars=["nobody"])
+    director = _FakeDirector(_llm_json())
+    result = sb.run_storyboard(
+        director, _outline(), cfg, "topic", project_name="smoke_project", cli_flags={}, root=tmp_root
+    )
+    assert result["status"] == "approved"
+    assert "character_sheets" not in result

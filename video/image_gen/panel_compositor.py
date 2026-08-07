@@ -6,7 +6,15 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+
+
+def _label_font(size: int) -> ImageFont.ImageFont:
+    """Prefer Windows Arial; PIL's embedded default covers other platforms."""
+    try:
+        return ImageFont.truetype("arial.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
 
 
 def _fixed_rects(count: int, width: int, height: int, margin: int, gutter: int) -> list[tuple[int, int, int, int]]:
@@ -108,6 +116,25 @@ def _panel_image(img: Image.Image, size: tuple[int, int]) -> Image.Image:
     )
 
 
+def _draw_label(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[int, int, int, int],
+    text: str,
+    font: ImageFont.ImageFont | None = None,
+    color: str = "white",
+) -> None:
+    """Draw a small caption chip in the top-left corner of a rect."""
+    x1, y1, _, _ = rect
+    cx, cy = x1 + 10, y1 + 8
+    font = font or _label_font(16)
+    bbox = draw.textbbox((cx, cy), text, font=font)
+    draw.rectangle(
+        [bbox[0] - 4, bbox[1] - 2, bbox[2] + 4, bbox[3] + 2],
+        fill=(0, 0, 0, 160),
+    )
+    draw.text((cx, cy), text, fill=color, font=font)
+
+
 def page_canvas_size(width: int, height: int, margin: int, page_aspect: float) -> tuple[int, int]:
     """Frame-relative manga page size; ``page_aspect <= 0`` = full-bleed frame."""
     if page_aspect <= 0:
@@ -205,6 +232,7 @@ def compose_panel_pages(
     fallback_layout_file: Path | None = None,
     page_aspect: float = 1.414,
     page_blur: bool = True,
+    labels: list[str] | None = None,
 ) -> list[Path]:
     """Paste distinct images into fixed manga panels and draw borders on top.
 
@@ -212,6 +240,9 @@ def compose_panel_pages(
     centered on the full-frame canvas; the leftover screen is filled with a
     blurred zoomed copy of the page. ``page_aspect <= 0`` restores the legacy
     full-bleed frame.
+
+    ``labels`` (one per image, drawn in the panel corner) lets callers caption
+    panels — the storyboard sheet uses "N · shot-size".
     """
     paths = [Path(p) for p in image_paths]
     if not paths:
@@ -244,6 +275,11 @@ def compose_panel_pages(
             page.paste(fitted, (x1, y1))
         for rect in rects:
             draw.rectangle(rect, outline="black", width=border)
+        if labels:
+            chunk_labels = labels[offset - len(chunk) : offset]
+            for rect, label in zip(rects, chunk_labels, strict=False):
+                if label:
+                    _draw_label(draw, rect, str(label))
         if full_bleed:
             page.save(output_dir / f"{prefix}_{len(pages) + 1:02d}.png")
             pages.append(output_dir / f"{prefix}_{len(pages) + 1:02d}.png")
@@ -258,3 +294,59 @@ def compose_panel_pages(
         canvas.save(out)
         pages.append(out)
     return pages
+
+
+def compose_character_sheet(
+    front: Path,
+    back: Path,
+    portrait: Path,
+    side: Path,
+    output_path: Path,
+    char_name: str = "",
+    width: int = 1024,
+    height: int = 1024,
+) -> Path:
+    """Compose a 4-view character reference sheet onto a grey canvas.
+
+    Left column: front + back full-body views. Right column: portrait +
+    side-profile views. Labels identify each view; the character name rides
+    in the top-left corner. Used as the approved character reference asset
+    (portrait → master portrait, front/back + sheet → character assets).
+    """
+    views = [
+        ("front", front),
+        ("portrait", portrait),
+        ("back", back),
+        ("side profile", side),
+    ]
+    canvas = Image.new("RGB", (width, height), (96, 96, 96))
+    draw = ImageDraw.Draw(canvas)
+    font = _label_font(18)
+    name_font = _label_font(28)
+
+    if char_name:
+        draw.text((24, 14), char_name, fill="white", font=name_font)
+
+    margin, gutter = 24, 16
+    y_top = margin + (36 if char_name else 0)
+    band_h = (height - y_top - margin - gutter) // 2
+    col_w = (width - 2 * margin - gutter) // 2
+    x_left = margin
+    x_right = margin + col_w + gutter
+    y_bottom = y_top + band_h + gutter
+
+    for i, (label, path) in enumerate(views):
+        col = i % 2
+        row = i // 2
+        x = x_left if col == 0 else x_right
+        y = y_top if row == 0 else y_bottom
+        rect = (x, y, x + col_w, y + band_h)
+        with Image.open(path) as img:
+            fitted = _panel_image(img, (col_w, band_h))
+        canvas.paste(fitted, (x, y))
+        draw.rectangle(rect, outline="black", width=3)
+        _draw_label(draw, rect, label, font=font)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(output_path)
+    return output_path

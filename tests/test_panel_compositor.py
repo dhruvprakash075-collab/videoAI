@@ -5,6 +5,7 @@ from PIL import Image
 from video.image_gen.panel_compositor import (
     _layout_rects,
     _valid_rects,
+    compose_character_sheet,
     compose_panel_pages,
     page_canvas_size,
     plan_page_counts,
@@ -283,3 +284,53 @@ def test_valid_rects_accepts_tiny_overlap_between_2_and_5_percent():
     # Panel B: (48, 0, 100, 100) → overlap x=48-49=1 → overlap area = 1*100 = 100
     # 100 / 4900 = 2.04%  → rejected at 2%, accepted at 5%
     assert _valid_rects([(0, 0, 49, 100), (48, 0, 100, 100)], page_w, page_h)
+
+
+def test_compose_panel_pages_draws_labels(tmp_path: Path):
+    """Labels darken the panel corner vs an unlabeled compose (storyboard captions)."""
+    srcs = []
+    for i, color in enumerate(["white", "white"], start=1):
+        path = tmp_path / f"src_{i}.png"
+        Image.new("RGB", (64, 64), color).save(path)
+        srcs.append(path)
+
+    pages = compose_panel_pages(
+        srcs, tmp_path / "labeled", width=400, height=200, margin=20, gutter=20,
+        border=4, page_aspect=0, labels=["1 · wide", "2 · close-up"],
+    )
+    plain = compose_panel_pages(
+        srcs, tmp_path / "plain", width=400, height=200, margin=20, gutter=20,
+        border=4, page_aspect=0,
+    )
+
+    out = Image.open(pages[0]).convert("RGB")
+    ref = Image.open(plain[0]).convert("RGB")
+    # Chip interior: label bg is black (fill=(0,0,0,160)) where an unlabeled
+    # panel is white. (26,29) sits inside the chip, off the glyphs, off border.
+    x, y = 26, 29
+    assert ref.getpixel((x, y)) == (255, 255, 255)
+    assert sum(out.getpixel((x, y))) < sum(ref.getpixel((x, y)))
+
+
+def test_compose_character_sheet_4_views_and_name(tmp_path: Path):
+    """Character sheet: grey canvas, 4 labeled views, char name in corner."""
+    views = []
+    for i, color in enumerate(["red", "blue", "green", "yellow"], start=1):
+        path = tmp_path / f"view_{i}.png"
+        Image.new("RGB", (64, 64), color).save(path)
+        views.append(path)
+
+    sheet = compose_character_sheet(
+        *views, tmp_path / "sheet.png", char_name="Hero", width=400, height=400
+    )
+
+    out = Image.open(sheet).convert("RGB")
+    # grey canvas fills the margins
+    assert out.getpixel((2, 2)) == (96, 96, 96)
+    # 2x2 view grid, sampling cell interiors away from borders and label chips:
+    # front (red) top-left, portrait (green) top-right,
+    # back (blue) bottom-left, side profile (yellow) bottom-right
+    assert out.getpixel((27, 130)) == (255, 0, 0)
+    assert out.getpixel((300, 130)) == (0, 128, 0)
+    assert out.getpixel((27, 300)) == (0, 0, 255)
+    assert out.getpixel((300, 300)) == (255, 255, 0)

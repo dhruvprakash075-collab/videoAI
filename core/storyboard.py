@@ -10,6 +10,7 @@ Flow: gate -> reuse check -> 1 LLM call -> parse panels -> assemble prompts ->
 generate panel images -> compose sheet -> consult_user approval -> persist.
 """
 
+import contextlib
 import logging
 import time
 from pathlib import Path
@@ -158,6 +159,130 @@ def _assemble_storyboard_prompts(panels: list[dict], config: dict) -> list[str]:
     return prompts
 
 
+def _scoped_config(config: dict) -> dict:
+    """Config copy with panel compositing disabled — storyboard wants raw panels.
+
+    generate_images composes pages when image_gen.panel_composite is on;
+    composing them again in the sheet would double-compose. The sheet walk
+    below rebuilds the geometry from the same layout chain.
+    """
+    cfg = dict(config)
+    ig = dict(cfg.get("image_gen", {}) or {})
+    pc = dict(ig.get("panel_composite", {}) or {})
+    pc["enabled"] = False
+    ig["panel_composite"] = pc
+    cfg["image_gen"] = ig
+    return cfg
+
+
+def _character_view_prompts(char: dict, style: str, char_key: str) -> list[str]:
+    """4 prompts: front/back full-body + portrait/side-profile, plain bg."""
+    name = char.get("name") or char_key
+    desc = char.get("description", "")
+    base = f"{name}, {desc}, {style}, character reference sheet"
+    return [
+        f"{base}, full body, front view, plain background",
+        f"{base}, full body, back view, plain background",
+        f"{base}, portrait, head and shoulders, front view, plain background",
+        f"{base}, portrait, head and shoulders, side profile view, plain background",
+    ]
+
+
+def _generate_character_sheets(
+    config: dict, out_dir: Path, project_name: str | None
+) -> dict[str, dict]:
+    """Best-effort 4-view reference sheet per configured character.
+
+    Returns {char_key: {"front", "back", "portrait", "side", "sheet"}} with
+    absolute paths. Any failure degrades to fewer/no sheets — the storyboard
+    gate must never block on reference assets.
+    """
+    sb = config.get("storyboard", {}) or {}
+    char_keys = sb.get("character_sheet_chars") or []
+    if not char_keys:
+        return {}
+    chars = config.get("characters", {}) or {}
+    style = str(sb.get("style")) if sb.get("style") else (
+        config.get("visual", {}).get("style") or "anime"
+    )
+    if isinstance(style, dict):
+        style = ", ".join(str(style.get(k, "")) for k in ("tone", "elements") if style.get(k))
+
+    from video.image_gen.image_gen import generate_images
+    from video.image_gen.panel_compositor import compose_character_sheet
+
+    sheets = {}
+    for key in char_keys:
+        char = chars.get(key)
+        if not isinstance(char, dict) or not char.get("description"):
+            log.info(f"[STORYBOARD] No description for '{key}' — skipping reference sheet")
+            continue
+        try:
+            views = generate_images(
+                _character_view_prompts(char, style, key),
+                out_dir / "characters" / _safe(key),
+                _scoped_config(config),
+                char_presence=[{key: 1.0}] * 4,
+                project_id=project_name,
+            )
+        except Exception as e:
+            log.warning(f"[STORYBOARD] Reference sheet gen failed for '{key}' ({e}) — skipping")
+            continue
+        if len(views) < 4:
+            log.warning(
+                f"[STORYBOARD] Reference sheet for '{key}' yielded {len(views)}/4 views — skipping"
+            )
+            continue
+        try:
+            sheet = compose_character_sheet(
+                views[0], views[1], views[2], views[3],
+                out_dir / "characters" / _safe(key) / f"{_safe(key)}_sheet.png",
+                char_name=char.get("name") or key,
+            )
+        except Exception as e:
+            log.warning(f"[STORYBOARD] Reference sheet compose failed for '{key}' ({e}) — skipping")
+            continue
+        sheets[key] = {
+            "front": str(views[0]),
+            "back": str(views[1]),
+            "portrait": str(views[2]),
+            "side": str(views[3]),
+            "sheet": str(sheet),
+        }
+        log.info(f"[STORYBOARD] Character reference sheet ready: {key}")
+    return sheets
+
+
+def _wire_character_sheets(
+    sheets: dict, project_name: str | None, root: Path | None
+) -> None:
+    """On approval: portrait → master portrait; front/back + sheet → character assets."""
+    if not sheets or not project_name:
+        return
+    import hashlib
+
+    from memory.project_store import ProjectStore
+
+    try:
+        store = ProjectStore(project_name, root=root)
+        for key, assets in sheets.items():
+            portrait = assets["portrait"]
+            digest = ""
+            with contextlib.suppress(OSError):
+                digest = hashlib.sha256(Path(portrait).read_bytes()).hexdigest()
+            store.set_master_portrait(key, portrait, digest)
+            store.set_character_assets(
+                key,
+                character_sheet_path=assets["sheet"],
+                face_reference_path=portrait,
+                full_body_reference_path=assets["front"],
+                identity_hash=digest,
+                approved=True,
+            )
+    except Exception as e:
+        log.warning(f"[STORYBOARD] Reference sheet wiring failed ({e}) — continuing")
+
+
 def _dynamic_panel_count(outline: list, fallback: int, cap: int = 12) -> int:
     """Storyboard scale follows the outline: one panel per planned scene image.
 
@@ -230,13 +355,18 @@ def run_storyboard(
             log.warning(f"[STORYBOARD] Unparseable LLM response — skipping storyboard: {e}")
             return None
 
-        # Generate panel images via the existing path
+        # Generate panel images via the existing path. The storyboard-scoped
+        # config copy disables panel compositing so RAW panels come out —
+        # generate_images would otherwise compose manga pages itself and the
+        # sheet below would compose them a second time (double-compose).
         panel_prompts = _assemble_storyboard_prompts(panels, config)
         out_dir = Path("studio_outputs") / _safe(topic) / "storyboard"
         try:
             from video.image_gen.image_gen import generate_images
 
-            panel_paths = generate_images(panel_prompts, out_dir, config, project_id=project_name)
+            panel_paths = generate_images(
+                panel_prompts, out_dir, _scoped_config(config), project_id=project_name
+            )
         except Exception as e:
             log.warning(f"[STORYBOARD] Image generation failed ({e}) — skipping storyboard")
             return None
@@ -273,6 +403,7 @@ def run_storyboard(
                 page_aspect=page_aspect,
                 layout_file=layout_file,
                 fallback_layout_file=fallback_layout_file,
+                labels=[f"{i + 1} · {p.get('shot_size', '')}" for i, p in enumerate(panels)],
             )
         except Exception as e:
             log.warning(f"[STORYBOARD] Sheet composition failed ({e}) — skipping storyboard")
@@ -300,10 +431,16 @@ def run_storyboard(
             f"Approve storyboard sheet? ({sheet_path.name})", ["Approve", "Regenerate"]
         )
         if "regenerate" not in choice.lower():
-            return _persist(story_store, prompt, panels, sheet_path, pages)
+            return _approve_and_persist(
+                story_store, prompt, panels, sheet_path, pages, config, out_dir,
+                project_name, root,
+            )
         if attempt > retries:
             log.warning("[STORYBOARD] Regenerate limit reached — auto-approving last sheet")
-            return _persist(story_store, prompt, panels, sheet_path, pages)
+            return _approve_and_persist(
+                story_store, prompt, panels, sheet_path, pages, config, out_dir,
+                project_name, root,
+            )
         # Loop back with feedback: ask what should change so the next attempt
         # is informed, not a blind re-roll. Unattended modes return the default
         # "Proceed as planned." — filter it out and keep prior feedback.
@@ -369,8 +506,7 @@ def wire_storyboard(config: dict, outline: list[dict], storyboard: dict | None) 
 
     Idempotent. Sets config.storyboard.approved_sheet/panels, rides the
     per-panel camera/duration hints onto the outline segments (the per-segment
-    plan dicts), and wires the sheet as the ComfyUI style reference for scene
-    generation — after the first run the stored artifact IS the reference.
+    plan dicts).
     """
     if not storyboard:
         return
@@ -378,15 +514,11 @@ def wire_storyboard(config: dict, outline: list[dict], storyboard: dict | None) 
     sb_cfg["approved_sheet"] = storyboard.get("sheet_path")
     sb_cfg["panels"] = storyboard.get("panels", [])
     attach_shot_metadata(outline, storyboard.get("panels") or [])
-    if storyboard.get("sheet_path"):
-        config.setdefault("image_gen", {}).setdefault("comfyui", {})[
-            "storyboard_sheet"
-        ] = storyboard.get("sheet_path")
 
 
 def _persist(
     story_store, prompt: str, panels: list[dict], sheet_path: Path,
-    sheet_pages: list[Path] | None = None,
+    sheet_pages: list[Path] | None = None, char_sheets: dict | None = None,
 ) -> dict:
     """Build the approved storyboard record and save it to StoryStore."""
     record = {
@@ -398,9 +530,27 @@ def _persist(
     }
     if sheet_pages:
         record["sheet_pages"] = [str(p) for p in sheet_pages]
+    if char_sheets:
+        record["character_sheets"] = char_sheets
     story_store.save_storyboard(record)
     log.info(f"[STORYBOARD] Approved and persisted: {sheet_path}")
     return record
+
+
+def _approve_and_persist(
+    story_store, prompt, panels, sheet_path, pages, config, out_dir,
+    project_name, root,
+) -> dict:
+    """Post-approval: build + wire reference sheets, then persist the record.
+
+    Character reference sheets ride the same approval: portrait becomes the
+    master portrait (IP-Adapter reference), full-body + sheet land in
+    character assets. Both are advisory — wiring failures degrade the record,
+    never the gate.
+    """
+    char_sheets = _generate_character_sheets(config, out_dir, project_name)
+    _wire_character_sheets(char_sheets, project_name, root)
+    return _persist(story_store, prompt, panels, sheet_path, pages, char_sheets=char_sheets)
 
 
 def _safe(topic: str) -> str:

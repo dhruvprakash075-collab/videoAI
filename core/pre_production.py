@@ -40,6 +40,38 @@ from utils.time_format import (  # noqa: F401
 log = logging.getLogger(__name__)
 
 
+def _filter_visual_characters(config_overlay: dict) -> dict:
+    """Drop characters whose description is too thin to render (gate for ALL modes).
+
+    The character gate used to apply only in scratch mode; adaptation/content
+    runs kept placeholders like "The central character" which leaked into
+    image prompts. Shared so both branches behave identically.
+    """
+    _ov_chars = config_overlay.get("characters", {})
+    if not isinstance(_ov_chars, dict):
+        return config_overlay
+    _usable = {
+        k: v
+        for k, v in _ov_chars.items()
+        if isinstance(v, dict) and len(str(v.get("description", "")).strip()) >= 30
+    }
+    _dropped = [k for k in _ov_chars if k not in _usable]
+    if _dropped:
+        log.warning(
+            f"[PRE-PROD] Dropped {len(_dropped)} character(s) without visual detail: "
+            f"{', '.join(_dropped)}"
+        )
+    if not _usable:
+        log.warning(
+            "[PRE-PROD] No characters with visual detail — "
+            "keeping config.yaml characters for visual consistency"
+        )
+        config_overlay.pop("characters", None)
+    else:
+        config_overlay["characters"] = _usable
+    return config_overlay
+
+
 # ── moved verbatim to utils/deep_merge.py / core/preflight.py ──
 # ── moved verbatim to core/director_memory.py ──
 from core.director_memory import _seed_director_memory  # noqa: F401
@@ -137,20 +169,7 @@ def run_pre_production(
             vision_doc, user_responses, writer_input, mode=output_mode
         )
         config_overlay["_invented_story"] = story_text
-        _ov_chars = config_overlay.get("characters", {})
-        _usable = {
-            k: v
-            for k, v in _ov_chars.items()
-            if isinstance(v, dict) and len(str(v.get("description", "")).strip()) >= 30
-        }
-        if not _usable:
-            log.warning(
-                "[PRE-PROD] Scratch mode produced no characters with visual detail — "
-                "keeping config.yaml characters for visual consistency"
-            )
-            config_overlay.pop("characters", None)
-        else:
-            config_overlay["characters"] = _usable
+        config_overlay = _filter_visual_characters(config_overlay)
         log.info("[PRE-PROD] Original story created! Skipping web research.")
 
         from core.decision_record import build_and_persist_decision_record
@@ -351,6 +370,10 @@ def run_pre_production(
     config_overlay = director.produce_runtime_config(
         vision_doc, user_responses, writer_input, mode=output_mode
     )
+
+    # Character gate applies to adaptation/content mode too — thin placeholders
+    # like "The central character" must not leak into image prompts.
+    config_overlay = _filter_visual_characters(config_overlay)
 
     # Build DecisionRecord (single source of truth)
     _cli_flags = dict(cli_flags or {})

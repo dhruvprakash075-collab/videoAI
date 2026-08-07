@@ -58,12 +58,41 @@ def _detect_language(text: str) -> str:
     return "en"
 
 
-def _check_oversize(text: str, max_words: int) -> None:
+def _check_oversize(text: str, max_words: int) -> str:
+    """Truncate text to ``max_words`` at a sentence boundary when it overflows.
+
+    The soft cap was a lie: oversized sources proceeded whole and the splitter
+    later cut them mid-sentence or blew the budget. Now the cap is a real
+    ceiling — truncation keeps whole sentences only, and logs what was dropped.
+
+    ponytail: tail loss is inherent to a word cap. Upgrade path for full-novel
+    runs: ``split_strategy: by_chapter``, which chunks the whole text and needs
+    no truncation.
+    """
     wc = len(text.split())
-    if wc > max_words:
-        log.warning(
-            f"source_loader: text is {wc} words, exceeds soft cap of {max_words}. Proceeding."
-        )
+    if wc <= max_words:
+        return text
+    from utils.source_splitter import _split_sentences
+
+    kept: list[str] = []
+    kept_words = 0
+    for sent in _split_sentences(text):
+        swc = len(sent.split())
+        if kept_words + swc > max_words:
+            break
+        kept.append(sent)
+        kept_words += swc
+    truncated = " ".join(kept)
+    if not truncated:
+        # single sentence longer than the cap — hard cut, no sentence boundary
+        truncated = " ".join(text.split()[:max_words])
+        kept_words = max_words
+    dropped = wc - kept_words
+    log.warning(
+        f"source_loader: text is {wc} words, exceeds cap of {max_words}. "
+        f"Truncated at sentence boundary to {kept_words} words ({dropped} dropped)."
+    )
+    return truncated
 
 
 def _normalize_text(raw: str) -> str:
@@ -379,11 +408,13 @@ def load_source(source: Any, config: dict | None = None) -> SourceDocument:
             path = Path(stripped)
         else:
             doc = _load_paste(source)
-            _check_oversize(doc.text, max_words)
+            doc.text = _check_oversize(doc.text, max_words)
+            doc.word_count = len(doc.text.split())
             return doc
     elif isinstance(source, str) and _is_url(source):
         doc = _load_url(source.strip(), config)
-        _check_oversize(doc.text, max_words)
+        doc.text = _check_oversize(doc.text, max_words)
+        doc.word_count = len(doc.text.split())
         return doc
     else:
         raise SourceLoaderError(
@@ -407,5 +438,6 @@ def load_source(source: Any, config: dict | None = None) -> SourceDocument:
     else:
         raise SourceLoaderError(f"Unhandled extension: {ext}")
 
-    _check_oversize(doc.text, max_words)
+    doc.text = _check_oversize(doc.text, max_words)
+    doc.word_count = len(doc.text.split())
     return doc

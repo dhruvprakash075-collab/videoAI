@@ -1782,6 +1782,35 @@ def test_assemble_cli_flags_only_non_none_ints():
     }
 
 
+def test_pipeline_cli_passes_storyboard_flags(monkeypatch):
+    """--no-storyboard / --force-storyboard reach run_long_pipeline kwargs."""
+    import sys
+
+    import core.pipeline_cli as cli
+
+    seen = {}
+
+    def _fake_run_long_pipeline(**kwargs):
+        seen.update(kwargs)
+        return {"status": "dry_run", "segments": 1, "output": ""}
+
+    monkeypatch.setattr("core.pipeline_long.run_long_pipeline", _fake_run_long_pipeline)
+    monkeypatch.setattr(
+        sys, "argv", ["cli", "--topic", "T", "--no-storyboard", "--force-storyboard"]
+    )
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert seen["no_storyboard"] is True
+    assert seen["force_storyboard"] is True
+    # Defaults stay False when the flags are absent
+    seen.clear()
+    monkeypatch.setattr(sys, "argv", ["cli", "--topic", "T"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert seen["no_storyboard"] is False
+    assert seen["force_storyboard"] is False
+
+
 def test_resolve_decision_record_fallback_and_locks():
     from core.pipeline_long import _resolve_decision_record
 
