@@ -246,11 +246,26 @@ def test_skip_preflight_skips_run_preflight_checks(tmp_path):
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
         "performance": {"staged_loop": False, "max_workers": 1},
     }
+    outline = [
+        {
+            "seg": 1, "title": "Intro", "summary": "S", "num_images": 2,
+            "target_word_count": 130, "segment_duration": 60.0,
+            "char_presence": [{"protagonist": 1.0}],
+        }
+    ]
     with (
         patch("utils.load_config", return_value=cfg),
         patch("utils.setup_run_logging"),
         patch("core.pipeline_long.run_pre_production", return_value={}),
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("core.main.create_director"),
+        patch("core.main.create_writer"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("core.pipeline_long.plan_outline", return_value=outline),
+        patch("core.pipeline_long.log_vram_usage"),
+        patch("core.runtime.ollama.start_ollama_server"),
+        patch("core.runtime.ollama.stop_ollama_server"),
         patch("core.pipeline_long.run_preflight_checks", side_effect=RuntimeError("stop")) as mock_preflight,
     ):
         run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True, skip_preflight=True)
@@ -269,14 +284,29 @@ def test_force_refresh_reaches_run_pre_production(tmp_path):
         "checkpoint": {"dir": str(tmp_path / "checkpoints")},
         "performance": {"staged_loop": False, "max_workers": 1},
     }
+    outline = [
+        {
+            "seg": 1, "title": "Intro", "num_images": 2,
+            "target_word_count": 130, "segment_duration": 60.0,
+            "char_presence": [{"protagonist": 1.0}],
+        }
+    ]
     with (
         patch("utils.load_config", return_value=cfg),
         patch("utils.setup_run_logging"),
         patch("core.pipeline_long.run_pre_production", return_value={}) as mock_pre_prod,
         patch("audio.audio_proxy.normalize_tts_engine", return_value="omnivoice"),
+        patch("core.main.create_director"),
+        patch("core.main.create_writer"),
+        patch("agents.director_agent.DirectorAgent"),
+        patch("core.pipeline_long._seed_director_memory"),
+        patch("core.pipeline_long.plan_outline", return_value=outline),
+        patch("core.pipeline_long.log_vram_usage"),
+        patch("core.runtime.ollama.start_ollama_server"),
+        patch("core.runtime.ollama.stop_ollama_server"),
         patch("core.pipeline_long.run_preflight_checks"),
     ):
-        run_long_pipeline(topic="test_topic", resume=True, fast_dry_run=True, force_refresh=True)
+        run_long_pipeline(topic="test_topic", fast_dry_run=True, force_refresh=True)
 
     mock_pre_prod.assert_called_once()
     assert mock_pre_prod.call_args.kwargs.get("force_refresh") is True

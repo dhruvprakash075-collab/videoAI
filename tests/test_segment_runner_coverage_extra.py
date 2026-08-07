@@ -233,8 +233,18 @@ def test_make_process_segment_source_chunks_overrun_falls_to_writer(tmp_path):
         mp4s=[None, None, None],
         dry_run=True,
     )
+    llm_narration = {"narration": "the writer produced this overrun script text"}
+    score = MagicMock(total=90, issues=[], suggestions=[])
 
-    with patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")):
+    with (
+        # The overrun segments hit the real LLM writer path — keep the test
+        # hermetic so CI (no Ollama) gets the same result as a dev machine.
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value=__import__("json").dumps(llm_narration)),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=score),
+        patch("utils.critic.is_approved", return_value=True),
+        patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")),
+    ):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         for i in (1, 2, 3):
             process(i)
@@ -254,8 +264,17 @@ def test_make_process_segment_empty_source_chunk_not_short_circuited(tmp_path):
     """Empty padded chunks must NOT short-circuit the writer to an empty script."""
     empty = MagicMock(index=0, text="")
     kwargs = _process_kwargs(tmp_path, source_chunks=[empty], dry_run=True)
+    score = MagicMock(total=90, issues=[], suggestions=[])
 
-    with patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")):
+    with (
+        # Empty chunk falls through to the real LLM writer path — mock it so
+        # the test is hermetic on CI (no Ollama) as well as locally.
+        patch("utils.crewai_breaker.guarded_ollama_call", return_value='{"narration": "writer generated a real script"}'),
+        patch("utils.validate_script", return_value=True),
+        patch("utils.critic.score_script", return_value=score),
+        patch("utils.critic.is_approved", return_value=True),
+        patch("memory.blackboard.get_blackboard", side_effect=RuntimeError("no record")),
+    ):
         process, *_ = segment_runner.make_process_segment(**kwargs)
         process(1)
 
