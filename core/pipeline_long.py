@@ -565,7 +565,7 @@ def run_long_pipeline(
             from core.storyboard import run_storyboard, wire_storyboard
 
             storyboard = run_storyboard(
-                director_agent=director_agent,
+                director_agent=director_agent_instance,
                 outline=outline,
                 config=config,
                 topic=topic,
