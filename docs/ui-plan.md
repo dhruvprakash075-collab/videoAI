@@ -66,6 +66,24 @@ selected.)
 
 \* `9` depends on the telemetry being surfaced via the status rail (already planned in Phase 1).
 
+### Tier 2 (added later)
+
+User-selected tier-2 features. (15 Voice recording, 19 Run diff — not selected.)
+
+| # | Feature | Reuses | Effort |
+|---|---|---|---|
+| 13 | **Subtitle editor** — edit/restyle subtitle text, font, size, color before final assembly | `subtitles.*` config + assembler | Medium |
+| 14 | **Chapters & SEO editor** — edit `chapters.txt` + SEO title/description/tags pre-export | `seo.*` config | Medium |
+| 16 | **Thumbnail picker** — choose which rendered frame becomes the cover | `generate_thumbnail`, Rust `media` | Small |
+| 17 | **Background music + ducking** — add a music bed that ducks under narration (dormant `music.*` — flag as speculative) | `music.*` config; assembler loudnorm/ducking | Medium |
+| 18 | **Repair-and-continue** — resume from checkpoints + auto-retry only failed segments | checkpoint manager + `retry_manager` | Medium |
+| 20 | **Job templates / favorites** — save a Create-Job parameter+flag set as a named preset | `request_json` shape | Small |
+| 21 | **Seed control / reproducibility** — expose `lock_seed` + seed, re-run with same seed | `image_gen.lock_seed` | Small |
+| 22 | **Disk cleanup / archive** — one-click free-space + archive old runs | `scripts/cleanup_artifacts.py`, preflight `psutil` | Medium |
+| 23 | **Global search** — one box over jobs, memory, characters, artifacts | list endpoints | Medium |
+| 24 | **Subtitle-language selector** — re-render subtitles in another language | `translation.py` / Devanagari pipeline | Medium |
+| 25 | **Quick-action shortcuts & app icon / tray** — keyboard nav, tray minimize, icon | OS native | Small |
+
 ## Navigation rail (final)
 
 Director Canvas · Create Job · Jobs · **Batch** (3) · **Series Studio** (2) ·
@@ -73,6 +91,11 @@ Director Canvas · Create Job · Jobs · **Batch** (3) · **Series Studio** (2) 
 Artifacts · Preflight · Memory · Characters · Settings · **Sources** (6) ·
 **Style Packs** (7) — plus a persistent **status rail** (9) and **activity/degradation**
 panel (10, 11), and **toast notifications** (12).
+
+**Tier-2 surfaces (added later):** **Subtitles** (13) · **Chapters/SEO** (14) ·
+**Thumbnail picker** (16) · **Music bed** (17) · **Repair-and-continue** (18) ·
+**Job templates** (20) · **Seed control** (21) · **Disk cleanup** (22) ·
+**Global search** (23) · **Subtitle-language** (24) · **Shortcuts/tray** (25).
 
 ## Phases
 
@@ -86,10 +109,14 @@ panel (10, 11), and **toast notifications** (12).
 - **Phase 2 — Creation/iteration panels:** Voice Studio + TTS Audition (5),
   Artifacts, Sources (6), Style Packs (7), Storyboard Review (4), Memory,
   Characters, Story Editor + per-segment iterate (1), Series/Project Studio (2),
-  Settings (blast-radius + relocation safety, 40/41/42).
+  Settings (blast-radius + relocation safety, 40/41/42), Job templates (20),
+  Seed control (21), Shortcuts/tray (25).
 - **Phase 3 — Cleanup + gate:** delete old `static/` dashboard + `ab_picker`
   (33) where safe, retire duplicate launchers (34); nail down errors/refresh;
   run `cargo test && cargo clippy -- -D warnings && cargo fmt --check`.
+- **Phase 4 — Tier-2 output polish:** Subtitle editor (13), Chapters/SEO (14),
+  Thumbnail picker (16), Music bed + ducking (17), Repair-and-continue (18),
+  Disk cleanup/archive (22), Global search (23), Subtitle-language (24).
 
 ## Definition of done / validation
 
