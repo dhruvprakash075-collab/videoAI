@@ -68,3 +68,16 @@ launch experience. The native rebuild (`docs/ui-plan.md`) is scoped to fix these
 - A/B Testing: `_ab_jobs` in-memory store, `static/ab_picker.html` — feature removed.
 - Assistant chat: in-memory sessions (`_chat_sessions`) — feature removed.
 - Upload / SFX — dormant, paired cleanup with removed features.
+
+## G. Backend state / status bugs (verified 2026-08-07)
+
+| # | Bug | Evidence | Effect |
+|---|---|---|---|
+| 37 | `UIState.status` defaults to `"running"` and nothing ever sets it to `idle` | `agents/ui_state.py:71` (`status = "running"`); grep shows assignments only to running/paused/complete/error — never idle | A fresh backend with no job reports `/api/status == "running"` → the UI shows a pulsing green "running" + "Pause Engine" at idle |
+| 38 | `UIState.output_video` is set in exactly one place — `utils/local_ui.py:312` inside `run_pipeline_thread` | grep: only assignment is local_ui.py:312 | Jobs run via the worker (`jobs/worker.py`) never set `output_video`, so `/api/status` returns empty even after a successful worker run → Director Canvas stays on the upload card despite a real `output_path` on the job |
+| 39 | Inconsistent log truncation | `_uistate_log` truncates front (`logs[100:]`), `add_log` truncates back (`logs[-maxlen:]`) | Minor: differing tail semantics if both are ever mixed |
+
+**Retractions (checked and NOT bugs)**
+- No false "stale running → failed": the Python worker heartbeats periodically (`_heartbeat_loop`, 10s) independent of log output, and `mark_stale_running_failed` is only called at `local_ui` startup.
+- `request_cancel` does handle `queued` jobs (`STATUS_QUEUED` is in the allowed set).
+- UI → `bootstrap_pipeline.py` CLI flags are consistent (no instant-argparse-fail).

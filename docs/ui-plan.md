@@ -35,6 +35,7 @@ browser / npm / console windows. The web frontend stays as a working fallback.
 | 6 | Native window holds all state; no browser dependency |
 | 8, 15, 24, 30 | Validate `request_json` at submit; surface errors, breaker-cooldown, and 30-min timeout states in-window |
 | 10 | Director Canvas bound to the selected job's output + thumbnail + Open-in-Explorer/Play |
+| 37, 38 | Fix backend status contract: default `UIState.status` to `idle`; derive the Canvas preview from the **selected job's `output_path`** (not the web-thread-only `UIState.output_video`) so worker-driven jobs show output too |
 | 11 | One voice limit (backend 20MB) surfaced in-window; no `alert()` |
 | 12, 16 | Refresh controls on read-only panels; single unified log view |
 | 13, 22, 23 | Extend `utils/preflight.py` with a **ComfyUI reachability** + **TTS-path** check; run at startup; gate on it |
