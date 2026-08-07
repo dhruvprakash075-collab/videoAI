@@ -53,6 +53,8 @@ def test_create_writer_default_max_tokens(monkeypatch):
 
     monkeypatch.setattr(cm, "_create_ollama_llm", _fake_create_llm)
     monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama._ollama_alive", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", lambda *a, **kw: True)
 
     cfg = _make_cfg()
     with contextlib.suppress(Exception):
@@ -74,6 +76,8 @@ def test_create_writer_config_max_tokens(monkeypatch):
 
     monkeypatch.setattr(cm, "_create_ollama_llm", _fake_create_llm)
     monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama._ollama_alive", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", lambda *a, **kw: True)
 
     cfg = _make_cfg(script={"writer_max_tokens": 512})
     with contextlib.suppress(Exception):
@@ -214,6 +218,29 @@ def test_ollama_model_available_network_error_raises_recoverable_error():
     assert "Ollama server is unreachable" in str(exc_info.value)
 
 
+def test_create_writer_starts_ollama_when_down(monkeypatch):
+    """create_writer auto-starts Ollama if the debounced stop killed it (second
+    consecutive run must not die with an unreachable-server RecoverableError)."""
+    import core.main as cm
+
+    calls = []
+    monkeypatch.setattr(
+        "core.runtime.ollama._ollama_alive", lambda *a, **kw: False
+    )
+    def _fake_start(config, reason=""):
+        calls.append(reason)
+        return True
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", _fake_start)
+    monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: True)
+    monkeypatch.setattr(cm, "_create_ollama_llm", lambda *a, **kw: "ollama/x")
+
+    cfg = _make_cfg()
+    with contextlib.suppress(Exception):
+        cm.create_writer(cfg)
+
+    assert calls == ["pipeline-start"], "expected one auto-start with pipeline-start reason"
+
+
 def test_create_writer_fallback_when_model_unavailable(monkeypatch):
     """When configured writer model is unavailable, fall back to director model."""
     import core.main as cm
@@ -226,6 +253,8 @@ def test_create_writer_fallback_when_model_unavailable(monkeypatch):
 
     monkeypatch.setattr(cm, "_create_ollama_llm", _fake_create_llm)
     monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: False)
+    monkeypatch.setattr("core.runtime.ollama._ollama_alive", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", lambda *a, **kw: True)
 
     cfg = _make_cfg()
     import contextlib
@@ -252,6 +281,8 @@ def test_create_agents_crew_returns_tuple(monkeypatch):
 
     monkeypatch.setattr(cm, "_create_ollama_llm", _fake_create_llm)
     monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama._ollama_alive", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", lambda *a, **kw: True)
 
     cfg = _make_cfg()
     with contextlib.suppress(Exception):

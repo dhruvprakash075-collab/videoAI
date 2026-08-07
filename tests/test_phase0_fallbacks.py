@@ -57,6 +57,8 @@ def test_create_writer_fallback_records_degradation(monkeypatch):
     monkeypatch.setattr(cm, "_create_ollama_llm", _fake_create_llm)
     # Force _ollama_model_available to return False so fallback triggers
     monkeypatch.setattr(cm, "_ollama_model_available", lambda *a, **kw: False)
+    monkeypatch.setattr("core.runtime.ollama._ollama_alive", lambda *a, **kw: True)
+    monkeypatch.setattr("core.runtime.ollama.start_ollama_server", lambda *a, **kw: True)
 
     cfg = {
         "models": {

@@ -146,6 +146,14 @@ def create_writer(config: dict) -> Agent:
     model_name = model_cfg.get("writer", "zephyr-writer")
     ollama_host = config.get("ollama", {}).get("host", "http://localhost:11434")
 
+    # A previous run's debounced timer may have stopped Ollama at exit; the
+    # pipeline only restarts it lazily inside process_segment, which is too
+    # late for this check. Start it here if down (mirrors batch mode pinger).
+    from core.runtime.ollama import _ollama_alive, start_ollama_server
+
+    if not _ollama_alive(config):
+        start_ollama_server(config, reason="pipeline-start")
+
     # 6GB single-model rule: Writer and Director never co-reside, so falling back
     # to the director model is safe. If the configured Writer model isn't pulled
     # yet (e.g. still downloading), fall back so the run still works.
