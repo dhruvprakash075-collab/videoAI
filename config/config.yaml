@@ -52,6 +52,7 @@ tts:
     device: cpu
     compute_type: int8
     trim_tails: true
+    compression_ratio_threshold: 5.0
   devanagari:
     max_latin_ratio: 0.1
     max_retranslate_retries: 2

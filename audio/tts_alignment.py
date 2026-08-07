@@ -250,6 +250,7 @@ def align_audio(
     language: str | None = None,
     reference_text: str | None = None,
     trim_tails: bool = False,
+    compression_ratio_threshold: float | None = None,
 ) -> Path | None:
     """Align audio and write "{wav_path}.words.json".
 
@@ -266,6 +267,12 @@ def align_audio(
     edges) out of the WAV before timestamps are written. Requires
     ``reference_text`` and a model >= small (weak models transcribe the
     drawls as real words). Skipped silently otherwise.
+
+    ``compression_ratio_threshold`` relaxes faster-whisper's gzip-compression
+    hallucination guard (default 2.4). Only timestamps are used downstream
+    (labels come from ``reference_text``), so a higher threshold just stops
+    the whole-audio retranscribe ladder on rambling Hindi TTS segments.
+    ``None`` = leave faster-whisper's own default untouched.
 
     Returns the JSON path on success, None on any failure (does not raise).
     """
@@ -285,13 +292,15 @@ def align_audio(
         model = _get_alignment_model(
             model_name=model_name, device=device, compute_type=compute_type
         )
-        segments_gen, _info = model.transcribe(
-            str(wav_path),
-            beam_size=1,
-            word_timestamps=True,
-            vad_filter=True,
-            language=language,
-        )
+        transcribe_kwargs: dict = {
+            "beam_size": 1,
+            "word_timestamps": True,
+            "vad_filter": True,
+            "language": language,
+        }
+        if compression_ratio_threshold is not None:
+            transcribe_kwargs["compression_ratio_threshold"] = compression_ratio_threshold
+        segments_gen, _info = model.transcribe(str(wav_path), **transcribe_kwargs)
 
         words: list[dict] = []
         segments: list[tuple[int, int]] = []

@@ -1059,6 +1059,12 @@ def tts_generate(
                             language=align_cfg.get("language") or lang,
                             reference_text=text,
                             trim_tails=align_cfg.get("trim_tails", False),
+                            # Relax the gzip-compression retry ladder: Hindi TTS
+                            # audio reliably trips Whisper's 2.4 default and gets
+                            # re-transcribed 5x for nothing (only timings are used).
+compression_ratio_threshold=align_cfg.get(
+    "compression_ratio_threshold", 5.0
+),
                         )
                         if aligned and Path(aligned).exists():
                             word_timestamps = Path(aligned)

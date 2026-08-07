@@ -86,6 +86,39 @@ def test_align_audio_passes_language_to_transcribe(tmp_path):
     assert fake_model.transcribe.call_args.kwargs["language"] == "hi"
 
 
+def test_align_audio_passes_compression_ratio_threshold_when_set(tmp_path):
+    """The configurable Whisper gzip-compression relaxation must reach the
+    transcribe call so rambly Hindi TTS doesn't trigger the 5x retransmission
+    ladder (labels come from reference_text anyway; only timings are used)."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "t.wav"
+    wav.write_bytes(b"RIFF")
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([], None)
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        align_audio(wav, compression_ratio_threshold=5.0)
+
+    assert fake_model.transcribe.call_args.kwargs["compression_ratio_threshold"] == 5.0
+
+
+def test_align_audio_omits_threshold_when_unset(tmp_path):
+    """Default (None) must NOT inject the kwarg — faster-whisper's own 2.4
+    default stays in force for non-TTS callers (e.g. omnivoice worker)."""
+    from audio.tts_alignment import align_audio
+
+    wav = tmp_path / "c.wav"
+    wav.write_bytes(b"RIFF")
+
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([], None)
+    with patch("audio.tts_alignment._get_alignment_model", return_value=fake_model):
+        align_audio(wav)
+
+    assert "compression_ratio_threshold" not in fake_model.transcribe.call_args.kwargs
+
+
 def _fake_words(segments):
     """Build a transcribe-return value from per-segment word dicts."""
     segs = []

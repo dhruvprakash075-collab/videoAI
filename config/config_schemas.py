@@ -450,6 +450,12 @@ class AlignmentConfig(BaseModel):
     device: str = "cpu"
     compute_type: str = "int8"
     trim_tails: bool = False
+    # faster-whisper gzip-compression guard. The default 2.4 is tuned for
+    # clean English; Hindi TTS rambles/nasal-ends push per-VAD-segment ratios
+    # to ~3-5, so the whole audio gets re-transcribed up to 5x at escalating
+    # temperatures for nothing (labels come from reference_text anyway — only
+    # timings are used). Raise it so the first decode is accepted.
+    compression_ratio_threshold: float | None = 5.0
 
 
 class StoryboardConfig(BaseModel):
