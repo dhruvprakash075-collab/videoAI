@@ -108,9 +108,9 @@ as subprocesses. Every feature must respect:
 ### F5 — TTS Audition
 - **What / real-world:** Pick voice + engine + language, generate a short sample, play it
   in-app before committing. *A "try before you buy" for narration.*
-- **Code to add/change:** Reuse `audio/audio_proxy` (`generate`/`synthesize` with a short
-  sample text → temp wav). Expose engine choice (`indicf5`/`supertonic`/`omnivoice`). UI:
-  engine+voice+language pickers + play button.
+- **Code to add/change:** Reuse `audio/audio_proxy.AudioProxy.generate` with a short sample
+  text → temp wav. Expose engine choice (`indicf5`/`supertonic`/`omnivoice`); UI = engine +
+  voice + language pickers + play button.
 - **Problems:** engines differ in config (indicf5 `ref_audio`, supertonic voice JSON,
   omnivoice speed); TTS must run through `global_scheduler.task("light")` to avoid VRAM
   contention (runtime guide); slow first-load warmup → show progress; timeout → show error,
@@ -141,9 +141,9 @@ as subprocesses. Every feature must respect:
 - **What / real-world:** A persistent strip: VRAM, disk, Ollama model state, ComfyUI
   health, heavy-task slot. *A dashboard of health, always visible.*
 - **Code to add/change:** Poll `UIState.vram_text`/`run_start_ts`; run a cheap preflight
-  subset + `video/runtime/vram`/`ollama` checks on a timer (throttle ~2–5s).
+    subset + `core/runtime/vram` + `core/runtime/ollama` checks on a timer (throttle ~2–5s).
 - **Problems:** polling cost (throttle); `torch.cuda.mem_get_info` loads `torch` — guard;
-  never let telemetry crashes break the UI (degade gracefully).
+    never let telemetry crashes break the UI (degrade gracefully).
 
 ### F10 — Degradation ledger viewer
 - **What / real-world:** Surface the silent B2 quality fallbacks (`UIState.degradations`)
@@ -204,8 +204,9 @@ bibliography, 33 A/B static picker, 34 Event hooks.)
 ### F16 — Thumbnail picker
 - **What / real-world:** Choose which rendered frame becomes the cover/thumbnail.
   *A cover-art selector.*
-- **Code to add/change:** Reuse `generate_thumbnail` + Rust `media` thumbnailing. UI =
-  grid of candidate frames (auto-sampled from the final mp4) + pick; writes the chosen
+- **Code to add/change:** Reuse `core/post_production._generate_thumbnail` + the Rust `media`
+  thumbnailing step. UI = a grid of candidate frames (auto-sampled from the final mp4) + pick;
+  writes the chosen
   frame path into the run manifest / export bundle.
 - **Problems:** candidates must be frame-extracted + cached (FFmpeg); pick must persist
   so the export bundle (F32) uses the same cover.
@@ -223,13 +224,14 @@ bibliography, 33 A/B static picker, 34 Event hooks.)
 ### F18 — Repair-and-continue
 - **What / real-world:** Resume from checkpoints + auto-retry only failed segments.
   *A "fix what broke and carry on" recovery.*
-- **Code to add/change:** Reuse the **checkpoint manager** + `retry_manager`. Native UI
-  shows the last checkpoint per segment; "Resume" re-enqueues only incomplete/failed
-  segments using the existing checkpoint state; retry-only-failed filters `segment_manifests`
-  by status. Do NOT re-run already-done segments.
+- **Code to add/change:** Reuse `utils/checkpoint.py` (`CheckpointManager` save/load by topic+step)
+  + the `performance.max_segment_retries` budget (`core/segment/retry.py`; enforced as
+  `_MAX_PHASE_RETRIES` in `core/segment_runner`). Native UI shows the last checkpoint per
+  segment; "Resume" re-enqueues only incomplete/failed segments using the existing checkpoint
+  state; retry-only-failed filters `segment_manifests` by status. Do NOT re-run done segments.
 - **Problems:** checkpoints must be consistent with segments (a checkpoint implies its
-  deps are done); `retry_manager` semantics (backoff/limit) must be respected; partial
-  assembly re-stitch must match the new tail.
+  deps are done); the retry-budget semantics (max retries per phase, no auto-inflating) must
+  be respected; partial assembly re-stitch must match the new tail.
 
 
 
@@ -341,10 +343,11 @@ bibliography, 33 A/B static picker, 34 Event hooks.)
 ### F30 — Outline & decision editor
 - **What / real-world:** Review/edit the Director/Writer outline + `DecisionRecord` before
   segment generation (project mode). *A pre-production review gate.*
-- **Code to add/change:** Reuse `plan_outline`, `agents/decision_engine.py`
-  (`DecisionEngine`/`DecisionRecord`), `memory/blackboard.py`. Native UI: show the outline
-  tree + decision records, allow edits, write back before segments generate. Tied to
-  `run_mode=project` (F2).
+- **Code to add/change:** Reuse `core/outline_shaping` (the outline tree) +
+  `agents/decision_engine.py` (`build_decision_record`, which emits a `DecisionRecord`
+  defined in `config.config_schemas`) + `memory/blackboard.py` (`Blackboard`).
+  Native UI: show the outline tree + decision records, allow edits, write back before
+  segments generate. Tied to `run_mode=project` (F2).
 - **Problems:** outline/DecisionRecord are produced **during planning** by agent calls —
   surface them means capturing into a storable form the editor can load + write back;
   editing decisions after the agent moved on can desync the plan (gate behind project mode
