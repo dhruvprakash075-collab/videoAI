@@ -84,6 +84,22 @@ User-selected tier-2 features. (15 Voice recording, 19 Run diff — not selected
 | 24 | **Subtitle-language selector** — re-render subtitles in another language | `translation.py` / Devanagari pipeline | Medium |
 | 25 | **Quick-action shortcuts & app icon / tray** — keyboard nav, tray minimize, icon | OS native | Small |
 
+### Tier 3 (added later)
+
+User-selected tier-3 features. (26 Segment timeline, 31 Source bibliography,
+34 Event hooks — not selected.)
+
+| # | Feature | Reuses | Effort |
+|---|---|---|---|
+| 27 | **Script translation preview / retranslate** — preview translated script + glossary, force re-translation before render | Devanagari/`translation.py`, `hinglish_glossary.py` | Medium |
+| 28 | **Model eval runner** — run the existing eval harness in-app + view report | `utils/model_eval.py` | Medium |
+| 29 | **"Environment" landing page** — health page with one-click start Ollama + ComfyUI and auto-fix hints | `preflight`, ComfyUI auto-start | Medium |
+| 30 | **Outline & decision editor** — review/edit Director/Writer outline + `DecisionRecord` before segment generation (project mode) | `plan_outline`, `decision_engine`, `memory/blackboard.py` | High |
+| 32 | **Export bundle** — package a finished run (mp4 + chapters + subtitles + manifest + thumbnail) into a shareable folder/zip | Rust `assets`, assembler outputs | Medium |
+| 35 | **Watch folder** — drop a `.txt` topic → auto-queue | `--topics-file` pattern | Small |
+| 36 | **Run analytics / stats** — total runs, avg wall-time, VRAM peaks, failure rate | `UIState.vram_peaks`, jobs table | Small |
+| 37 | **Checkpoint & GC manager** — manage `studio_checkpoints` growth, pick resume point | checkpoint manager | Medium |
+
 ## Navigation rail (final)
 
 Director Canvas · Create Job · Jobs · **Batch** (3) · **Series Studio** (2) ·
@@ -117,6 +133,9 @@ panel (10, 11), and **toast notifications** (12).
 - **Phase 4 — Tier-2 output polish:** Subtitle editor (13), Chapters/SEO (14),
   Thumbnail picker (16), Music bed + ducking (17), Repair-and-continue (18),
   Disk cleanup/archive (22), Global search (23), Subtitle-language (24).
+- **Phase 5 — Tier-3 power/automation:** Translation preview/retranslate (27),
+  Eval runner (28), Environment landing page (29), Outline & decision editor (30),
+  Export bundle (32), Watch folder (35), Run analytics (36), Checkpoint/GC manager (37).
 
 ## Definition of done / validation
 
