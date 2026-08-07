@@ -88,6 +88,17 @@ def test_sanitize_narration_strips_section_tags():
         assert "[" not in out or "]" not in out
 
 
+def test_sanitize_narration_strips_pause_directive_text():
+    # ponytail: [pause] N seconds [/pause] is a timing direction — its inner
+    # text must not be voiced, else TTS narrates "3 seconds".
+    s = "The bell rang. [pause] 3 seconds [/pause] The keeper woke."
+    out = _sanitize_narration(s)
+    assert "3 seconds" not in out
+    assert "[pause]" not in out
+    assert "The bell rang." in out
+    assert "The keeper woke." in out
+
+
 def test_sanitize_narration_strips_leading_labels():
     s = "Narration: Hello world"
     out = _sanitize_narration(s)

@@ -778,7 +778,10 @@ def make_process_segment(
                 image_paths=[Path(p) for p in images],
                 script=script,
                 subtitle_script=(
-                    script
+                    # subtitles must show spoken text, not LLM markup — the raw
+                    # state script still carries [narration]/[section]/[pause]
+                    # tags; translate_node only sanitizes its local copy.
+                    _sanitize_narration(script)
                     if config.get("subtitles", {}).get("language") == "en"
                     else state.get("devanagari_script") or script
                 ),

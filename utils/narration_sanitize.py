@@ -92,6 +92,10 @@ def _sanitize_narration(script: str) -> str:
     ]
     for pat in _meta_patterns:
         s = _re.sub(pat, "", s, flags=_re.IGNORECASE | _re.MULTILINE)
+    # ponytail: [pause] 3 seconds [/pause] is a timing direction, not narration —
+    # strip the whole block, not just the tag markers, or the inner directive
+    # text ("3 seconds") gets translated and read aloud by TTS.
+    s = _re.sub(r"\[pause\][^\[]*\[/pause\]", "", s, flags=_re.IGNORECASE)
     s = _re.sub(
         r"\[/?(?:narration|section|pause|scene|sfx|music|cut|fade)[^\]]*\]",
         "",
