@@ -44,16 +44,49 @@ browser / npm / console windows. The web frontend stays as a working fallback.
 | 29 | Always launch the venv interpreter from the resolved repo root |
 | 31, 32 | Remove dormant `audio_fx`/upload/SFX surface from the UI; leave config untouched unless approved |
 
+## New features (folded into build)
+
+Selected by the user. Each reuses existing code (no new heavy deps); `#` are the
+feature numbers from the original shortlist. (Feature 8 — Output Compare — not
+selected.)
+
+| # | Feature | Reuses | Effort |
+|---|---|---|---|
+| 1 | **Native Script/Story Editor + per-segment iterate** — edit a segment's script, re-run TTS or re-render just that segment, then re-assemble | `core/segment_runner.py`, checkpointing, `audio/audio_proxy.py` | High |
+| 2 | **Series / Project Studio** — create/resume multi-episode `project` runs with continuity (locked characters, visual style, plot threads); browse per-project memory | `run_mode=project`, `memory/project_store.py` | High |
+| 3 | **Batch Queue** — import `.txt` of topics, enqueue all, watch aggregate progress | `--topics-file`, job queue | Small |
+| 4 | **Storyboard Review & character approval** — view generated sheets, approve/reject panels per segment (feeds approved/rejected galleries + memory) | `core/storyboard.py`, character store | Medium |
+| 5 | **TTS Audition** — pick voice+engine+language, generate a short sample and play it in-app before committing | `audio_proxy.generate`, preview route | Medium |
+| 6 | **Input-source enrichment** — add a URL/PDF/DOCX source; pipeline researches + outlines | `research` + `source` modules (already configured) | Medium |
+| 7 | **Style Packs / presets** — curated `visual.style` + `image_gen` combos (manga, cinematic, anime) | `style_resolver.py` | Small |
+| 9 | **Live telemetry rail** — VRAM, disk, Ollama model state, ComfyUI health, heavy-task slot | `UIState.vram_text`, preflight, eviction | Small |* |
+| 10 | **Degradation ledger viewer** — surface silent B2 quality fallbacks in a list | `UIState.degradations` (B2) | Small |
+| 11 | **ETA / progress forecast** — live per-run ETA from segment counters + start time | `UIState.segment_current/total`, `run_start_ts` | Small |
+| 12 | **Windows toast on completion** — notify when a long run finishes | OS toast (no pkg) + job events | Small |
+
+\* `9` depends on the telemetry being surfaced via the status rail (already planned in Phase 1).
+
+## Navigation rail (final)
+
+Director Canvas · Create Job · Jobs · **Batch** (3) · **Series Studio** (2) ·
+**Story Editor** (1) · **Storyboard Review** (4) · Voice Studio (+ **TTS Audition** 5) ·
+Artifacts · Preflight · Memory · Characters · Settings · **Sources** (6) ·
+**Style Packs** (7) — plus a persistent **status rail** (9) and **activity/degradation**
+panel (10, 11), and **toast notifications** (12).
+
 ## Phases
 
 - **Phase 1 — Shell + engine + core loop:** `gui` feature + `Cargo.toml`
   (`eframe = "=0.29"`, glow, MSRV ≤ 1.81); window with navigation rail + status
-  rail (backend/worker/ComfyUI/Ollama); engine manager (venv python, CWD, worker
+  rail (backend/worker/ComfyUI/Ollama) + telemetry (9); engine manager (venv python, CWD, worker
   spawn, port handling); Director Canvas (selected job, output, open/play);
   Create Job (all sources + flags, validated); Jobs (list/detail/cancel/retry/
-  live logs). Preflight fix (22/23).
-- **Phase 2 — Remaining native panels:** Voice Studio, Artifacts, Memory,
-  Characters, Settings (blast-radius + relocation safety).
+  live logs); Batch queue (3); toast on completion (12); ETA/progress (11);
+  degradation ledger (10). Preflight fix (22/23).
+- **Phase 2 — Creation/iteration panels:** Voice Studio + TTS Audition (5),
+  Artifacts, Sources (6), Style Packs (7), Storyboard Review (4), Memory,
+  Characters, Story Editor + per-segment iterate (1), Series/Project Studio (2),
+  Settings (blast-radius + relocation safety, 40/41/42).
 - **Phase 3 — Cleanup + gate:** delete old `static/` dashboard + `ab_picker`
   (33) where safe, retire duplicate launchers (34); nail down errors/refresh;
   run `cargo test && cargo clippy -- -D warnings && cargo fmt --check`.
