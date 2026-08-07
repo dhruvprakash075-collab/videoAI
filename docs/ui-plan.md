@@ -40,6 +40,7 @@ browser / npm / console windows. The web frontend stays as a working fallback.
 | 12, 16 | Refresh controls on read-only panels; single unified log view |
 | 13, 22, 23 | Extend `utils/preflight.py` with a **ComfyUI reachability** + **TTS-path** check; run at startup; gate on it |
 | 14, 17, 18, 19, 20 | Settings panel with blast-radius warnings; de-absolute `config.yaml` python path; launcher sets CWD + venv python + `sys.path` |
+| 40, 41, 42 | **Fix Settings save for real** — include the images-per-segment field(s) in the payload, drop the dead "Uncapped Scaling" toggle, and surface validation errors in-window (the web Settings save currently 422s every time, so nothing is ever persisted) |
 | 29 | Always launch the venv interpreter from the resolved repo root |
 | 31, 32 | Remove dormant `audio_fx`/upload/SFX surface from the UI; leave config untouched unless approved |
 

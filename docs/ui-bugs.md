@@ -81,3 +81,13 @@ launch experience. The native rebuild (`docs/ui-plan.md`) is scoped to fix these
 - No false "stale running → failed": the Python worker heartbeats periodically (`_heartbeat_loop`, 10s) independent of log output, and `mark_stale_running_failed` is only called at `local_ui` startup.
 - `request_cancel` does handle `queued` jobs (`STATUS_QUEUED` is in the allowed set).
 - UI → `bootstrap_pipeline.py` CLI flags are consistent (no instant-argparse-fail).
+
+## H. Settings / config UI bugs (verified 2026-08-07)
+
+| # | Bug | Evidence | Effect |
+|---|---|---|---|
+| 40 | **Settings save is structurally broken** — the frontend never sends the required `default_images_per_segment` Form field | `dashboard/src/components/ControlPanel.jsx` `handleSave` builds FormData with voice_engine, dynamic_subtitles, image_backend, composition_mode, all comfyui_* — but **not** `default_images_per_segment`; backend `save_ui_config` declares it `default_images_per_segment: int = Form(...)` (required) | `POST /api/config` returns **422** on every save → UI shows "Failed to save settings" → **no config change made in Settings is ever persisted** |
+| 41 | Even absent the 422, the "Images Per Segment" slider value (`maxImagesPerSegment`) is never in the save payload | `handleSave` (above); slider writes `config.maxImagesPerSegment` which is not POSTed | Slider edits would be silently discarded |
+| 42 | "Uncapped Scaling" toggle is dead UI | `uncappedScaling` exists only in `DEFAULT_CONFIG`; never read from GET `/api/config` and never sent on save | Toggling it does nothing |
+
+**Consultation contract (kept feature) confirmed:** `consult_user` sets `active_question`, flips `status=paused`, clears+polls `pause_event.wait(timeout=300)`; no reply in 300s → auto-defaults and resumes. `--yes` skips prompting. A native pause modal must surface this 300s window. (`agents/director/consultation.py:19-57`)
