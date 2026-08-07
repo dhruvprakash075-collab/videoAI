@@ -91,3 +91,10 @@ launch experience. The native rebuild (`docs/ui-plan.md`) is scoped to fix these
 | 42 | "Uncapped Scaling" toggle is dead UI | `uncappedScaling` exists only in `DEFAULT_CONFIG`; never read from GET `/api/config` and never sent on save | Toggling it does nothing |
 
 **Consultation contract (kept feature) confirmed:** `consult_user` sets `active_question`, flips `status=paused`, clears+polls `pause_event.wait(timeout=300)`; no reply in 300s → auto-defaults and resumes. `--yes` skips prompting. A native pause modal must surface this 300s window. (`agents/director/consultation.py:19-57`)
+
+## I. Ops/cleanup & eval bugs (found during feature research 2026-08-07)
+
+| # | Bug | Evidence | Effect |
+|---|---|---|---|
+| 43 | `cleanup_artifacts.remove_stale_outputs` deletes files in `studio_outputs` older than N days **without reconciling the job DB** | `scripts/cleanup_artifacts.py:116-135` rglobs + unlinks by mtime only | Orphans `jobs.output_path` / `job_artifacts` rows → "Open output" dangles after cleanup; also deletes old `ab_test`/segment images still referenced by manifests. **Feature 22 (disk cleanup) must reconcile the DB before deleting.** |
+| 44 | `remove_failed_job_logs` keys log dirs by **raw `topic`** under `logs/{topic}` with no sanitization, and assumes a layout that may not match how logs are actually stored (worker writes events to the DB) | `scripts/cleanup_artifacts.py:98` `log_dir = logs/topic` | Failed-job-log cleanup can miss real logs, delete a shared-topic dir (e.g. after a successful retry of the same topic), or hit `..` if a topic contains path components |

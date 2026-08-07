@@ -100,6 +100,21 @@ User-selected tier-3 features. (26 Segment timeline, 31 Source bibliography,
 | 36 | **Run analytics / stats** — total runs, avg wall-time, VRAM peaks, failure rate | `UIState.vram_peaks`, jobs table | Small |
 | 37 | **Checkpoint & GC manager** — manage `studio_checkpoints` growth, pick resume point | checkpoint manager | Medium |
 
+### Tier 4 (final)
+
+Final feature additions (last).
+
+| # | Feature | Reuses | Effort |
+|---|---|---|---|
+| 39 | **Character/scene consistency check** — compare generated images against `master` portraits via `identity_hash` to catch face drift | `characters`, image-gen, Rust `media` | Medium |
+| 41 | **Multi-language narration** — render the same story in several `tts.lang` variants in one batch | `translation.py`, `audio_proxy` | High |
+| 44 | **Dry-run cost estimator** — preflight + `--dry-run` → estimated time + storage before a full run | preflight, `--dry-run` | Medium |
+
+> **Every feature above is researched in depth in
+> [`docs/features-adding-helper.md`](features-adding-helper.md)** — real-world
+> behavior, exact code/functions to add or change, and the implementation risks
+> per feature.
+
 ## Navigation rail (final)
 
 Director Canvas · Create Job · Jobs · **Batch** (3) · **Series Studio** (2) ·
@@ -136,6 +151,11 @@ panel (10, 11), and **toast notifications** (12).
 - **Phase 5 — Tier-3 power/automation:** Translation preview/retranslate (27),
   Eval runner (28), Environment landing page (29), Outline & decision editor (30),
   Export bundle (32), Watch folder (35), Run analytics (36), Checkpoint/GC manager (37).
+- **Phase 6 — Tier-4 quality/localization:** Character/scene consistency check (39),
+  Multi-language narration (41), Dry-run cost estimator (44).
+
+> Build order per feature, code-level breakdowns, and risk mitigations live in
+> `docs/features-adding-helper.md`. Revisit that doc before starting each phase.
 
 ## Definition of done / validation
 
