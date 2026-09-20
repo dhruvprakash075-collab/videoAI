@@ -13,6 +13,16 @@ log = logging.getLogger("core.segment_runner")
 _pending_ollama_timer = None
 _pending_ollama_timer_lock = threading.Lock()
 
+# A late debounced stop must not kill a server that post-production restarted
+# for its SEO/upload LLM call (that degraded SEO to the static fallback
+# silently). `start_ollama_server` sets the suppressor on success; the timer
+# consumes it instead of stopping. `_ollama_stop_inflight` marks a timer that
+# is already inside stop_ollama_server, so a stop arriving from another thread
+# defers to it rather than cancelling it (cancelling a thread's own stop would
+# let that stop land unguarded).
+_ollama_stop_inflight = False
+_ollama_stop_suppressed = False
+
 # Cache for evict_ollama_models: keyed by (host, frozenset(models)) so
 # different configs (e.g. changing Ollama host or model set) don't share
 # the same TTL window. Collapses the 5-per-batch burst ~10:1.
@@ -29,6 +39,22 @@ def touch_ollama_active():
             _pending_ollama_timer = None
 
 
+def _run_debounced_stop(config):
+    """Timer callback: perform the stop unless another stop superseded it."""
+    global _pending_ollama_timer, _ollama_stop_inflight, _ollama_stop_suppressed
+    with _pending_ollama_timer_lock:
+        if _ollama_stop_suppressed:
+            _ollama_stop_suppressed = False
+            _pending_ollama_timer = None
+            return
+        _pending_ollama_timer = None
+        _ollama_stop_inflight = True
+    try:
+        stop_ollama_server(config, reason="debounced-timer")
+    finally:
+        _ollama_stop_inflight = False
+
+
 def schedule_ollama_stop(config, delay: float = 3.0):
     """Schedule Ollama server stop in `delay` seconds.
     Automatically cancels any previously scheduled stop (debounce).
@@ -39,7 +65,7 @@ def schedule_ollama_stop(config, delay: float = 3.0):
     with _pending_ollama_timer_lock:
         _pending_ollama_timer = _t.Timer(
             delay,
-            lambda: stop_ollama_server(config, reason="debounced-timer"),
+            lambda: _run_debounced_stop(config),
         )
         _pending_ollama_timer.daemon = True
         _pending_ollama_timer.start()
@@ -55,6 +81,15 @@ def _ollama_alive(config, timeout: float = 2.0) -> bool:
             return True
     except (ConnectionRefusedError, _ue.URLError, OSError):
         return False
+
+
+def clear_ollama_stop_state() -> None:
+    """Reset the debounce/suppression flags (for tests)."""
+    global _pending_ollama_timer, _ollama_stop_inflight, _ollama_stop_suppressed
+    with _pending_ollama_timer_lock:
+        _pending_ollama_timer = None
+        _ollama_stop_inflight = False
+        _ollama_stop_suppressed = False
 
 
 def clear_evict_cache() -> None:
@@ -171,7 +206,14 @@ def evict_ollama_models(config: dict, reason: str = "") -> None:
 
 
 def stop_ollama_server(config: dict, reason: str = "") -> None:
-    """Kill the Ollama server process to free ~1-2 GB RAM between staged batches."""
+    """Kill the Ollama server process to free ~1-2 GB RAM between staged batches.
+
+    ponytail: stopping is only worth it because a user-controlled server can be
+    started again by `start_ollama_server` (or the user). If the operator ran
+    `ollama serve` themselves, this replaces their process with a detached one
+    — acceptable once the pipeline is the only consumer, but the reason string
+    in the log is the only trace of it.
+    """
     import subprocess
     import sys
     try:
@@ -185,6 +227,12 @@ def stop_ollama_server(config: dict, reason: str = "") -> None:
         log.info(f"[Ollama] Server stopped{(' (' + reason + ')') if reason else ''} — RAM freed")
     except Exception as e:
         log.debug(f"[Ollama] Server stop failed (non-fatal): {e}")
+
+
+def _clear_ollama_stop_suppression() -> None:
+    """Re-arm the debounced stop (called when Ollama is needed again)."""
+    global _ollama_stop_suppressed
+    _ollama_stop_suppressed = False
 
 
 def start_ollama_server(config: dict, reason: str = "") -> bool:
@@ -214,6 +262,10 @@ def start_ollama_server(config: dict, reason: str = "") -> bool:
             from utils.url_security import open_validated_url
             with open_validated_url(build_validated_url(host, "/api/tags"), timeout=2):
                 log.info(f"[Ollama] Server started{(' (' + reason + ')') if reason else ''}")
+                # A stop armed before this start would kill what we just brought
+                # up; a fresh start means the server has a consumer again.
+                touch_ollama_active()
+                _clear_ollama_stop_suppression()
                 return True
         except (ConnectionRefusedError, _ue.URLError, OSError):
             continue

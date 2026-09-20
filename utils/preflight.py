@@ -179,6 +179,81 @@ def _check_disk(config: dict) -> tuple[Status, str]:
     return "fail", f"only {free_gb:.1f} GB free on {target_dir}; clear space before running"
 
 
+def _check_comfyui(config: dict) -> tuple[Status, str]:
+    """Verify the configured image backend is reachable before a run starts.
+
+    Without this, a dead ComfyUI is only discovered at the image phase — after
+    script/TTS work has already been paid for. Skipped unless the backend is
+    actually comfyui, so a diffusers-only setup is not nagged.
+    """
+    img_cfg = config.get("image_gen", {})
+    backend = img_cfg.get("backend", "comfyui")
+    if backend != "comfyui":
+        return "skip", f"image backend is {backend} — ComfyUI not required"
+
+    comfy = img_cfg.get("comfyui", {})
+    host = comfy.get("host", "127.0.0.1")
+    port = int(comfy.get("port", 8188))
+    timeout = float(comfy.get("health_timeout_s", 5))
+
+    import urllib.error
+    import urllib.request
+
+    url = f"http://{host}:{port}/system_stats"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            return "ok", f"ComfyUI reachable at {host}:{port}"
+    except urllib.error.HTTPError as e:
+        # The server is up but the route differs (older build) — reachable is
+        # what matters here, not the exact endpoint.
+        return "ok", f"ComfyUI responded at {host}:{port} (HTTP {e.code})"
+    except Exception as e:
+        autostart = comfy.get("auto_start", True)
+        suffix = " (auto_start is on — it will be launched)" if autostart else ""
+        return "warn", f"ComfyUI not reachable at {host}:{port}: {e}{suffix}"
+
+
+def _check_indicf5_paths(config: dict) -> tuple[Status, str]:
+    """Verify the IndicF5 root, interpreter and reference audio exist.
+
+    Only runs when the engine is indicf5 — the check this replaces
+    (`_check_supertonic_voice`) SKIPs for every other engine, so an indicf5
+    setup previously got no TTS validation at all.
+    """
+    tts = config.get("tts", {})
+    if tts.get("engine") != "indicf5":
+        engine = tts.get("engine", "unknown")
+        return "skip", f"TTS engine is not indicf5 ({engine})"
+
+    cfg = tts.get("indicf5", {})
+    root = cfg.get("root", "")
+    if not root:
+        return "fail", "tts.indicf5.root is not configured"
+
+    root_path = Path(root)
+    if not root_path.is_absolute():
+        root_path = Path.cwd() / root_path
+    if not root_path.exists():
+        return "fail", f"IndicF5 root not found: {root_path}"
+
+    # Reference audio + its transcript drive voice cloning; a missing pair
+    # silently degrades narration quality rather than failing loudly.
+    missing = []
+    for key in ("ref_audio", "ref_text_file"):
+        raw = cfg.get(key, "")
+        if not raw:
+            continue
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        if not p.exists():
+            missing.append(f"{key}={p}")
+    if missing:
+        return "fail", "IndicF5 reference files missing: " + ", ".join(missing)
+
+    return "ok", f"IndicF5 root + reference assets found ({root_path.name})"
+
+
 def _check_supertonic_voice(config: dict) -> tuple[Status, str]:
     """Verify the configured Supertonic voice JSON file exists on disk."""
     tts = config.get("tts", {})
@@ -284,6 +359,8 @@ def run_preflight(
         _timed(lambda: _check_director_model(config), name="director_model"),
         _timed(lambda: _check_vram(config), name="vram"),
         _timed(lambda: _check_disk(config), name="disk_space"),
+        _timed(lambda: _check_comfyui(config), name="comfyui"),
+        _timed(lambda: _check_indicf5_paths(config), name="indicf5_paths"),
         _timed(lambda: _check_supertonic_voice(config), name="supertonic_voice"),
         _timed(_check_ffmpeg, name="ffmpeg"),
         _timed(lambda: _check_playwright(config), name="playwright"),

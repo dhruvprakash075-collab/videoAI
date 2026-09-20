@@ -2,13 +2,15 @@
 
 import time
 from contextlib import ExitStack, contextmanager
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from utils.preflight import (
     PreflightCheck,
     PreflightResult,
+    _check_comfyui,
     _check_disk,
     _check_ffmpeg,
+    _check_indicf5_paths,
     _check_python,
     _timed,
     run_preflight,
@@ -23,6 +25,8 @@ def _mock_side_effecting_preflight_checks():
         ("utils.preflight._check_director_model", ("ok", "mocked")),
         ("utils.preflight._check_vram", ("skip", "mocked")),
         ("utils.preflight._check_disk", ("ok", "mocked")),
+        ("utils.preflight._check_comfyui", ("skip", "mocked")),
+        ("utils.preflight._check_indicf5_paths", ("skip", "mocked")),
         ("utils.preflight._check_supertonic_voice", ("skip", "mocked")),
         ("utils.preflight._check_ffmpeg", ("ok", "mocked")),
         ("utils.preflight._check_playwright", ("skip", "mocked")),
@@ -115,6 +119,72 @@ class TestDiskCheck:
         # Windows: C: drive. Status should be ok/warn/fail, not skip.
         assert status in {"ok", "warn", "fail"}
         assert "GB free" in msg
+
+
+class TestComfyUICheck:
+    def test_skips_when_backend_is_not_comfyui(self):
+        status, msg = _check_comfyui({"image_gen": {"backend": "diffusers"}})
+        assert status == "skip"
+        assert "diffusers" in msg
+
+    def test_reports_ok_when_reachable(self):
+        resp = MagicMock()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = lambda *a: False
+        with patch("urllib.request.urlopen", return_value=resp):
+            status, msg = _check_comfyui(
+                {"image_gen": {"backend": "comfyui", "comfyui": {"host": "127.0.0.1", "port": 8188}}}
+            )
+        assert status == "ok"
+        assert "8188" in msg
+
+    def test_warns_when_unreachable_and_auto_start_on(self):
+        with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+            status, msg = _check_comfyui(
+                {
+                    "image_gen": {
+                        "backend": "comfyui",
+                        "comfyui": {"auto_start": True, "health_timeout_s": 1},
+                    }
+                }
+            )
+        assert status == "warn"
+        assert "auto_start" in msg
+
+
+class TestIndicF5PathsCheck:
+    def test_skips_for_other_engines(self):
+        # The check this replaced skipped for every non-supertonic engine, so
+        # an indicf5 setup previously received no TTS validation at all.
+        status, msg = _check_indicf5_paths({"tts": {"engine": "supertonic"}})
+        assert status == "skip"
+        assert "supertonic" in msg
+
+    def test_fails_when_root_missing(self):
+        status, msg = _check_indicf5_paths(
+            {"tts": {"engine": "indicf5", "indicf5": {"root": "does/not/exist"}}}
+        )
+        assert status == "fail"
+        assert "root not found" in msg
+
+    def test_fails_when_unconfigured(self):
+        status, _msg = _check_indicf5_paths({"tts": {"engine": "indicf5", "indicf5": {}}})
+        assert status == "fail"
+
+    def test_ok_for_real_repo_config(self):
+        status, msg = _check_indicf5_paths(
+            {
+                "tts": {
+                    "engine": "indicf5",
+                    "indicf5": {
+                        "root": "external/IndicF5",
+                        "ref_audio": "character_voices/narration_ref_9s_mono24k_ref8s_mono.wav",
+                        "ref_text_file": "character_voices/narration_ref_9s_mono24k.txt",
+                    },
+                }
+            }
+        )
+        assert status == "ok", msg
 
 
 class TestRunPreflight:

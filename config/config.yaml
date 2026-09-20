@@ -19,8 +19,12 @@ tts:
   lang: hi
   engine: indicf5
   indicf5:
-    root: external\IndicF5
-    python: C:\Video.AI\venv\Scripts\python.exe
+    root: external/IndicF5
+    # Empty = use the interpreter running the pipeline (audio_proxy falls back
+    # to sys.executable). Kept explicit-empty rather than a hardcoded path so
+    # the checkout stays relocatable. Set this only to point IndicF5's nested
+    # run_indic.py at a *different* interpreter.
+    python: ""
     ref_audio: character_voices/narration_ref_9s_mono24k_ref8s_mono.wav
     ref_text_file: character_voices/narration_ref_9s_mono24k.txt
     ref_text: >-

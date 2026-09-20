@@ -25,7 +25,11 @@ def test_call_indicf5_worker_success_error_exception_and_defaults(tmp_path, monk
     captured = {}
 
     def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
+        # Record the FIRST call only: `_run_worker` retries, and the surrounding
+        # environment may issue its own subprocess calls during cleanup, so a
+        # plain overwrite would end up holding a non-worker command.
+        if "cmd" not in captured:
+            captured["cmd"] = cmd
         res = MagicMock()
         res.stdout = 'noise\n{"status": "success", "wav_path": "x.wav"}\n'
         res.stderr = ""
@@ -72,7 +76,9 @@ def test_call_indicf5_worker_honors_speed_override(tmp_path, monkeypatch):
     captured = {}
 
     def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
+        # First call only — see the note in the previous test.
+        if "cmd" not in captured:
+            captured["cmd"] = cmd
         res = MagicMock()
         res.stdout = '{"status": "success", "wav_path": "x.wav"}\n'
         res.stderr = ""
@@ -200,7 +206,10 @@ def test_call_supertonic_worker_persistent_and_oneshot_paths(tmp_path):
     ):
         out = audio_proxy._call_supertonic_worker("hello", output_dir=tmp_path, speed_override=1.2)
     assert out["status"] == "success"
-    assert any("--speed=1.2" in arg for arg in run.call_args.args[0])
+    # `_run_worker` wraps subprocess.run in a retry loop, so the global patch
+    # captures several calls; `call_args` is the LAST one (a retry attempt),
+    # not the worker spawn that carries the flags. Assert against the first.
+    assert any("--speed=1.2" in arg for arg in run.call_args_list[0].args[0])
     assert str(worker).endswith("supertonic_worker.py")
 
     res = MagicMock(returncode=1, stdout="", stderr="bad")
@@ -284,7 +293,11 @@ def test_omnivoice_oneshot_no_json_voice_sample_exception_and_cleanup(tmp_path, 
             "text", output_dir=tmp_path, out_wav=out_wav, voice_sample=str(voice)
         )
     assert out["status"] == "error"
-    assert any(str(voice) in arg for arg in run.call_args.args[0])
+    # `_run_worker` retries subprocess.run, and the surrounding environment may
+    # issue its own subprocess calls during the `finally` cleanup — so
+    # `call_args` (the LAST call) is not reliably the worker spawn. The first
+    # call is. See the same pattern in the supertonic test above.
+    assert any(str(voice) in arg for arg in run.call_args_list[0].args[0])
 
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 1)):
         out = audio_proxy._call_omnivoice_oneshot("text", output_dir=tmp_path, out_wav=out_wav)
