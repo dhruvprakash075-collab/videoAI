@@ -2,14 +2,28 @@
 name = "videoai-worker"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.81"
 publish = false
 default-run = "videoai-worker"
 
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+# `gui` is an opt-in, dev-only feature. Its eframe/egui transitive graph in the
+# 2026 registry (image -> moxcms, idna_adapter, indexmap) requires rust >= 1.85,
+# so it is NOT buildable on the pinned 1.81 CI toolchain. CI builds default
+# features only; `cargo +1.96 build --features gui` is the supported path.
+# ponytail: if the eframe deps ever ship 1.81-compatible releases, re-check the
+# gui build under 1.81 before removing this note.
+[[bin]]
+name = "videoai-gui"
+path = "src/bin/videoai_gui.rs"
+required-features = ["gui"]
+
 [features]
+default = []
 ffmpeg-integration = []
+gui = ["dep:eframe"]
 python-extension = ["dep:pyo3", "pyo3/extension-module"]
 
 [dependencies]
@@ -17,6 +31,13 @@ anyhow = "=1.0.89"
 axum = "=0.7.7"
 chrono = { version = "=0.4.38", default-features = false, features = ["clock", "std"] }
 clap = { version = "=4.5.20", features = ["derive"] }
+eframe = { version = "=0.29.1", optional = true, default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
 fs2 = "=0.4.3"
 pyo3 = { version = "=0.22.6", optional = true, features = ["macros", "abi3-py310"] }
 rusqlite = { version = "=0.32.1", features = ["bundled"] }

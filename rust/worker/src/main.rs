@@ -23,6 +23,7 @@ use videoai_worker::audio::{self, AudioCommand};
 use videoai_worker::checkpoint::{self, CheckpointCommand};
 use videoai_worker::ffmpeg_plan::{self, FfmpegCommand};
 use videoai_worker::media::{self, MediaCommand};
+use videoai_worker::request::is_supported_arg;
 use videoai_worker::text::{self, TextCommand};
 
 const DEFAULT_DB_PATH: &str = "studio_projects/jobs/video_ai_jobs.db";
@@ -996,29 +997,6 @@ fn value_as_nonempty_string(value: &Value) -> Option<String> {
         Value::Bool(b) => Some(b.to_string()),
         _ => None,
     }
-}
-
-fn is_supported_arg(key: &str) -> bool {
-    matches!(
-        key,
-        "duration"
-            | "dry_run"
-            | "no_resume"
-            | "file"
-            | "project"
-            | "series"
-            | "run_mode"
-            | "eval_models"
-            | "preview"
-            | "skip_preflight"
-            | "preflight_only"
-            | "words_per_segment"
-            | "images_per_segment"
-            | "segment_count"
-            | "yes"
-            | "topics_file"
-            | "source"
-    )
 }
 
 fn safe_filename(name: &str) -> String {

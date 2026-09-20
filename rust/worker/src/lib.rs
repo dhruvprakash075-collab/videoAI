@@ -33,7 +33,11 @@ pub mod checkpoint;
 pub mod ffmpeg_exec;
 pub mod ffmpeg_plan;
 pub mod media;
+pub mod request;
 pub mod text;
 
 #[cfg(feature = "python-extension")]
 mod python;
+
+#[cfg(feature = "gui")]
+pub mod gui;

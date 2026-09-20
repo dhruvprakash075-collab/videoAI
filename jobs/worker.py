@@ -119,12 +119,15 @@ class Worker:
             temp_file.write_text(content_text, encoding="utf-8")
             cmd += ["--file", str(temp_file)]
 
-        # Supported bootstrap_pipeline.py args (filter out job metadata keys)
+        # Supported bootstrap_pipeline.py args (filter out job metadata keys).
+        # Kept in lockstep with rust/worker/src/request.rs::is_supported_arg —
+        # tests/gui_contract.rs fails if the two lists drift apart.
         supported_args = {
             "duration", "dry_run", "no_resume", "file", "project",
             "series", "run_mode", "eval_models", "preview",
             "skip_preflight", "preflight_only", "words_per_segment",
-            "images_per_segment", "segment_count", "yes", "topics_file", "source"
+            "images_per_segment", "segment_count", "yes", "topics_file", "source",
+            "no_storyboard", "force_storyboard", "force_vision",
         }
         for k, v in req.items():
             if k == "topic" or k not in supported_args:
