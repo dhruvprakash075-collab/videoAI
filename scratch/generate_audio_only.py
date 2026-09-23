@@ -20,11 +20,12 @@ _repo_root = str(Path(__file__).parent.parent)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from bootstrap_pipeline import bootstrap
+from bootstrap_pipeline import bootstrap  # noqa: E402
+
 bootstrap()
 
-from config import load_config
-from utils import _safe_filename
+from config import load_config  # noqa: E402
+from utils import _safe_filename  # noqa: E402
 
 
 def main():
@@ -82,13 +83,13 @@ def main():
 
     # Load config and set overrides
     config = load_config()
-    
+
     # Voice-only mode: skip images by setting num_images to 0
     config.setdefault("visual", {})["num_scenes"] = 0
     # Override for voice-only: set default images per segment to 0
     config.setdefault("script", {}).setdefault("default_images_per_segment", 0)
     config.setdefault("script", {})["max_images_per_segment"] = 0
-    
+
     # Set TTS engine
     config.setdefault("tts", {})["engine"] = args.engine
 
@@ -105,7 +106,7 @@ def main():
     print(f"Topic: {topic}")
     print(f"Language: {args.lang}")
     print(f"TTS Engine: {args.engine}")
-    print(f"Mode: voice-only (no images/video)")
+    print("Mode: voice-only (no images/video)")
     print("=" * 60)
 
     from core.pipeline_long import run_long_pipeline
