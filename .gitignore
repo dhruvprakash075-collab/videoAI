@@ -152,3 +152,6 @@ fast_output.png
 
 # ── Model eval outputs (run artifacts, not history) ───────────────
 model_eval/
+
+# Other AI agent tool state
+.workbuddy-ai/
